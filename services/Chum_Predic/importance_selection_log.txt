@@ -1,0 +1,107 @@
+IMPORTANCE SELECTION LOG
+Generated (UTC): 2026-03-28T21:13:15Z
+Source file: Churn.csv
+Rows used after dropping invalid Churn: 7043
+
+WHAT DECIDED THE SCORES (NOT A NEURAL-NET / LLM MODEL)
+This pipeline uses classical statistics, not machine-learning model training.
+
+1) For each service column, we build a contingency table:
+   rows = each category of that service (e.g. DSL, Fiber optic),
+   columns = Churn with values No (encoded 0) and Yes (encoded 1).
+
+2) Pearson chi-square test of independence checks whether the distribution
+   of churn differs across service categories. Under the null hypothesis,
+   service and churn are independent. A small p-value means the pattern
+   is unlikely by chance; we require p < 0.05 to consider
+   the link statistically significant.
+
+3) Cramér's V measures effect size (how strong the association is),
+   on a scale from 0 upward. Large samples can yield tiny p-values for
+   weak effects, so we also require Cramér's V >= 0.05 to
+   mark a service as IMPORTANT in important_services.txt.
+
+4) RELATIVE IMPORTANCE PERCENTAGE (Rel.% in the terminal):
+   For the nine service columns, let V_i = Cramér's V for column i.
+   Then Rel.%_i = 100 * V_i / sum(V_1..V_9).
+   These percentages sum to 100% across the nine columns; they describe
+   how much of the *total measured association strength* each column
+   carries relative to the others, not the chance that churn happens.
+
+5) PER-CATEGORY TABLES:
+   For each category of a service, we count customers with Churn=No and
+   Churn=Yes, and show %No and %Yes within that category only.
+
+SERVICES MARKED IMPORTANT (met both thresholds):
+  - DeviceProtection: chi2=558.4194, p=5.5052e-122, CramerV=0.2816, Rel.%=13.41%
+  - InternetService: chi2=732.3096, p=9.5718e-160, CramerV=0.3225, Rel.%=15.36%
+  - OnlineBackup: chi2=601.8128, p=2.0798e-131, CramerV=0.2923, Rel.%=13.92%
+  - OnlineSecurity: chi2=849.9990, p=2.6611e-185, CramerV=0.3474, Rel.%=16.55%
+  - StreamingMovies: chi2=375.6615, p=2.6678e-82, CramerV=0.2310, Rel.%=11.00%
+  - StreamingTV: chi2=374.2039, p=5.5290e-82, CramerV=0.2305, Rel.%=10.98%
+  - TechSupport: chi2=828.1971, p=1.4431e-180, CramerV=0.3429, Rel.%=16.33%
+
+FULL DETAIL BY SERVICE
+
+--- InternetService ---
+chi2=732.309589667794, p=9.571788222840544e-160, CramerV=0.32245455521230887, n=7043, Rel.%=15.36%
+category | n_No | n_Yes | %No | %Yes
+  DSL | 1962 | 459 | 81.04% | 18.96%
+  Fiber optic | 1799 | 1297 | 58.11% | 41.89%
+  No | 1413 | 113 | 92.6% | 7.4%
+
+--- OnlineSecurity ---
+chi2=849.9989679615965, p=2.6611496351765517e-185, CramerV=0.3474004326740552, n=7043, Rel.%=16.55%
+category | n_No | n_Yes | %No | %Yes
+  No | 2037 | 1461 | 58.23% | 41.77%
+  No internet service | 1413 | 113 | 92.6% | 7.4%
+  Yes | 1724 | 295 | 85.39% | 14.61%
+
+--- OnlineBackup ---
+chi2=601.812790113409, p=2.0797592160864276e-131, CramerV=0.2923155121954445, n=7043, Rel.%=13.92%
+category | n_No | n_Yes | %No | %Yes
+  No | 1855 | 1233 | 60.07% | 39.93%
+  No internet service | 1413 | 113 | 92.6% | 7.4%
+  Yes | 1906 | 523 | 78.47% | 21.53%
+
+--- DeviceProtection ---
+chi2=558.419369407389, p=5.505219496457244e-122, CramerV=0.281579732968073, n=7043, Rel.%=13.41%
+category | n_No | n_Yes | %No | %Yes
+  No | 1884 | 1211 | 60.87% | 39.13%
+  No internet service | 1413 | 113 | 92.6% | 7.4%
+  Yes | 1877 | 545 | 77.5% | 22.5%
+
+--- TechSupport ---
+chi2=828.1970684587394, p=1.4430840279998987e-180, CramerV=0.3429161982469257, n=7043, Rel.%=16.33%
+category | n_No | n_Yes | %No | %Yes
+  No | 2027 | 1446 | 58.36% | 41.64%
+  No internet service | 1413 | 113 | 92.6% | 7.4%
+  Yes | 1734 | 310 | 84.83% | 15.17%
+
+--- StreamingTV ---
+chi2=374.2039433109813, p=5.528994485739183e-82, CramerV=0.2305023384466809, n=7043, Rel.%=10.98%
+category | n_No | n_Yes | %No | %Yes
+  No | 1868 | 942 | 66.48% | 33.52%
+  No internet service | 1413 | 113 | 92.6% | 7.4%
+  Yes | 1893 | 814 | 69.93% | 30.07%
+
+--- StreamingMovies ---
+chi2=375.6614793452656, p=2.667756755723681e-82, CramerV=0.23095080906926801, n=7043, Rel.%=11.00%
+category | n_No | n_Yes | %No | %Yes
+  No | 1847 | 938 | 66.32% | 33.68%
+  No internet service | 1413 | 113 | 92.6% | 7.4%
+  Yes | 1914 | 818 | 70.06% | 29.94%
+
+--- PhoneService ---
+chi2=0.9150329892546948, p=0.3387825358066928, CramerV=0.011398285522718045, n=7043, Rel.%=0.54%
+category | n_No | n_Yes | %No | %Yes
+  No | 512 | 170 | 75.07% | 24.93%
+  Yes | 4662 | 1699 | 73.29% | 26.71%
+
+--- MultipleLines ---
+chi2=11.33044148319756, p=0.0034643829548773, CramerV=0.04010925283378871, n=7043, Rel.%=1.91%
+category | n_No | n_Yes | %No | %Yes
+  No | 2541 | 849 | 74.96% | 25.04%
+  No phone service | 512 | 170 | 75.07% | 24.93%
+  Yes | 2121 | 850 | 71.39% | 28.61%
+

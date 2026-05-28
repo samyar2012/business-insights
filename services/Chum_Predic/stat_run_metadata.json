@@ -1,0 +1,309 @@
+{
+  "generated_at_utc": "2026-03-28T21:13:15Z",
+  "source_csv": "Churn.csv",
+  "n_rows_used": 7043,
+  "criteria": {
+    "p_max": 0.05,
+    "cramers_v_min": 0.05
+  },
+  "per_feature": {
+    "InternetService": {
+      "chi2": 732.309589667794,
+      "pvalue": 9.571788222840544e-160,
+      "cramers_v": 0.32245455521230887,
+      "n": 7043,
+      "by_category": [
+        {
+          "category": "DSL",
+          "n_churn_no": 1962,
+          "n_churn_yes": 459,
+          "n_total": 2421,
+          "pct_of_group_no_churn": 81.04,
+          "pct_of_group_churned": 18.96
+        },
+        {
+          "category": "Fiber optic",
+          "n_churn_no": 1799,
+          "n_churn_yes": 1297,
+          "n_total": 3096,
+          "pct_of_group_no_churn": 58.11,
+          "pct_of_group_churned": 41.89
+        },
+        {
+          "category": "No",
+          "n_churn_no": 1413,
+          "n_churn_yes": 113,
+          "n_total": 1526,
+          "pct_of_group_no_churn": 92.6,
+          "pct_of_group_churned": 7.4
+        }
+      ],
+      "relative_importance_pct": 15.3577
+    },
+    "OnlineSecurity": {
+      "chi2": 849.9989679615965,
+      "pvalue": 2.6611496351765517e-185,
+      "cramers_v": 0.3474004326740552,
+      "n": 7043,
+      "by_category": [
+        {
+          "category": "No",
+          "n_churn_no": 2037,
+          "n_churn_yes": 1461,
+          "n_total": 3498,
+          "pct_of_group_no_churn": 58.23,
+          "pct_of_group_churned": 41.77
+        },
+        {
+          "category": "No internet service",
+          "n_churn_no": 1413,
+          "n_churn_yes": 113,
+          "n_total": 1526,
+          "pct_of_group_no_churn": 92.6,
+          "pct_of_group_churned": 7.4
+        },
+        {
+          "category": "Yes",
+          "n_churn_no": 1724,
+          "n_churn_yes": 295,
+          "n_total": 2019,
+          "pct_of_group_no_churn": 85.39,
+          "pct_of_group_churned": 14.61
+        }
+      ],
+      "relative_importance_pct": 16.5458
+    },
+    "OnlineBackup": {
+      "chi2": 601.812790113409,
+      "pvalue": 2.0797592160864276e-131,
+      "cramers_v": 0.2923155121954445,
+      "n": 7043,
+      "by_category": [
+        {
+          "category": "No",
+          "n_churn_no": 1855,
+          "n_churn_yes": 1233,
+          "n_total": 3088,
+          "pct_of_group_no_churn": 60.07,
+          "pct_of_group_churned": 39.93
+        },
+        {
+          "category": "No internet service",
+          "n_churn_no": 1413,
+          "n_churn_yes": 113,
+          "n_total": 1526,
+          "pct_of_group_no_churn": 92.6,
+          "pct_of_group_churned": 7.4
+        },
+        {
+          "category": "Yes",
+          "n_churn_no": 1906,
+          "n_churn_yes": 523,
+          "n_total": 2429,
+          "pct_of_group_no_churn": 78.47,
+          "pct_of_group_churned": 21.53
+        }
+      ],
+      "relative_importance_pct": 13.9223
+    },
+    "DeviceProtection": {
+      "chi2": 558.419369407389,
+      "pvalue": 5.505219496457244e-122,
+      "cramers_v": 0.281579732968073,
+      "n": 7043,
+      "by_category": [
+        {
+          "category": "No",
+          "n_churn_no": 1884,
+          "n_churn_yes": 1211,
+          "n_total": 3095,
+          "pct_of_group_no_churn": 60.87,
+          "pct_of_group_churned": 39.13
+        },
+        {
+          "category": "No internet service",
+          "n_churn_no": 1413,
+          "n_churn_yes": 113,
+          "n_total": 1526,
+          "pct_of_group_no_churn": 92.6,
+          "pct_of_group_churned": 7.4
+        },
+        {
+          "category": "Yes",
+          "n_churn_no": 1877,
+          "n_churn_yes": 545,
+          "n_total": 2422,
+          "pct_of_group_no_churn": 77.5,
+          "pct_of_group_churned": 22.5
+        }
+      ],
+      "relative_importance_pct": 13.4109
+    },
+    "TechSupport": {
+      "chi2": 828.1970684587394,
+      "pvalue": 1.4430840279998987e-180,
+      "cramers_v": 0.3429161982469257,
+      "n": 7043,
+      "by_category": [
+        {
+          "category": "No",
+          "n_churn_no": 2027,
+          "n_churn_yes": 1446,
+          "n_total": 3473,
+          "pct_of_group_no_churn": 58.36,
+          "pct_of_group_churned": 41.64
+        },
+        {
+          "category": "No internet service",
+          "n_churn_no": 1413,
+          "n_churn_yes": 113,
+          "n_total": 1526,
+          "pct_of_group_no_churn": 92.6,
+          "pct_of_group_churned": 7.4
+        },
+        {
+          "category": "Yes",
+          "n_churn_no": 1734,
+          "n_churn_yes": 310,
+          "n_total": 2044,
+          "pct_of_group_no_churn": 84.83,
+          "pct_of_group_churned": 15.17
+        }
+      ],
+      "relative_importance_pct": 16.3322
+    },
+    "StreamingTV": {
+      "chi2": 374.2039433109813,
+      "pvalue": 5.528994485739183e-82,
+      "cramers_v": 0.2305023384466809,
+      "n": 7043,
+      "by_category": [
+        {
+          "category": "No",
+          "n_churn_no": 1868,
+          "n_churn_yes": 942,
+          "n_total": 2810,
+          "pct_of_group_no_churn": 66.48,
+          "pct_of_group_churned": 33.52
+        },
+        {
+          "category": "No internet service",
+          "n_churn_no": 1413,
+          "n_churn_yes": 113,
+          "n_total": 1526,
+          "pct_of_group_no_churn": 92.6,
+          "pct_of_group_churned": 7.4
+        },
+        {
+          "category": "Yes",
+          "n_churn_no": 1893,
+          "n_churn_yes": 814,
+          "n_total": 2707,
+          "pct_of_group_no_churn": 69.93,
+          "pct_of_group_churned": 30.07
+        }
+      ],
+      "relative_importance_pct": 10.9783
+    },
+    "StreamingMovies": {
+      "chi2": 375.6614793452656,
+      "pvalue": 2.667756755723681e-82,
+      "cramers_v": 0.23095080906926801,
+      "n": 7043,
+      "by_category": [
+        {
+          "category": "No",
+          "n_churn_no": 1847,
+          "n_churn_yes": 938,
+          "n_total": 2785,
+          "pct_of_group_no_churn": 66.32,
+          "pct_of_group_churned": 33.68
+        },
+        {
+          "category": "No internet service",
+          "n_churn_no": 1413,
+          "n_churn_yes": 113,
+          "n_total": 1526,
+          "pct_of_group_no_churn": 92.6,
+          "pct_of_group_churned": 7.4
+        },
+        {
+          "category": "Yes",
+          "n_churn_no": 1914,
+          "n_churn_yes": 818,
+          "n_total": 2732,
+          "pct_of_group_no_churn": 70.06,
+          "pct_of_group_churned": 29.94
+        }
+      ],
+      "relative_importance_pct": 10.9996
+    },
+    "PhoneService": {
+      "chi2": 0.9150329892546948,
+      "pvalue": 0.3387825358066928,
+      "cramers_v": 0.011398285522718045,
+      "n": 7043,
+      "by_category": [
+        {
+          "category": "No",
+          "n_churn_no": 512,
+          "n_churn_yes": 170,
+          "n_total": 682,
+          "pct_of_group_no_churn": 75.07,
+          "pct_of_group_churned": 24.93
+        },
+        {
+          "category": "Yes",
+          "n_churn_no": 4662,
+          "n_churn_yes": 1699,
+          "n_total": 6361,
+          "pct_of_group_no_churn": 73.29,
+          "pct_of_group_churned": 26.71
+        }
+      ],
+      "relative_importance_pct": 0.5429
+    },
+    "MultipleLines": {
+      "chi2": 11.33044148319756,
+      "pvalue": 0.0034643829548773,
+      "cramers_v": 0.04010925283378871,
+      "n": 7043,
+      "by_category": [
+        {
+          "category": "No",
+          "n_churn_no": 2541,
+          "n_churn_yes": 849,
+          "n_total": 3390,
+          "pct_of_group_no_churn": 74.96,
+          "pct_of_group_churned": 25.04
+        },
+        {
+          "category": "No phone service",
+          "n_churn_no": 512,
+          "n_churn_yes": 170,
+          "n_total": 682,
+          "pct_of_group_no_churn": 75.07,
+          "pct_of_group_churned": 24.93
+        },
+        {
+          "category": "Yes",
+          "n_churn_no": 2121,
+          "n_churn_yes": 850,
+          "n_total": 2971,
+          "pct_of_group_no_churn": 71.39,
+          "pct_of_group_churned": 28.61
+        }
+      ],
+      "relative_importance_pct": 1.9103
+    }
+  },
+  "important_services": [
+    "DeviceProtection",
+    "InternetService",
+    "OnlineBackup",
+    "OnlineSecurity",
+    "StreamingMovies",
+    "StreamingTV",
+    "TechSupport"
+  ]
+}

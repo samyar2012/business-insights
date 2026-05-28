@@ -1,0 +1,132 @@
+{
+  "n_runs": 20,
+  "base_seed": 42,
+  "holdout_accuracy_mean": 0.7880181714934696,
+  "holdout_accuracy_std": 0.0076166250804489645,
+  "holdout_accuracy_min": 0.7751277683134583,
+  "holdout_accuracy_max": 0.8029528676888131,
+  "best_run_random_state": 60,
+  "best_holdout_accuracy": 0.8029528676888131,
+  "runs": [
+    {
+      "run": 1,
+      "random_state": 42,
+      "holdout_accuracy": 0.784781,
+      "threshold": 0.82
+    },
+    {
+      "run": 2,
+      "random_state": 43,
+      "holdout_accuracy": 0.796139,
+      "threshold": 0.66
+    },
+    {
+      "run": 3,
+      "random_state": 44,
+      "holdout_accuracy": 0.796139,
+      "threshold": 0.71
+    },
+    {
+      "run": 4,
+      "random_state": 45,
+      "holdout_accuracy": 0.78251,
+      "threshold": 0.87
+    },
+    {
+      "run": 5,
+      "random_state": 46,
+      "holdout_accuracy": 0.78251,
+      "threshold": 0.77
+    },
+    {
+      "run": 6,
+      "random_state": 47,
+      "holdout_accuracy": 0.779671,
+      "threshold": 0.86
+    },
+    {
+      "run": 7,
+      "random_state": 48,
+      "holdout_accuracy": 0.789324,
+      "threshold": 0.81
+    },
+    {
+      "run": 8,
+      "random_state": 49,
+      "holdout_accuracy": 0.794435,
+      "threshold": 0.75
+    },
+    {
+      "run": 9,
+      "random_state": 50,
+      "holdout_accuracy": 0.775128,
+      "threshold": 0.71
+    },
+    {
+      "run": 10,
+      "random_state": 51,
+      "holdout_accuracy": 0.780239,
+      "threshold": 0.83
+    },
+    {
+      "run": 11,
+      "random_state": 52,
+      "holdout_accuracy": 0.795003,
+      "threshold": 0.79
+    },
+    {
+      "run": 12,
+      "random_state": 53,
+      "holdout_accuracy": 0.795003,
+      "threshold": 0.72
+    },
+    {
+      "run": 13,
+      "random_state": 54,
+      "holdout_accuracy": 0.789324,
+      "threshold": 0.74
+    },
+    {
+      "run": 14,
+      "random_state": 55,
+      "holdout_accuracy": 0.793867,
+      "threshold": 0.79
+    },
+    {
+      "run": 15,
+      "random_state": 56,
+      "holdout_accuracy": 0.783646,
+      "threshold": 0.68
+    },
+    {
+      "run": 16,
+      "random_state": 57,
+      "holdout_accuracy": 0.776831,
+      "threshold": 0.65
+    },
+    {
+      "run": 17,
+      "random_state": 58,
+      "holdout_accuracy": 0.793299,
+      "threshold": 0.82
+    },
+    {
+      "run": 18,
+      "random_state": 59,
+      "holdout_accuracy": 0.78251,
+      "threshold": 0.79
+    },
+    {
+      "run": 19,
+      "random_state": 60,
+      "holdout_accuracy": 0.802953,
+      "threshold": 0.79
+    },
+    {
+      "run": 20,
+      "random_state": 61,
+      "holdout_accuracy": 0.787053,
+      "threshold": 0.65
+    }
+  ]
+}

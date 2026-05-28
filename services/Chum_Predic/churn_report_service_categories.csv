@@ -1,0 +1,27 @@
+feature_name,category,n_churn_no,n_churn_yes,n_total,pct_churn_no,pct_churn_yes
+InternetService,DSL,1962,459,2421,81.04,18.96
+InternetService,Fiber optic,1799,1297,3096,58.11,41.89
+InternetService,No,1413,113,1526,92.6,7.4
+OnlineSecurity,No,2037,1461,3498,58.23,41.77
+OnlineSecurity,No internet service,1413,113,1526,92.6,7.4
+OnlineSecurity,Yes,1724,295,2019,85.39,14.61
+OnlineBackup,No,1855,1233,3088,60.07,39.93
+OnlineBackup,No internet service,1413,113,1526,92.6,7.4
+OnlineBackup,Yes,1906,523,2429,78.47,21.53
+DeviceProtection,No,1884,1211,3095,60.87,39.13
+DeviceProtection,No internet service,1413,113,1526,92.6,7.4
+DeviceProtection,Yes,1877,545,2422,77.5,22.5
+TechSupport,No,2027,1446,3473,58.36,41.64
+TechSupport,No internet service,1413,113,1526,92.6,7.4
+TechSupport,Yes,1734,310,2044,84.83,15.17
+StreamingTV,No,1868,942,2810,66.48,33.52
+StreamingTV,No internet service,1413,113,1526,92.6,7.4
+StreamingTV,Yes,1893,814,2707,69.93,30.07
+StreamingMovies,No,1847,938,2785,66.32,33.68
+StreamingMovies,No internet service,1413,113,1526,92.6,7.4
+StreamingMovies,Yes,1914,818,2732,70.06,29.94
+PhoneService,No,512,170,682,75.07,24.93
+PhoneService,Yes,4662,1699,6361,73.29,26.71
+MultipleLines,No,2541,849,3390,74.96,25.04
+MultipleLines,No phone service,512,170,682,75.07,24.93
+MultipleLines,Yes,2121,850,2971,71.39,28.61

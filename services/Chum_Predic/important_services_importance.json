@@ -1,0 +1,87 @@
+{
+  "generated_at_utc": "2026-03-28T21:13:15Z",
+  "source_csv": "Churn.csv",
+  "n_rows_used": 7043,
+  "criteria": {
+    "p_max": 0.05,
+    "cramers_v_min": 0.05
+  },
+  "important_service_names": [
+    "DeviceProtection",
+    "InternetService",
+    "OnlineBackup",
+    "OnlineSecurity",
+    "StreamingMovies",
+    "StreamingTV",
+    "TechSupport"
+  ],
+  "important_services": [
+    {
+      "feature_name": "DeviceProtection",
+      "relative_importance_pct_of_all_9": 13.4109,
+      "relative_importance_pct_within_important_only": 13.7482,
+      "cramer_v": 0.28158,
+      "pvalue": 5.505219496457244e-122,
+      "chi2": 558.419369,
+      "contingency_n": 7043
+    },
+    {
+      "feature_name": "InternetService",
+      "relative_importance_pct_of_all_9": 15.3577,
+      "relative_importance_pct_within_important_only": 15.7439,
+      "cramer_v": 0.322455,
+      "pvalue": 9.571788222840544e-160,
+      "chi2": 732.30959,
+      "contingency_n": 7043
+    },
+    {
+      "feature_name": "OnlineBackup",
+      "relative_importance_pct_of_all_9": 13.9223,
+      "relative_importance_pct_within_important_only": 14.2724,
+      "cramer_v": 0.292316,
+      "pvalue": 2.0797592160864276e-131,
+      "chi2": 601.81279,
+      "contingency_n": 7043
+    },
+    {
+      "feature_name": "OnlineSecurity",
+      "relative_importance_pct_of_all_9": 16.5458,
+      "relative_importance_pct_within_important_only": 16.9619,
+      "cramer_v": 0.3474,
+      "pvalue": 2.6611496351765517e-185,
+      "chi2": 849.998968,
+      "contingency_n": 7043
+    },
+    {
+      "feature_name": "StreamingMovies",
+      "relative_importance_pct_of_all_9": 10.9996,
+      "relative_importance_pct_within_important_only": 11.2762,
+      "cramer_v": 0.230951,
+      "pvalue": 2.667756755723681e-82,
+      "chi2": 375.661479,
+      "contingency_n": 7043
+    },
+    {
+      "feature_name": "StreamingTV",
+      "relative_importance_pct_of_all_9": 10.9783,
+      "relative_importance_pct_within_important_only": 11.2543,
+      "cramer_v": 0.230502,
+      "pvalue": 5.528994485739183e-82,
+      "chi2": 374.203943,
+      "contingency_n": 7043
+    },
+    {
+      "feature_name": "TechSupport",
+      "relative_importance_pct_of_all_9": 16.3322,
+      "relative_importance_pct_within_important_only": 16.743,
+      "cramer_v": 0.342916,
+      "pvalue": 1.4430840279998987e-180,
+      "chi2": 828.197068,
+      "contingency_n": 7043
+    }
+  ],
+  "percentage_definitions": {
+    "relative_importance_pct_of_all_9": "100 * cramer_v / sum(cramer_v over all 9 service columns); shares strength vs every tracked service.",
+    "relative_importance_pct_within_important_only": "Same formula but denominator is sum of cramer_v only over IMPORTANT services; values sum to 100 across that list."
+  }
+}

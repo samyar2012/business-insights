@@ -1,0 +1,27 @@
+{
+  "selected_model": "logistic_regression",
+  "candidate_cv_auc": {
+    "hist_gradient_boosting": 0.5600883090078137,
+    "random_forest": 0.5850936606221435,
+    "logistic_regression": 0.622647766475011
+  },
+  "holdout_accuracy": 0.62,
+  "holdout_auc": 0.6600501253132832,
+  "holdout_brier_loss": 0.23050684244054104,
+  "holdout_precision": 0.6021505376344086,
+  "holdout_recall": 0.5894736842105263,
+  "holdout_f1": 0.5957446808510638,
+  "dataset": "business_metrics.csv",
+  "n_rows": 1000,
+  "n_train": 800,
+  "n_test": 200,
+  "features": [
+    "monthly_sessions",
+    "conversion_rate",
+    "repeat_customer_rate",
+    "avg_delivery_days",
+    "ad_spend_to_revenue_pct",
+    "refund_rate"
+  ],
+  "target_col": "will_lose_customers"
+}

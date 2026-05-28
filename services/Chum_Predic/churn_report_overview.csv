@@ -1,0 +1,2 @@
+generated_at_utc,source_csv,n_rows,n_churn_no,n_churn_yes,pct_churn_no,pct_churn_yes,p_value_threshold,cramer_v_threshold
+2026-03-28T21:13:15Z,Churn.csv,7043,5174,1869,73.463,26.537,0.05,0.05
