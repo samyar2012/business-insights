@@ -12,17 +12,34 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    try {
-      const rawUser = localStorage.getItem(STORAGE_KEY)
-      const rawToken = localStorage.getItem(TOKEN_KEY)
-      if (rawUser) setUser(JSON.parse(rawUser))
-      if (rawToken) setToken(rawToken)
-    } catch {
-      localStorage.removeItem(STORAGE_KEY)
-      localStorage.removeItem(TOKEN_KEY)
-    } finally {
-      setLoading(false)
+    const bootstrap = async () => {
+      try {
+        const rawUser = localStorage.getItem(STORAGE_KEY)
+        const rawToken = localStorage.getItem(TOKEN_KEY)
+        if (rawUser) setUser(JSON.parse(rawUser))
+        if (!rawToken) return
+
+        setToken(rawToken)
+        const res = await fetch(`${API_BASE}/auth/me`, {
+          headers: { Authorization: `Bearer ${rawToken}` },
+        })
+        if (!res.ok) throw new Error('Session expired')
+        const data = await res.json()
+        if (data?.user) {
+          setUser(data.user)
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.user))
+        }
+      } catch {
+        localStorage.removeItem(STORAGE_KEY)
+        localStorage.removeItem(TOKEN_KEY)
+        setUser(null)
+        setToken(null)
+      } finally {
+        setLoading(false)
+      }
     }
+
+    bootstrap()
   }, [])
 
   const login = useCallback(async (email, password) => {

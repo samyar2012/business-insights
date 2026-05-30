@@ -12,13 +12,15 @@ const Signup = () => {
 
   if (user) {
     return (
-      <div className="mx-auto max-w-md px-4 py-14 sm:py-20">
-        <div className="glass-panel hero-glass-panel rounded-2xl p-8 text-center">
-          <p className="text-sm text-white/75">You are already signed in.</p>
-          <p className="mt-1 font-medium text-white">{user.email}</p>
+      <div className="auth-scene">
+        <div className="auth-overlay" />
+        <div className="auth-centered-card auth-centered-card-sm text-center">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Session active</p>
+          <p className="mt-3 text-sm text-white/75">You are already signed in as</p>
+          <p className="mt-1 text-base font-semibold text-white">{user.email}</p>
           <Link
             to="/product"
-            className="btn-lift mt-6 inline-flex rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-orange-950"
+            className="mt-6 inline-flex rounded-sm border border-white/35 bg-white/14 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/22"
           >
             Go to product
           </Link>
@@ -44,18 +46,19 @@ const Signup = () => {
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-12 sm:py-20">
-      <div className="mb-8 text-center">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/65">Free trial</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-          Start your account
-        </h1>
-        <p className="mt-2 text-sm text-white/70">No credit card required. Add payment after trial only.</p>
-      </div>
-      <form
-        onSubmit={handleSubmit}
-        className="contact-panel-glow glass-panel-strong space-y-5 rounded-2xl bg-linear-to-br from-white/14 via-white/8 to-white/4 p-8"
-      >
+    <div className="auth-scene">
+      <div className="auth-overlay" />
+      <form onSubmit={handleSubmit} className="auth-centered-card auth-centered-card-sm space-y-5">
+        <Link
+          to="/"
+          className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-sm border border-slate-700 bg-slate-900/85 text-xs text-white transition hover:bg-slate-800"
+          aria-label="Close and return home"
+        >
+          X
+        </Link>
+        <div className="text-center">
+          <h1 className="text-3xl font-semibold tracking-tight text-white">Register</h1>
+        </div>
         <div>
           <label htmlFor="signup-email" className="block text-sm font-medium text-white/85">
             Email
@@ -65,7 +68,7 @@ const Signup = () => {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="mt-1.5 w-full rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm text-white placeholder:text-white/40 outline-none transition focus:border-amber-200/50 focus:bg-white/15"
+            className="auth-card-input mt-1.5 w-full rounded-sm px-3 py-2.5 text-sm text-white placeholder:text-white/45"
             placeholder="you@brand.com"
           />
         </div>
@@ -78,26 +81,26 @@ const Signup = () => {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1.5 w-full rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm text-white placeholder:text-white/40 outline-none transition focus:border-amber-200/50 focus:bg-white/15"
+            className="auth-card-input mt-1.5 w-full rounded-sm px-3 py-2.5 text-sm text-white placeholder:text-white/45"
             placeholder="At least 8 characters"
           />
         </div>
         {error ? (
-          <p className="text-sm text-amber-200" role="alert">
+          <p className="rounded-sm border border-red-300/40 bg-red-500/12 px-3 py-2 text-sm text-red-100" role="alert">
             {error}
           </p>
         ) : null}
         <button
           type="submit"
           disabled={submitting}
-          className="btn-lift w-full rounded-full bg-white py-3 text-sm font-semibold text-orange-950 shadow-lg disabled:opacity-60"
+          className="w-full rounded-sm border border-white/35 bg-white/14 py-2.5 text-sm font-semibold text-white transition hover:bg-white/22 disabled:opacity-60"
         >
-          {submitting ? 'Creating account…' : 'Create free account'}
+          {submitting ? 'Creating account...' : 'Start free trial'}
         </button>
-        <p className="text-center text-sm text-white/65">
+        <p className="text-center text-sm text-white/75">
           Already have an account?{' '}
-          <Link to="/login" className="font-medium text-amber-100 underline-offset-2 hover:text-white hover:underline">
-            Log in
+          <Link to="/login" className="font-semibold text-white hover:underline">
+            Login
           </Link>
         </p>
       </form>

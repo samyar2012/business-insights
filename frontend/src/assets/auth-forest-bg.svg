@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Blue forest background">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a4674" />
+      <stop offset="45%" stop-color="#2f6ea9" />
+      <stop offset="100%" stop-color="#15395d" />
+    </linearGradient>
+    <radialGradient id="moonGlow" cx="50%" cy="28%" r="45%">
+      <stop offset="0%" stop-color="#d7ecff" stop-opacity="0.78" />
+      <stop offset="45%" stop-color="#bcdcff" stop-opacity="0.34" />
+      <stop offset="100%" stop-color="#87b8e4" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="fog" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d5e9ff" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#d5e9ff" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#sky)" />
+  <ellipse cx="800" cy="250" rx="520" ry="260" fill="url(#moonGlow)" />
+
+  <g fill="#295d8f" opacity="0.45">
+    <rect x="90" y="120" width="38" height="680" />
+    <rect x="220" y="80" width="46" height="730" />
+    <rect x="360" y="100" width="42" height="720" />
+    <rect x="520" y="70" width="50" height="760" />
+    <rect x="690" y="90" width="40" height="730" />
+    <rect x="860" y="85" width="48" height="730" />
+    <rect x="1030" y="110" width="36" height="700" />
+    <rect x="1170" y="85" width="44" height="730" />
+    <rect x="1320" y="95" width="40" height="710" />
+    <rect x="1450" y="120" width="34" height="680" />
+  </g>
+
+  <g fill="#214c77" opacity="0.62">
+    <rect x="20" y="170" width="62" height="760" />
+    <rect x="180" y="160" width="72" height="760" />
+    <rect x="420" y="145" width="66" height="760" />
+    <rect x="640" y="155" width="70" height="760" />
+    <rect x="920" y="165" width="64" height="760" />
+    <rect x="1150" y="145" width="68" height="760" />
+    <rect x="1400" y="175" width="62" height="760" />
+  </g>
+
+  <g fill="#16375a" opacity="0.95">
+    <rect x="-10" y="190" width="86" height="780" />
+    <rect x="250" y="165" width="92" height="780" />
+    <rect x="560" y="170" width="86" height="780" />
+    <rect x="860" y="180" width="90" height="780" />
+    <rect x="1190" y="160" width="95" height="780" />
+    <rect x="1490" y="195" width="84" height="780" />
+  </g>
+
+  <g fill="#102d4b" opacity="0.88">
+    <path d="M0 720 C180 660 320 760 510 705 C690 655 840 770 1020 715 C1200 660 1380 760 1600 705 L1600 900 L0 900 Z" />
+  </g>
+  <rect x="0" y="610" width="1600" height="220" fill="url(#fog)" />
+
+  <g fill="#0b243d">
+    <ellipse cx="365" cy="770" rx="70" ry="38" />
+    <rect x="330" y="630" width="24" height="120" />
+    <rect x="386" y="640" width="20" height="110" />
+    <rect x="336" y="750" width="14" height="90" />
+    <rect x="358" y="750" width="14" height="90" />
+    <rect x="387" y="750" width="14" height="90" />
+    <rect x="407" y="750" width="14" height="90" />
+    <ellipse cx="420" cy="640" rx="28" ry="22" />
+    <path d="M425 615 L456 585 L452 602 L474 581 L466 612 Z" />
+  </g>
+</svg>
