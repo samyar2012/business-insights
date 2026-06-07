@@ -1,15 +1,30 @@
 const { Pool } = require('pg')
 
-const connectionString = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL
+function buildPoolConfig() {
+  const host = process.env.DB_HOST
+  const password = process.env.DB_PASSWORD
+  if (host && password) {
+    return {
+      host,
+      port: Number(process.env.DB_PORT || 5432),
+      user: process.env.DB_USER || 'postgres',
+      password,
+      database: process.env.DB_NAME || 'postgres',
+    }
+  }
 
-if (!connectionString) {
+  const connectionString = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL
+  if (connectionString) {
+    return { connectionString }
+  }
+
   throw new Error(
-    'Missing DB connection string. Set SUPABASE_DB_URL (or DATABASE_URL) in backend/.env',
+    'Missing database config. Set DB_HOST + DB_PASSWORD (recommended) or SUPABASE_DB_URL in backend/.env',
   )
 }
 
 const pool = new Pool({
-  connectionString,
+  ...buildPoolConfig(),
   ssl: { rejectUnauthorized: false },
   max: 20,
   idleTimeoutMillis: 30000,

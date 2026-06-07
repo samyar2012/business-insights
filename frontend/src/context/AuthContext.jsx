@@ -52,12 +52,25 @@ export function AuthProvider({ children }) {
     if (!res.ok) {
       throw new Error(data.error || 'Login failed')
     }
-    const nextUser = data.user || { email: email.trim().toLowerCase() }
     const nextToken = data.token || null
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser))
     if (nextToken) localStorage.setItem(TOKEN_KEY, nextToken)
-    setUser(nextUser)
     setToken(nextToken)
+
+    if (nextToken) {
+      const meRes = await fetch(`${API_BASE}/auth/me`, {
+        headers: { Authorization: `Bearer ${nextToken}` },
+      })
+      if (meRes.ok) {
+        const meData = await meRes.json()
+        setUser(meData.user)
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(meData.user))
+        return meData.user
+      }
+    }
+
+    const nextUser = data.user || { email: email.trim().toLowerCase() }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser))
+    setUser(nextUser)
     return nextUser
   }, [])
 
@@ -71,12 +84,25 @@ export function AuthProvider({ children }) {
     if (!res.ok) {
       throw new Error(data.error || 'Signup failed')
     }
-    const nextUser = data.user || { email: email.trim().toLowerCase() }
     const nextToken = data.token || null
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser))
     if (nextToken) localStorage.setItem(TOKEN_KEY, nextToken)
-    setUser(nextUser)
     setToken(nextToken)
+
+    if (nextToken) {
+      const meRes = await fetch(`${API_BASE}/auth/me`, {
+        headers: { Authorization: `Bearer ${nextToken}` },
+      })
+      if (meRes.ok) {
+        const meData = await meRes.json()
+        setUser(meData.user)
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(meData.user))
+        return meData.user
+      }
+    }
+
+    const nextUser = data.user || { email: email.trim().toLowerCase() }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser))
+    setUser(nextUser)
     return nextUser
   }, [])
 
@@ -87,9 +113,24 @@ export function AuthProvider({ children }) {
     setToken(null)
   }, [])
 
+  const refreshUser = useCallback(async () => {
+    const rawToken = localStorage.getItem(TOKEN_KEY)
+    if (!rawToken) return null
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      headers: { Authorization: `Bearer ${rawToken}` },
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || 'Failed to refresh session')
+    if (data?.user) {
+      setUser(data.user)
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data.user))
+    }
+    return data.user
+  }, [])
+
   const value = useMemo(
-    () => ({ user, token, loading, login, signup, logout }),
-    [user, token, loading, login, signup, logout],
+    () => ({ user, token, loading, login, signup, logout, refreshUser }),
+    [user, token, loading, login, signup, logout, refreshUser],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

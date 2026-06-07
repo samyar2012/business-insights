@@ -91,6 +91,12 @@ router.post('/signup', authLimiter, signupLimiter, async (req, res) => {
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Email already registered' })
     }
+    if (err.code === '42P01') {
+      return res.status(500).json({
+        error: 'Database tables missing. Run backend/sql/init.sql in Supabase SQL Editor.',
+      })
+    }
+    console.error('signup error:', err.message)
     return res.status(500).json({ error: 'Could not create account' })
   }
 })
@@ -135,7 +141,8 @@ router.post('/login', authLimiter, async (req, res) => {
       },
       token,
     })
-  } catch {
+  } catch (err) {
+    console.error('login error:', err.message)
     return res.status(500).json({ error: 'Could not login' })
   }
 })
@@ -144,7 +151,9 @@ router.get('/me', requireAuth, async (req, res) => {
   try {
     const result = await query(
       `SELECT u.id, u.email, u.created_at,
-              p.display_name, p.avatar_url, p.phone, p.company, p.timezone
+              p.display_name, p.avatar_url, p.phone, p.company, p.timezone,
+              COALESCE(p.onboarding_completed, false) AS onboarding_completed,
+              COALESCE(p.is_premium, false) AS is_premium
        FROM users u
        LEFT JOIN profiles p ON p.user_id = u.id
        WHERE u.id = $1`,
@@ -153,10 +162,19 @@ router.get('/me', requireAuth, async (req, res) => {
     const user = result.rows[0]
     if (!user) return res.status(404).json({ error: 'User not found' })
 
+    const businesses = await query(
+      `SELECT id, owner_name, business_name, business_type, product_sold, target_customers,
+              store_url, monthly_revenue, customer_count, monthly_orders, created_at, updated_at
+       FROM businesses WHERE user_id = $1 ORDER BY created_at ASC`,
+      [req.auth.sub],
+    )
+
     return res.json({
       user: {
         id: user.id,
         email: user.email,
+        onboarding_completed: user.onboarding_completed,
+        is_premium: user.is_premium,
         profile: {
           user_id: user.id,
           display_name: user.display_name,
@@ -165,9 +183,11 @@ router.get('/me', requireAuth, async (req, res) => {
           company: user.company,
           timezone: user.timezone,
         },
+        businesses: businesses.rows,
       },
     })
-  } catch {
+  } catch (err) {
+    console.error('me error:', err.message)
     return res.status(500).json({ error: 'Failed to fetch user' })
   }
 })

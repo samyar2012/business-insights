@@ -4,6 +4,7 @@ const cors = require('cors')
 const helmet = require('helmet')
 const rateLimit = require('express-rate-limit')
 const { authRouter } = require('./routes/auth')
+const { businessesRouter } = require('./routes/businesses')
 
 const app = express()
 
@@ -30,11 +31,18 @@ app.use(
   }),
 )
 
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true })
+app.get('/api/health', async (_req, res) => {
+  try {
+    const { pool } = require('./db')
+    await pool.query('SELECT 1')
+    res.json({ ok: true, db: 'connected' })
+  } catch (err) {
+    res.status(503).json({ ok: false, db: 'error', message: err.message })
+  }
 })
 
 app.use('/api/auth', authRouter)
+app.use('/api/businesses', businessesRouter)
 
 app.use((err, _req, res, _next) => {
   console.error(err)
