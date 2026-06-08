@@ -35,7 +35,10 @@ const toolItems = [
   })),
 ]
 
-const topLinks = [{ label: 'Dashboard', to: '/app', icon: '◫' }]
+const topLinks = [
+  { label: 'Dashboard', to: '/app', icon: '◫' },
+  { label: 'Scans', to: '/app/scans', icon: '◎' },
+]
 
 const bottomLinks = [
   { label: 'Businesses', to: '/app/businesses', icon: '◈' },
@@ -44,6 +47,7 @@ const bottomLinks = [
 
 const pathMatches = (pathname, to) => {
   if (to === '/app/tools') return pathname === '/app/tools'
+  if (to === '/app/scans') return pathname === '/app/scans' || pathname.startsWith('/app/scans/')
   if (to === '/app') return pathname === '/app'
   return pathname === to || pathname.startsWith(`${to}/`)
 }

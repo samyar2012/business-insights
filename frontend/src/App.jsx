@@ -25,6 +25,8 @@ import {
 import Businesses from './pages/Businesses'
 import AppSettings from './pages/AppSettings'
 import PlansPage from './pages/PlansPage'
+import ScanHistory from './pages/ScanHistory'
+import ScanReport from './pages/ScanReport'
 import './App.css'
 
 const toolBySlug = Object.fromEntries(TOOL_CATALOG.map((t) => [t.slug, t]))
@@ -49,6 +51,8 @@ const App = () => {
           <Route element={<OnboardingGuard />}>
             <Route element={<AppShellLayout />}>
               <Route path="/app" element={<Dashboard />} />
+              <Route path="/app/scans" element={<ScanHistory />} />
+              <Route path="/app/scans/:id" element={<ScanReport />} />
               <Route path="/app/workspace/github" element={<WorkspaceGitHub />} />
               <Route path="/app/workspace/url" element={<WorkspaceUrl />} />
               <Route path="/app/workspace/create" element={<WorkspaceCreate />} />

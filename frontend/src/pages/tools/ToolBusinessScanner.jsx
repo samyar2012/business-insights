@@ -2,21 +2,19 @@ import { Link } from 'react-router-dom'
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import Alert from '../../components/app/Alert'
+import ScoreBar, { formatScanDate } from '../../components/app/ScanUi'
 
-const ScoreBar = ({ label, value }) => (
-  <div>
-    <div className="flex items-center justify-between text-sm">
-      <span className="text-[var(--app-text-secondary)]">{label}</span>
-      <span className="font-semibold text-[var(--app-text)]">{value}</span>
-    </div>
-    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[var(--app-input-bg)]">
-      <div
-        className="h-full rounded-full bg-[var(--app-accent-strong)] transition-all duration-500"
-        style={{ width: `${Math.min(100, value)}%` }}
-      />
-    </div>
-  </div>
-)
+const CHECKLIST_FIELDS = [
+  { key: 'has_reviews', label: 'We show customer reviews or social proof' },
+  { key: 'has_shipping_policy', label: 'Shipping policy is published' },
+  { key: 'has_return_policy', label: 'Return policy is published' },
+  { key: 'has_clear_product_photos', label: 'Product photos are clear and professional' },
+  { key: 'posts_weekly', label: 'We post on social at least weekly' },
+  { key: 'has_competitor', label: 'We track at least one competitor' },
+  { key: 'offer_is_clear', label: 'Our main offer is clear above the fold' },
+]
+
+const defaultChecklist = Object.fromEntries(CHECKLIST_FIELDS.map((f) => [f.key, false]))
 
 const ToolBusinessScanner = () => {
   const [businesses, setBusinesses] = useState([])
@@ -26,6 +24,7 @@ const ToolBusinessScanner = () => {
     social_url: '',
     competitor_url: '',
     notes: '',
+    ...defaultChecklist,
   })
   const [scan, setScan] = useState(null)
   const [error, setError] = useState('')
@@ -158,6 +157,30 @@ const ToolBusinessScanner = () => {
           />
         </label>
 
+        <fieldset className="rounded-lg border border-[var(--app-border)] p-4">
+          <legend className="px-1 text-sm font-semibold text-[var(--app-text)]">
+            Store checklist (optional)
+          </legend>
+          <p className="mb-3 text-xs text-[var(--app-text-muted)]">
+            These answers adjust category scores in your report.
+          </p>
+          <ul className="space-y-2">
+            {CHECKLIST_FIELDS.map(({ key, label }) => (
+              <li key={key}>
+                <label className="flex cursor-pointer items-start gap-2.5 text-sm text-[var(--app-text-secondary)]">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={Boolean(form[key])}
+                    onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.checked }))}
+                  />
+                  <span>{label}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </fieldset>
+
         <label className="app-label block">
           Notes
           <textarea
@@ -188,9 +211,7 @@ const ToolBusinessScanner = () => {
               <p className="text-sm text-[var(--app-text-secondary)]">Overall score</p>
               <p className="app-stat-value text-4xl">{scan.overall_score}</p>
             </div>
-            <p className="text-xs text-[var(--app-text-muted)]">
-              Scanned {new Date(scan.created_at).toLocaleString()}
-            </p>
+            <p className="text-xs text-[var(--app-text-muted)]">Scanned {formatScanDate(scan.created_at)}</p>
           </div>
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -234,6 +255,25 @@ const ToolBusinessScanner = () => {
                 ))}
               </ul>
             </div>
+          </div>
+
+          <div className="mt-8 flex flex-wrap gap-3 border-t border-[var(--app-border)] pt-6">
+            <Link to={`/app/scans/${scan.id}`} className="app-btn app-btn--primary">
+              View full report
+            </Link>
+            <Link to="/app/scans" className="app-btn app-btn--secondary">
+              Scan history
+            </Link>
+            <button
+              type="button"
+              className="app-btn app-btn--ghost"
+              onClick={() => {
+                setScan(null)
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+            >
+              Run another scan
+            </button>
           </div>
         </section>
       ) : null}

@@ -1,6 +1,9 @@
 import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { apiFetch } from '../lib/api'
 import { TOOL_CATALOG, TOOL_ICONS } from './tools/toolConfig'
+import { formatScanDate, scoreTone } from '../components/app/ScanUi'
 
 const greetingForHour = (hour) => {
   if (hour < 12) return 'Good morning'
@@ -10,10 +13,29 @@ const greetingForHour = (hour) => {
 
 const Dashboard = () => {
   const { user } = useAuth()
+  const [latestScan, setLatestScan] = useState(null)
+  const [scansLoading, setScansLoading] = useState(true)
+
   const name = user?.profile?.display_name || user?.email?.split('@')[0] || 'there'
   const business = user?.businesses?.[0]
   const hour = new Date().getHours()
   const greeting = greetingForHour(hour)
+
+  const loadLatestScan = useCallback(async () => {
+    setScansLoading(true)
+    try {
+      const data = await apiFetch('/scans')
+      setLatestScan((data.scans || [])[0] || null)
+    } catch {
+      setLatestScan(null)
+    } finally {
+      setScansLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadLatestScan()
+  }, [loadLatestScan])
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -31,8 +53,8 @@ const Dashboard = () => {
           .
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
-          <Link to="/app/workspace/create" className="app-btn app-btn--primary">
-            Create project
+          <Link to="/app/tools/business-scanner" className="app-btn app-btn--primary">
+            Run Business Scanner
           </Link>
           <Link to="/app/tools" className="app-btn app-btn--secondary">
             Explore tools
@@ -41,6 +63,55 @@ const Dashboard = () => {
             View plans
           </Link>
         </div>
+      </section>
+
+      <section className="app-stagger mt-8">
+        <article className="app-card p-5">
+          <p className="app-eyebrow">Latest scan</p>
+          {scansLoading ? (
+            <p className="mt-3 text-sm text-[var(--app-text-muted)]">Loading scan data...</p>
+          ) : latestScan ? (
+            <>
+              <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <p className={`text-4xl font-semibold ${scoreTone(latestScan.overall_score)}`}>
+                    {latestScan.overall_score}
+                  </p>
+                  <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
+                    {latestScan.business_name || 'Business scan'} · {formatScanDate(latestScan.created_at)}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs text-[var(--app-text-muted)]">
+                  <span>Store {latestScan.store_score}</span>
+                  <span>Trust {latestScan.trust_score}</span>
+                  <span>Content {latestScan.content_score}</span>
+                  <span>Competitor {latestScan.competitor_score}</span>
+                </div>
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link to={`/app/scans/${latestScan.id}`} className="app-btn app-btn--primary">
+                  View report
+                </Link>
+                <Link to="/app/tools/business-scanner" className="app-btn app-btn--secondary">
+                  Run new scan
+                </Link>
+                <Link to="/app/scans" className="app-link self-center text-sm font-medium">
+                  All scans -&gt;
+                </Link>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="mt-3 text-sm text-[var(--app-text-secondary)]">No scans yet</p>
+              <p className="mt-1 text-sm text-[var(--app-text-muted)]">
+                Run the Business Scanner to get scores, risks, and next actions.
+              </p>
+              <Link to="/app/tools/business-scanner" className="app-btn app-btn--primary mt-4 inline-flex">
+                Run Business Scanner
+              </Link>
+            </>
+          )}
+        </article>
       </section>
 
       <div className="app-stagger mt-8 grid gap-4 sm:grid-cols-3">
