@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useSidebar } from '../../context/SidebarContext'
 import PlanAccountSection from './PlanAccountSection'
+import { TOOL_CATALOG, TOOL_ICONS } from '../../pages/tools/toolConfig'
 
 const Chevron = ({ open }) => (
   <svg
@@ -27,9 +28,11 @@ const workspaceItems = [
 
 const toolItems = [
   { label: 'Overview', to: '/app/tools', icon: '◫' },
-  { label: 'Churn prediction', to: '/app/tools/churn-prediction', icon: '◎' },
-  { label: 'File analyze', to: '/app/tools/file-analyze', icon: '▤' },
-  { label: 'AI coach', to: '/app/tools/ai-coach', icon: '✦' },
+  ...TOOL_CATALOG.map((tool) => ({
+    label: tool.title,
+    to: tool.to,
+    icon: TOOL_ICONS[tool.icon] || '*',
+  })),
 ]
 
 const topLinks = [{ label: 'Dashboard', to: '/app', icon: '◫' }]

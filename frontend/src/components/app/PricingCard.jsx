@@ -70,7 +70,7 @@ const PricingCard = ({ compact = false, linkToPlans = false, full = false }) => 
 
       {linkToPlans && !full ? (
         <Link to="/app/plans" className="app-link mt-2 block text-center text-xs font-medium">
-          View all plans →
+          View all plans ->
         </Link>
       ) : null}
     </div>

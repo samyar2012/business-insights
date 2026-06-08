@@ -5,7 +5,7 @@ const AppSettings = () => {
   const { user } = useAuth()
 
   const rows = [
-    { label: 'Name', value: user?.profile?.display_name || '—' },
+    { label: 'Name', value: user?.profile?.display_name || '-' },
     { label: 'Email', value: user?.email },
     {
       label: 'Plan',

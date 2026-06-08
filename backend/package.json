@@ -9,6 +9,7 @@
     "check-db": "node scripts/check-db.js",
     "init-db": "node scripts/init-db.js",
     "migrate-v2": "node scripts/migrate-v2.js",
+    "migrate-v3": "node scripts/migrate-v3.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

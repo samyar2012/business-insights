@@ -1,4 +1,4 @@
-/** Shopify, dropship, and social-commerce growth — verticals & catalog */
+/** Shopify, dropship, and social-commerce growth - verticals & catalog */
 
 export const businessVerticals = [
   {
@@ -6,7 +6,7 @@ export const businessVerticals = [
     badge: 'Shopify',
     title: 'Shopify brands scaling traffic and repeat revenue',
     blurb:
-      'Connect your store, ads, and email in one place. We help you test creatives, recover carts, and double down on what converts—without another agency retainer.',
+      'Connect your store, ads, and email in one place. We help you test creatives, recover carts, and double down on what converts-without another agency retainer.',
     services: [
       'Store + catalog sync & health checks',
       'Checkout & post-purchase playbooks',
@@ -19,7 +19,7 @@ export const businessVerticals = [
     badge: 'Dropshipping',
     title: 'Dropshippers who need lean, fast acquisition',
     blurb:
-      'Tight margins mean you cannot afford wasted spend. We rotate winning hooks and suppliers signals so each week surfaces a fresh angle—controlled randomness, not chaos.',
+      'Tight margins mean you cannot afford wasted spend. We rotate winning hooks and suppliers signals so each week surfaces a fresh angle-controlled randomness, not chaos.',
     services: [
       'Supplier and SKU risk flags',
       'Lightweight CRO experiments',
@@ -32,7 +32,7 @@ export const businessVerticals = [
     badge: 'Social-first',
     title: 'Creators & social storefronts',
     blurb:
-      'When your funnel lives in feeds and DMs, we unify UTM, storefront, and CRM touches so you see which content actually drives sales—not just likes.',
+      'When your funnel lives in feeds and DMs, we unify UTM, storefront, and CRM touches so you see which content actually drives sales-not just likes.',
     services: [
       'Link-in-bio and landing flows',
       'Influencer and affiliate tracking',
@@ -65,7 +65,7 @@ export const aiProducts = [
   },
   {
     title: 'Forecast Lite',
-    desc: 'Projects next-30-day revenue bands from recent traffic and AOV—built for operators, not data teams.',
+    desc: 'Projects next-30-day revenue bands from recent traffic and AOV-built for operators, not data teams.',
     tag: 'Analytics',
   },
   {
@@ -78,7 +78,7 @@ export const aiProducts = [
 export const primaryServices = [
   {
     title: 'Growth workspace',
-    desc: 'One dashboard for ads, store, and social signals—tailored to Shopify, dropship, or creator stacks.',
+    desc: 'One dashboard for ads, store, and social signals-tailored to Shopify, dropship, or creator stacks.',
   },
   {
     title: 'Playbooks by vertical',
@@ -86,15 +86,15 @@ export const primaryServices = [
   },
   {
     title: 'AI add-ons',
-    desc: 'Mix and match assistants for copy, creative, offers, and support—we ship updates you can sell through.',
+    desc: 'Mix and match assistants for copy, creative, offers, and support-we ship updates you can sell through.',
   },
   {
     title: 'Integrations',
-    desc: 'Shopify, Meta, TikTok, Google, Klaviyo, and webhooks—bring your stack, we map the events.',
+    desc: 'Shopify, Meta, TikTok, Google, Klaviyo, and webhooks-bring your stack, we map the events.',
   },
   {
     title: 'Operator coaching',
-    desc: 'Weekly reviews on what to scale, pause, or spin next—aligned to your trial and paid plan.',
+    desc: 'Weekly reviews on what to scale, pause, or spin next-aligned to your trial and paid plan.',
   },
   {
     title: 'White-label ready',
@@ -105,7 +105,7 @@ export const primaryServices = [
 export const serviceTracks = [
   {
     id: 'trial-onboarding',
-    tag: 'Phase 1 — Trial',
+    tag: 'Phase 1 - Trial',
     title: 'Start free: no credit card',
     items: [
       '14-day full workspace access',
@@ -116,7 +116,7 @@ export const serviceTracks = [
   },
   {
     id: 'trial-momentum',
-    tag: 'Phase 2 — During trial',
+    tag: 'Phase 2 - During trial',
     title: 'We help you pull levers',
     items: [
       'Daily/weekly experiment queue with clear hypotheses',
@@ -127,10 +127,10 @@ export const serviceTracks = [
   },
   {
     id: 'trial-convert',
-    tag: 'Phase 3 — After trial',
+    tag: 'Phase 3 - After trial',
     title: 'Pay only when you are ready',
     items: [
-      'Trial ends → choose Starter, Growth, or Scale',
+      'Trial ends -> choose Starter, Growth, or Scale',
       'No surprise charges: card collected only at upgrade',
       'Pause or downgrade anytime; data export included',
       'Optional done-for-you builds billed separately',
@@ -147,11 +147,11 @@ export const trialFlow = [
   {
     step: 2,
     title: 'Run smart acquisition',
-    body: 'Our system rotates high-performing hooks and audiences—like a loot drop for your funnel, backed by data.',
+    body: 'Our system rotates high-performing hooks and audiences-like a loot drop for your funnel, backed by data.',
   },
   {
     step: 3,
     title: 'Upgrade after trial',
-    body: 'When your trial ends, choose a paid plan. We only ask for payment in step two of your journey—not upfront.',
+    body: 'When your trial ends, choose a paid plan. We only ask for payment in step two of your journey-not upfront.',
   },
 ]

@@ -157,7 +157,7 @@ const Workspace = () => {
                 </div>
                 <div>
                   <dt className="text-white/60">Credits</dt>
-                  <dd className="font-medium text-white">{me.creditsBalance ?? '—'}</dd>
+                  <dd className="font-medium text-white">{me.creditsBalance ?? '-'}</dd>
                 </div>
                 <div>
                   <dt className="text-white/60">Premium</dt>
@@ -165,11 +165,11 @@ const Workspace = () => {
                 </div>
                 <div>
                   <dt className="text-white/60">Referral</dt>
-                  <dd className="font-medium text-white">{me.referralCode || '—'}</dd>
+                  <dd className="font-medium text-white">{me.referralCode || '-'}</dd>
                 </div>
               </dl>
             ) : (
-              <p className="mt-2 text-sm text-white/60">Loading profile…</p>
+              <p className="mt-2 text-sm text-white/60">Loading profile...</p>
             )}
           </div>
 
@@ -242,7 +242,7 @@ const Workspace = () => {
                 onChange={(e) => setChatMessage(e.target.value)}
                 rows={4}
                 className="mt-3 w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40"
-                placeholder="Ask how to structure a churn analysis workflow…"
+                placeholder="Ask how to structure a churn analysis workflow..."
               />
               {chatError ? <p className="mt-2 text-sm text-amber-200">{chatError}</p> : null}
               <button

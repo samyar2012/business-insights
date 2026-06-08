@@ -5,6 +5,7 @@ const helmet = require('helmet')
 const rateLimit = require('express-rate-limit')
 const { authRouter } = require('./routes/auth')
 const { businessesRouter } = require('./routes/businesses')
+const { scansRouter } = require('./routes/scans')
 
 const app = express()
 
@@ -43,6 +44,7 @@ app.get('/api/health', async (_req, res) => {
 
 app.use('/api/auth', authRouter)
 app.use('/api/businesses', businessesRouter)
+app.use('/api/scans', scansRouter)
 
 app.use((err, _req, res, _next) => {
   console.error(err)

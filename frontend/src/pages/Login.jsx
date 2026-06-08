@@ -104,7 +104,7 @@ const Login = () => {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="auth-card-input mt-1.5 w-full rounded-sm px-3 py-2.5 text-sm text-white placeholder:text-white/45"
-            placeholder="••••••••"
+            placeholder="--------"
           />
         </div>
 

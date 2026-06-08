@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { TOOL_CATALOG } from './tools/toolConfig'
+import { TOOL_CATALOG, TOOL_ICONS } from './tools/toolConfig'
 
 const greetingForHour = (hour) => {
   if (hour < 12) return 'Good morning'
@@ -23,8 +23,8 @@ const Dashboard = () => {
           Welcome back, {name}
         </h1>
         <p className="mt-3 max-w-xl text-base leading-relaxed text-[var(--app-text-secondary)]">
-          Your command center is ready. Connect a workspace, explore AI tools, and turn customer
-          signals into retention wins — starting with{' '}
+          Your command center is ready. Connect a workspace, run a Business Scanner, and turn store
+          signals into growth wins - starting with{' '}
           <span className="font-medium text-[var(--app-text)]">
             {business?.business_name || 'your business'}
           </span>
@@ -46,18 +46,18 @@ const Dashboard = () => {
       <div className="app-stagger mt-8 grid gap-4 sm:grid-cols-3">
         <article className="app-card app-card--interactive p-5">
           <p className="app-eyebrow">Business</p>
-          <p className="app-stat-value mt-3">{business?.business_name || '—'}</p>
-          <p className="mt-1 text-sm text-[var(--app-text-secondary)]">{business?.business_type || '—'}</p>
+          <p className="app-stat-value mt-3">{business?.business_name || '-'}</p>
+          <p className="mt-1 text-sm text-[var(--app-text-secondary)]">{business?.business_type || '-'}</p>
         </article>
         <article className="app-card app-card--interactive p-5">
           <p className="app-eyebrow">Customers</p>
-          <p className="app-stat-value mt-3">{business?.customer_count ?? '—'}</p>
+          <p className="app-stat-value mt-3">{business?.customer_count ?? '-'}</p>
           <p className="mt-1 text-sm text-[var(--app-text-muted)]">Total tracked</p>
         </article>
         <article className="app-card app-card--interactive p-5">
           <p className="app-eyebrow">Monthly revenue</p>
           <p className="app-stat-value mt-3">
-            {business?.monthly_revenue != null ? `$${business.monthly_revenue.toLocaleString()}` : '—'}
+            {business?.monthly_revenue != null ? `$${business.monthly_revenue.toLocaleString()}` : '-'}
           </p>
           <p className="mt-1 text-sm text-[var(--app-text-muted)]">Last reported</p>
         </article>
@@ -72,7 +72,7 @@ const Dashboard = () => {
             </h2>
           </div>
           <Link to="/app/workspace/github" className="app-link text-sm font-medium">
-            Set up workspace →
+            Set up workspace -&gt;
           </Link>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -99,7 +99,7 @@ const Dashboard = () => {
         <div className="mt-5 grid gap-4 sm:grid-cols-3">
           {TOOL_CATALOG.map((tool) => (
             <Link key={tool.slug} to={tool.to} className="app-card app-card--interactive block p-5">
-              <span className="text-lg text-[var(--app-accent-strong)]">{tool.icon}</span>
+              <span className="text-lg text-[var(--app-accent-strong)]">{TOOL_ICONS[tool.icon] || '*'}</span>
               <p className="mt-3 font-semibold text-[var(--app-text)]">{tool.title}</p>
               <p className="mt-1 text-xs text-[var(--app-text-secondary)]">{tool.tagline}</p>
             </Link>

@@ -244,7 +244,7 @@ function MegaPanel({ menuKey, variant, compact = false, onNavigate }) {
   )
 }
 /**
- * @param {{ variant?: 'hero' | 'light' }} props — omit to follow route: `/` → hero, else light
+ * @param {{ variant?: 'hero' | 'light' }} props - omit to follow route: `/` -> hero, else light
  */
 const NavBar = ({ variant: variantProp }) => {
   const { pathname } = useLocation()

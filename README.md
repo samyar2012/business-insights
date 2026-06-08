@@ -1,14 +1,25 @@
-# RetainIQ (Customer Churn SaaS)
+# Business Insights
 
-Production-oriented stack for a first release:
+SaaS platform for ecommerce operators to scan storefront health, track competitive signals, and get actionable growth guidance.
 
-- **Frontend:** `frontend/` — Vite, React, TypeScript, Tailwind
-- **Backend:** `backend/` — Node (Express), SQLite (`backend/data/app.db`), JWT auth, credits ledger
-- **Model:** Python artifact `Chum_Predic/churn_model_artifact.joblib` invoked via `backend/python/predict_churn_cli.py`
+## Stack
 
-**v1 (live in-app):** churn prediction, bulk CSV/PDF analysis (heuristics by default; optional OpenAI for PDF field merge), retention assistant (guided text). Additional capabilities are listed as **roadmap** on `/roadmap`, not as fake products.
+| Layer | Tech |
+|-------|------|
+| Frontend | React, Vite, Tailwind |
+| Backend | Node.js, Express (`backend/`) |
+| Database | PostgreSQL via Supabase |
+| Auth | Email/password with JWT sessions |
 
-**Legal:** `Privacy` and `Terms` pages are starter stubs — replace with counsel-reviewed text before handling regulated data or paid customers at scale.
+## Features
+
+- **Auth** - Sign up, log in, and secure API routes with bearer tokens.
+- **Business onboarding** - Capture business profile, store URL, and baseline metrics on first login.
+- **Business Scanner** - Rule-based scan of store, social, and competitor URLs with scores, strengths, risks, and next actions.
+- **Dashboard & businesses** - Manage one or more businesses from the app shell.
+- **Roadmap tools** - Store Health Report, Social Content Analyzer, Competitor Tracker, and AI Growth Coach (UI stubs; full automation coming next).
+
+The legacy churn prediction stack under `services/` is kept for reference only. The main app uses root `backend/` and does not depend on it.
 
 ## Local development
 
@@ -18,11 +29,14 @@ Production-oriented stack for a first release:
 cd backend
 npm install
 cp .env.example .env
-# Edit .env — set JWT_SECRET (use 32+ random chars if you simulate production)
+# Set DB_HOST, DB_PASSWORD, and JWT_SECRET in .env
+npm run init-db      # first time: users + profiles
+npm run migrate-v2   # onboarding + businesses tables
+npm run migrate-v3   # business_scans table
 npm run dev
 ```
 
-Health check: `GET http://localhost:3001/api/health` returns `ok`, `version`, and `env`.
+Health check: `GET http://localhost:3001/api/health`
 
 ### Frontend
 
@@ -32,33 +46,39 @@ npm install
 npm run dev
 ```
 
-Optional: `frontend/.env` with `VITE_API_BASE_URL=http://localhost:3001` (defaults to that URL in dev).
+Vite proxies `/api` to `http://localhost:3001`. Optional: set `VITE_API_BASE_URL` at build time for production.
 
-### Production checklist
+## API overview
 
-1. **Backend:** `NODE_ENV=production`, `JWT_SECRET` ≥ 32 random characters (the API exits on startup if missing or too short).
-2. **CORS:** set `CORS_ORIGIN` to your deployed frontend origin(s), comma-separated.
-3. **Proxy:** if the app sits behind nginx, Cloudflare, or similar, set `TRUST_PROXY=1` so rate limiting and IP handling stay correct.
-4. **Frontend build:** `cd frontend && npm run build` — serve `frontend/dist` as static files; point `VITE_API_BASE_URL` at your API URL at build time.
-5. **Python:** ensure `PYTHON_BIN` and paths resolve on the server; the joblib path is resolved relative to the repo layout.
-6. **Uploads:** tune `UPLOAD_MAX_BYTES` if needed (default ~12 MB).
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/auth/signup` | Create account |
+| POST | `/api/auth/login` | Log in |
+| GET | `/api/auth/me` | Current user + businesses |
+| GET/POST | `/api/businesses` | List / create businesses |
+| POST | `/api/businesses/onboarding` | Complete onboarding |
+| POST | `/api/scans` | Run a business scan |
+| GET | `/api/scans` | List your scans |
+| GET | `/api/scans/:id` | Get one scan |
+
+Scans require `business_id` and `store_url`. Users can only scan and read scans for their own businesses.
 
 ## Environment variables (backend)
 
 | Variable | Purpose |
 |----------|---------|
-| `JWT_SECRET` | Sign JWTs; **required** in production (min 32 chars) |
-| `ADMIN_SECRET` | Grant premium / admin operations |
-| `CORS_ORIGIN` | Allowed browser origins (comma-separated); omit for permissive dev |
-| `TRUST_PROXY` | Set `1` when behind a trusted reverse proxy |
-| `AUTH_RATE_LIMIT_MAX` | Max auth attempts per IP per 15 minutes (default 40) |
-| `API_RATE_LIMIT_MAX` | Max API requests per IP per minute (default 200) |
-| `UPLOAD_MAX_BYTES` | Multer file size cap |
-| `OPENAI_API_KEY` | Optional PDF field merge only |
-| `PYTHON_BIN`, `PYTHON_PREDICT_CLI` | Python invocation |
+| `JWT_SECRET` | Sign JWTs (use 32+ random chars) |
+| `JWT_EXPIRES_IN` | Token lifetime (default `1d`) |
+| `CORS_ORIGIN` | Allowed frontend origin |
+| `DB_HOST`, `DB_PASSWORD`, ... | Supabase Postgres (recommended) |
+| `SUPABASE_DB_URL` | Alternative single connection string |
+| `PORT` | API port (default `3001`) |
 
-## Credits (first release)
+See `backend/.env.example` for a template.
 
-- New users start with **200** credits; referral adds **+30** to the **referrer** only.
-- **Premium** users skip per-use credit deduction (billing integration is future work).
-- Tool costs are defined in `backend/src/server.js` (`PRICE_CONFIG`).
+## Production checklist
+
+1. Run all SQL migrations against your Supabase/Postgres instance.
+2. Set `JWT_SECRET`, database credentials, and `CORS_ORIGIN` on the backend.
+3. Build the frontend: `cd frontend && npm run build` and serve `frontend/dist`.
+4. Do not commit `.env`, `node_modules/`, or local database files.

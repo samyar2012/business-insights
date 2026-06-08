@@ -69,26 +69,26 @@ const Businesses = () => {
                 </div>
                 {b.store_url ? (
                   <a href={b.store_url} target="_blank" rel="noreferrer" className="app-link text-sm">
-                    Visit store →
+                    Visit store ->
                   </a>
                 ) : null}
               </div>
               <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-[var(--app-text-muted)]">Product</dt>
-                  <dd className="mt-0.5 text-[var(--app-text)]">{b.product_sold || '—'}</dd>
+                  <dd className="mt-0.5 text-[var(--app-text)]">{b.product_sold || '-'}</dd>
                 </div>
                 <div>
                   <dt className="text-[var(--app-text-muted)]">Customers</dt>
-                  <dd className="mt-0.5 text-[var(--app-text)]">{b.target_customers || '—'}</dd>
+                  <dd className="mt-0.5 text-[var(--app-text)]">{b.target_customers || '-'}</dd>
                 </div>
                 <div>
                   <dt className="text-[var(--app-text-muted)]">Customer count</dt>
-                  <dd className="mt-0.5 text-[var(--app-text)]">{b.customer_count ?? '—'}</dd>
+                  <dd className="mt-0.5 text-[var(--app-text)]">{b.customer_count ?? '-'}</dd>
                 </div>
                 <div>
                   <dt className="text-[var(--app-text-muted)]">Monthly orders</dt>
-                  <dd className="mt-0.5 text-[var(--app-text)]">{b.monthly_orders ?? '—'}</dd>
+                  <dd className="mt-0.5 text-[var(--app-text)]">{b.monthly_orders ?? '-'}</dd>
                 </div>
               </dl>
             </li>

@@ -7,7 +7,7 @@ const variantClass = {
 
 /**
  * Fades content in when it enters the viewport (once).
- * @param {'up' | 'scale'} [variant] — motion style (default: up)
+ * @param {'up' | 'scale'} [variant] - motion style (default: up)
  */
 const Reveal = ({ children, className = '', delay = 0, variant = 'up' }) => {
   const ref = useRef(null)

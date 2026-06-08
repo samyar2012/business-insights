@@ -14,7 +14,7 @@ const OnboardingLayout = () => {
           <span className="app-loading__dot" />
           <span className="app-loading__dot" />
           <span className="app-loading__dot" />
-          Loading…
+          Loading...
         </div>
       </div>
     )

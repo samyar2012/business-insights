@@ -6,7 +6,7 @@ const linkGroups = [
     links: [
       { label: 'Growth workspace', href: '/product#services', route: true },
       { label: 'AI modules catalog', href: '/product#ai-tools', route: true },
-      { label: 'Trial — no card', href: '/product#trial', route: true },
+      { label: 'Trial - no card', href: '/product#trial', route: true },
       { label: 'Pay after trial', href: '/solutions#trial-convert', route: true },
       { label: 'Log in', href: '/login', route: true },
     ],
@@ -66,7 +66,7 @@ const Footer = () => {
               with vertical playbooks, modular AI, and acquisition experiments that stay fresh.
             </p>
             <p className="mt-4 text-sm font-normal leading-relaxed text-white/68 sm:text-[0.9375rem]">
-              Start with a free trial—no credit card. When the trial ends, step two is choosing a paid
+              Start with a free trial-no credit card. When the trial ends, step two is choosing a paid
               plan; we only bill after you opt in.
             </p>
             <p className="mt-6 text-xs font-medium uppercase tracking-[0.2em] text-white/50">
@@ -80,7 +80,7 @@ const Footer = () => {
                 Growth drops in your inbox
               </h2>
               <p className="mt-3 text-sm leading-relaxed text-white/72">
-                Weekly ideas for creatives, offers, and store fixes—tailored to ecommerce and creator
+                Weekly ideas for creatives, offers, and store fixes-tailored to ecommerce and creator
                 brands. Unsubscribe anytime.
               </p>
             </div>
@@ -92,7 +92,7 @@ const Footer = () => {
                 Email to subscribe
               </a>
               <a href="#trial" className="footer-link text-center text-sm sm:text-left">
-                Or read how trials work →
+                Or read how trials work ->
               </a>
             </div>
           </div>

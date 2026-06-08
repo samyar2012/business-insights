@@ -189,7 +189,7 @@ const AppTools = () => {
           onChange={(e) => setChatMessage(e.target.value)}
           rows={4}
           className="app-field mt-4"
-          placeholder="Ask about retention strategy…"
+          placeholder="Ask about retention strategy..."
         />
         {chatError ? (
           <Alert variant="error" title="Message not sent" className="mt-4" onDismiss={() => setChatError('')}>

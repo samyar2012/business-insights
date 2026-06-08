@@ -105,7 +105,7 @@ const OnboardingSurvey = ({ onComplete, redirectTo = '/app' }) => {
               value={form.target_customers}
               onChange={(e) => set('target_customers', e.target.value)}
               className="app-field"
-              placeholder="Who buys from you? Demographics, niches, regions…"
+              placeholder="Who buys from you? Demographics, niches, regions..."
             />
           </label>
           <label className="app-label">
@@ -166,7 +166,7 @@ const OnboardingSurvey = ({ onComplete, redirectTo = '/app' }) => {
             disabled={submitting}
             className="app-btn app-btn--primary app-btn--block"
           >
-            {submitting ? 'Saving…' : 'Complete setup'}
+            {submitting ? 'Saving...' : 'Complete setup'}
           </button>
         </form>
       </div>
