@@ -1,9 +1,9 @@
 import { useTheme } from '../../context/ThemeContext'
 
 const options = [
-  { value: 'light', label: 'Light', icon: '☀' },
-  { value: 'dark', label: 'Dark', icon: '☾' },
-  { value: 'system', label: 'System', icon: '◐' },
+  { value: 'light', label: 'Light', icon: 'L' },
+  { value: 'dark', label: 'Dark', icon: 'D' },
+  { value: 'system', label: 'System', icon: 'A' },
 ]
 
 const ThemeToggle = ({ compact = false }) => {

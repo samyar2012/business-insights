@@ -1,20 +1,21 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import Alert from '../components/app/Alert'
-import { formatScanDate, scoreTone } from '../components/app/ScanUi'
+import { formatScanDate, scoreTone, sortScansNewestFirst } from '../components/app/ScanUi'
 
 const ScanHistory = () => {
   const [scans, setScans] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [businessFilter, setBusinessFilter] = useState('all')
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
       const data = await apiFetch('/scans')
-      setScans(data.scans || [])
+      setScans(sortScansNewestFirst(data.scans || []))
     } catch (err) {
       setError(err.message)
     } finally {
@@ -25,6 +26,24 @@ const ScanHistory = () => {
   useEffect(() => {
     load()
   }, [load])
+
+  const businessOptions = useMemo(() => {
+    const map = new Map()
+    for (const scan of scans) {
+      const id = scan.business_id || 'unknown'
+      const name = scan.business_name || `Business ${id.slice(0, 8)}`
+      if (!map.has(id)) map.set(id, name)
+    }
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
+  }, [scans])
+
+  const filteredScans = useMemo(() => {
+    const sorted = sortScansNewestFirst(scans)
+    if (businessFilter === 'all') return sorted
+    return sorted.filter((scan) => scan.business_id === businessFilter)
+  }, [scans, businessFilter])
+
+  const showBusinessFilter = businessOptions.length > 1
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -38,6 +57,29 @@ const ScanHistory = () => {
           Run new scan
         </Link>
       </header>
+
+      {showBusinessFilter ? (
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <label className="text-sm text-[var(--app-text-secondary)]">
+            Filter by business
+            <select
+              className="app-field ml-2 mt-1 inline-block w-auto min-w-[12rem]"
+              value={businessFilter}
+              onChange={(e) => setBusinessFilter(e.target.value)}
+            >
+              <option value="all">All businesses</option>
+              {businessOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="text-xs text-[var(--app-text-muted)]">
+            {filteredScans.length} scan{filteredScans.length === 1 ? '' : 's'} - newest first
+          </p>
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="app-loading mt-10">
@@ -66,7 +108,23 @@ const ScanHistory = () => {
         </div>
       ) : null}
 
-      {!loading && scans.length > 0 ? (
+      {!loading && scans.length > 0 && filteredScans.length === 0 ? (
+        <div className="app-card mt-8 p-8 text-center">
+          <p className="text-lg font-semibold text-[var(--app-text)]">No scans for this business</p>
+          <p className="mt-2 text-sm text-[var(--app-text-secondary)]">
+            Try another filter or run a new scan for this business.
+          </p>
+          <button
+            type="button"
+            onClick={() => setBusinessFilter('all')}
+            className="app-btn app-btn--secondary mt-5"
+          >
+            Show all scans
+          </button>
+        </div>
+      ) : null}
+
+      {!loading && filteredScans.length > 0 ? (
         <div className="mt-8 space-y-3">
           <div className="hidden overflow-x-auto rounded-xl border border-[var(--app-border)] lg:block">
             <table className="w-full min-w-[880px] text-left text-sm">
@@ -83,7 +141,7 @@ const ScanHistory = () => {
                 </tr>
               </thead>
               <tbody>
-                {scans.map((scan) => (
+                {filteredScans.map((scan) => (
                   <tr key={scan.id} className="border-b border-[var(--app-border)] last:border-0">
                     <td className="px-4 py-3 text-[var(--app-text-secondary)]">{formatScanDate(scan.created_at)}</td>
                     <td className="px-4 py-3">
@@ -113,7 +171,7 @@ const ScanHistory = () => {
           </div>
 
           <ul className="space-y-3 lg:hidden">
-            {scans.map((scan) => (
+            {filteredScans.map((scan) => (
               <li key={scan.id} className="app-card p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>

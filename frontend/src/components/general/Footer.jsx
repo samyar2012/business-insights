@@ -144,7 +144,7 @@ const Footer = () => {
               </li>
               <li>
                 <p className="text-sm leading-relaxed text-white/62">
-                  Monday–Friday · 8am–6pm Pacific
+                  Monday-Friday - 8am-6pm Pacific
                   <br />
                   Enterprise support 24/7 on request
                 </p>
@@ -184,7 +184,7 @@ const Footer = () => {
 
         <div className="footer-legal mt-14 flex flex-col gap-5 sm:mt-16 sm:flex-row sm:items-center sm:justify-between lg:pt-8">
           <p className="max-w-2xl text-[11px] leading-relaxed text-white/50 sm:text-xs">
-            © {new Date().getFullYear()} Business Insight. All rights reserved. Business Insight and
+            (c) {new Date().getFullYear()} Business Insight. All rights reserved. Business Insight and
             related marks are trademarks of Business Insight, Inc. Product visuals are illustrative.
           </p>
           <nav className="flex flex-wrap items-center gap-x-6 gap-y-2" aria-label="Legal">

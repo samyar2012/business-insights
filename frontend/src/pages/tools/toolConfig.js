@@ -57,9 +57,9 @@ export const TOOL_CATALOG = [
 ]
 
 export const TOOL_ICONS = {
-  scan: 'o',
-  health: '▤',
-  social: '◉',
-  track: '◈',
-  coach: '*',
+  scan: 'S',
+  health: 'H',
+  social: 'O',
+  track: 'C',
+  coach: 'A',
 }

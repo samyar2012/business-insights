@@ -1,8 +1,19 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import Alert from '../components/app/Alert'
-import ScoreBar, { formatScanDate } from '../components/app/ScanUi'
+import ScoreBar, {
+  CHECKLIST_DISPLAY,
+  formatScanDate,
+  interpretScore,
+  scoreTone,
+} from '../components/app/ScanUi'
+
+const toneClass = {
+  success: 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success-fg)]',
+  warning: 'border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] text-[var(--app-warning-fg)]',
+  error: 'border-[var(--app-error-border)] bg-[var(--app-error-bg)] text-[var(--app-error-fg)]',
+}
 
 const ScanReport = () => {
   const { id } = useParams()
@@ -26,6 +37,11 @@ const ScanReport = () => {
   useEffect(() => {
     load()
   }, [load])
+
+  const interpretation = useMemo(
+    () => (scan ? interpretScore(scan.overall_score) : null),
+    [scan],
+  )
 
   if (loading) {
     return (
@@ -57,10 +73,13 @@ const ScanReport = () => {
     { label: 'Competitor URL', value: scan.competitor_url },
   ].filter((row) => row.value)
 
+  const checklist = scan.checklist || {}
+  const hasChecklist = CHECKLIST_DISPLAY.some((item) => checklist[item.key] != null)
+
   return (
     <div className="mx-auto max-w-4xl">
       <Link to="/app/scans" className="app-link text-sm font-medium">
-        &larr; Scan history
+        &lt;- Scan history
       </Link>
 
       <header className="mt-4">
@@ -70,16 +89,30 @@ const ScanReport = () => {
         </h1>
         <p className="app-page-subtitle">
           {formatScanDate(scan.created_at)}
-          {scan.business_type ? ` · ${scan.business_type}` : ''}
+          {scan.business_type ? ` - ${scan.business_type}` : ''}
         </p>
       </header>
 
       <section className="app-card mt-8 p-6">
-        <div className="flex flex-wrap items-end gap-4">
+        <p className="app-eyebrow">Report summary</p>
+        <div className="mt-4 flex flex-wrap items-start gap-6">
           <div>
             <p className="text-sm text-[var(--app-text-secondary)]">Overall score</p>
-            <p className="app-stat-value text-5xl">{scan.overall_score}</p>
+            <p className={`app-stat-value text-5xl ${scoreTone(scan.overall_score)}`}>
+              {scan.overall_score}
+            </p>
           </div>
+          {interpretation ? (
+            <div
+              className={`rounded-lg border px-4 py-3 text-sm ${toneClass[interpretation.tone]}`}
+            >
+              <p className="font-semibold">{interpretation.label}</p>
+              <p className="mt-1 opacity-90">{interpretation.detail}</p>
+              <p className="mt-2 text-xs opacity-80">
+                75-100 Strong - 55-74 Needs work - 0-54 High priority
+              </p>
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
@@ -89,6 +122,35 @@ const ScanReport = () => {
           <ScoreBar label="Competitor" value={scan.competitor_score} />
         </div>
       </section>
+
+      {hasChecklist ? (
+        <section className="app-card mt-6 p-5">
+          <h2 className="text-sm font-semibold text-[var(--app-text)]">Checklist answers</h2>
+          <p className="mt-1 text-xs text-[var(--app-text-muted)]">
+            Self-reported at scan time. Used to adjust category scores.
+          </p>
+          <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+            {CHECKLIST_DISPLAY.map((item) => {
+              const value = checklist[item.key]
+              if (value == null) return null
+              const yes = Boolean(value)
+              return (
+                <li
+                  key={item.key}
+                  className="flex items-center justify-between rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm"
+                >
+                  <span className="text-[var(--app-text-secondary)]">{item.label}</span>
+                  <span
+                    className={`font-medium ${yes ? 'text-[var(--app-success-icon)]' : 'text-[var(--app-text-muted)]'}`}
+                  >
+                    {yes ? 'Yes' : 'No'}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      ) : null}
 
       <div className="mt-6 grid gap-6 sm:grid-cols-3">
         <section className="app-card p-5">

@@ -45,7 +45,7 @@ export const businessVerticals = [
 export const aiProducts = [
   {
     title: 'Acquisition Roulette',
-    desc: 'Weighted “spin” of proven angles each week so you always test something new without guessing blind.',
+    desc: 'Weighted "spin" of proven angles each week so you always test something new without guessing blind.',
     tag: 'Growth',
   },
   {
@@ -111,7 +111,7 @@ export const serviceTracks = [
       '14-day full workspace access',
       'Pick your vertical: Shopify, dropship, or social',
       'Connect one store and one ad account minimum',
-      'We enable “acquisition spins” on day one',
+      'We enable "acquisition spins" on day one',
     ],
   },
   {

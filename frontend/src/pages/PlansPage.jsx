@@ -19,12 +19,12 @@ const PlansPage = () => {
       <section className="app-card mt-10 p-6">
         <h2 className="text-sm font-semibold text-[var(--app-text)]">What&apos;s included</h2>
         <ul className="mt-4 grid gap-3 text-sm text-[var(--app-text-secondary)] sm:grid-cols-2">
-          <li>✓ First business workspace free</li>
-          <li>✓ Churn prediction & file analyze</li>
-          <li>✓ AI coach on Growth+</li>
-          <li>✓ Multiple businesses on paid plans</li>
-          <li>✓ Priority support on Scale</li>
-          <li>✓ Cancel anytime</li>
+          <li>+ First business workspace free</li>
+          <li>+ Churn prediction and file analyze</li>
+          <li>+ AI coach on Growth+</li>
+          <li>+ Multiple businesses on paid plans</li>
+          <li>+ Priority support on Scale</li>
+          <li>+ Cancel anytime</li>
         </ul>
       </section>
     </div>

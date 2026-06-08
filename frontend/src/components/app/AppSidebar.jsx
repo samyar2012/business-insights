@@ -20,14 +20,14 @@ const Chevron = ({ open }) => (
 )
 
 const workspaceItems = [
-  { label: 'Connect GitHub', to: '/app/workspace/github', icon: '⌘' },
-  { label: 'Add URL', to: '/app/workspace/url', icon: '🔗' },
-  { label: 'Create project', to: '/app/workspace/create', icon: '＋' },
-  { label: 'Load project', to: '/app/workspace/load', icon: '↗' },
+  { label: 'Connect GitHub', to: '/app/workspace/github', icon: 'G' },
+  { label: 'Add URL', to: '/app/workspace/url', icon: 'U' },
+  { label: 'Create project', to: '/app/workspace/create', icon: '+' },
+  { label: 'Load project', to: '/app/workspace/load', icon: 'L' },
 ]
 
 const toolItems = [
-  { label: 'Overview', to: '/app/tools', icon: '◫' },
+  { label: 'Overview', to: '/app/tools', icon: 'T' },
   ...TOOL_CATALOG.map((tool) => ({
     label: tool.title,
     to: tool.to,
@@ -36,13 +36,13 @@ const toolItems = [
 ]
 
 const topLinks = [
-  { label: 'Dashboard', to: '/app', icon: '◫' },
-  { label: 'Scans', to: '/app/scans', icon: '◎' },
+  { label: 'Dashboard', to: '/app', icon: 'D' },
+  { label: 'Scans', to: '/app/scans', icon: 'S' },
 ]
 
 const bottomLinks = [
-  { label: 'Businesses', to: '/app/businesses', icon: '◈' },
-  { label: 'Settings', to: '/app/settings', icon: '⚙' },
+  { label: 'Businesses', to: '/app/businesses', icon: 'B' },
+  { label: 'Settings', to: '/app/settings', icon: '*' },
 ]
 
 const pathMatches = (pathname, to) => {
@@ -128,7 +128,7 @@ const AppSidebar = () => {
 
         <nav className={`space-y-1 ${collapsed ? 'mt-2' : 'mt-4'}`}>
           {topLinks.map((item) => {
-            const active = pathname === item.to
+            const active = pathMatches(pathname, item.to)
             return (
               <Link
                 key={item.to}

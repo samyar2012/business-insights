@@ -78,7 +78,7 @@ const Dashboard = () => {
                     {latestScan.overall_score}
                   </p>
                   <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
-                    {latestScan.business_name || 'Business scan'} · {formatScanDate(latestScan.created_at)}
+                    {latestScan.business_name || 'Business scan'} - {formatScanDate(latestScan.created_at)}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs text-[var(--app-text-muted)]">
