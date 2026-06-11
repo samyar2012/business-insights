@@ -8,8 +8,8 @@ const ToolsHub = () => {
         <p className="app-eyebrow">Intelligence suite</p>
         <h1 className="app-page-title mt-2">Tools</h1>
         <p className="app-page-subtitle max-w-2xl">
-          Growth tools built for ecommerce operators. Run a Business Scanner first, then explore
-          deeper reports as they roll out on their own pages.
+          Growth tools built for ecommerce operators. Run a Business Scanner first, then use AI
+          coaching, content generation, and competitor research on dedicated pages.
         </p>
       </header>
 
@@ -53,7 +53,7 @@ const ToolsHub = () => {
       </div>
 
       <p className="app-stagger mt-8 text-center text-xs text-[var(--app-text-muted)]">
-        Store Health, Social Analyzer, Competitor Tracker, and AI Growth Coach are on the roadmap.
+        Configure OPENAI_API_KEY and SEARCH_PROVIDER in backend .env for live AI and web search.
       </p>
     </div>
   )

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import Alert from '../components/app/Alert'
 import ScoreBar, {
@@ -17,9 +17,13 @@ const toneClass = {
 
 const ScanReport = () => {
   const { id } = useParams()
+  const navigate = useNavigate()
   const [scan, setScan] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [planBusy, setPlanBusy] = useState(false)
+  const [planMessage, setPlanMessage] = useState('')
+  const [createdActions, setCreatedActions] = useState([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -42,6 +46,25 @@ const ScanReport = () => {
     () => (scan ? interpretScore(scan.overall_score) : null),
     [scan],
   )
+
+  const createActionPlan = async () => {
+    setPlanBusy(true)
+    setPlanMessage('')
+    setError('')
+    try {
+      const data = await apiFetch(`/scans/${id}/create-action-plan`, { method: 'POST' })
+      setCreatedActions(data.actions || [])
+      setPlanMessage(
+        data.already_exists
+          ? 'Action plan already exists for this scan. Showing existing tasks.'
+          : `Created ${(data.actions || []).length} tasks from next actions.`,
+      )
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setPlanBusy(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -224,6 +247,47 @@ const ScanReport = () => {
           <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--app-text-secondary)]">{scan.notes}</p>
         </section>
       ) : null}
+
+      <section className="app-card mt-8 p-5">
+        <h2 className="text-sm font-semibold text-[var(--app-text)]">Turn insights into tasks</h2>
+        <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
+          Create trackable action items from this scan&apos;s next actions.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button
+            type="button"
+            className="app-btn app-btn--primary"
+            disabled={planBusy || !(scan.next_actions || []).length}
+            onClick={createActionPlan}
+          >
+            {planBusy ? 'Creating...' : 'Create action plan'}
+          </button>
+          <button
+            type="button"
+            className="app-btn app-btn--secondary"
+            onClick={() => navigate(`/app/tools/growth-coach?scanId=${id}`)}
+          >
+            Ask AI about this report
+          </button>
+          <Link to="/app/action-plan" className="app-btn app-btn--ghost">
+            Open action plan
+          </Link>
+        </div>
+        {planMessage ? (
+          <p className="mt-3 text-sm text-[var(--app-success-fg)]">{planMessage}</p>
+        ) : null}
+        {createdActions.length ? (
+          <ul className="mt-4 space-y-2 text-sm text-[var(--app-text-secondary)]">
+            {createdActions.map((action) => (
+              <li key={action.id} className="flex gap-2">
+                <span>-&gt;</span>
+                <span>{action.title}</span>
+                <span className="text-xs text-[var(--app-text-muted)]">({action.priority})</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
 
       <div className="mt-8 flex flex-wrap gap-3">
         <Link to="/app/tools/business-scanner" className="app-btn app-btn--primary">

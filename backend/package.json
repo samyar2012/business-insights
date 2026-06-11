@@ -10,6 +10,8 @@
     "init-db": "node scripts/init-db.js",
     "migrate-v2": "node scripts/migrate-v2.js",
     "migrate-v3": "node scripts/migrate-v3.js",
+    "migrate-v4": "node scripts/migrate-v4.js",
+    "migrate-v5": "node scripts/migrate-v5.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

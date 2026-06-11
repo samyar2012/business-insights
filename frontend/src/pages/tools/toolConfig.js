@@ -11,15 +11,26 @@ export const TOOL_CATALOG = [
     live: true,
   },
   {
+    slug: 'growth-coach',
+    to: '/app/tools/growth-coach',
+    title: 'AI Growth Coach',
+    tagline: 'Weekly priorities tailored to your business.',
+    description:
+      'Chat with a strategy coach that uses your profile, scans, action plan, and optional web search.',
+    icon: 'coach',
+    accent: 'emerald',
+    live: true,
+  },
+  {
     slug: 'store-health',
     to: '/app/tools/store-health',
     title: 'Store Health Report',
-    tagline: 'Deep dive on conversion, speed, and merchandising.',
+    tagline: 'Deep dive on conversion, trust, and merchandising.',
     description:
-      'Audit product pages, checkout flow, and on-site trust signals. Full automated crawl coming soon.',
+      'Detailed storefront review using your scan history plus optional URL and web search context.',
     icon: 'health',
     accent: 'blue',
-    live: false,
+    live: true,
   },
   {
     slug: 'social-analyzer',
@@ -27,10 +38,10 @@ export const TOOL_CATALOG = [
     title: 'Social Content Analyzer',
     tagline: 'Measure hook quality and posting consistency.',
     description:
-      'Review recent posts for engagement patterns and content gaps across your social channels.',
+      'Enter profile details and content notes to get scores, hooks, posting plans, and gap fixes.',
     icon: 'social',
     accent: 'violet',
-    live: false,
+    live: true,
   },
   {
     slug: 'competitor-tracker',
@@ -38,21 +49,21 @@ export const TOOL_CATALOG = [
     title: 'Competitor Tracker',
     tagline: 'Benchmark offers, pricing, and positioning.',
     description:
-      'Track competitor storefronts and campaigns so you know when to match, beat, or ignore.',
+      'Research a competitor with search-backed public info, positioning, and content angles.',
     icon: 'track',
     accent: 'amber',
-    live: false,
+    live: true,
   },
   {
-    slug: 'growth-coach',
-    to: '/app/tools/growth-coach',
-    title: 'AI Growth Coach',
-    tagline: 'Weekly priorities tailored to your business.',
+    slug: 'content-generator',
+    to: '/app/tools/content-generator',
+    title: 'Content Generator',
+    tagline: 'Hooks, scripts, captions, and ad copy on demand.',
     description:
-      'Get actionable growth playbooks for offers, creatives, and retention - powered by your scan data.',
-    icon: 'coach',
-    accent: 'emerald',
-    live: false,
+      'Generate TikTok hooks, short scripts, captions, emails, ads, and product page copy from your context.',
+    icon: 'content',
+    accent: 'rose',
+    live: true,
   },
 ]
 
@@ -62,4 +73,5 @@ export const TOOL_ICONS = {
   social: 'O',
   track: 'C',
   coach: 'A',
+  content: 'G',
 }

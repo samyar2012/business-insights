@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { apiFetch } from '../lib/api'
 import { TOOL_CATALOG, TOOL_ICONS } from './tools/toolConfig'
@@ -14,6 +14,8 @@ const greetingForHour = (hour) => {
 const Dashboard = () => {
   const { user } = useAuth()
   const [latestScan, setLatestScan] = useState(null)
+  const [actions, setActions] = useState([])
+  const [latestInsight, setLatestInsight] = useState('')
   const [scansLoading, setScansLoading] = useState(true)
 
   const name = user?.profile?.display_name || user?.email?.split('@')[0] || 'there'
@@ -21,21 +23,58 @@ const Dashboard = () => {
   const hour = new Date().getHours()
   const greeting = greetingForHour(hour)
 
-  const loadLatestScan = useCallback(async () => {
+  const load = useCallback(async () => {
     setScansLoading(true)
     try {
-      const data = await apiFetch('/scans')
-      setLatestScan((data.scans || [])[0] || null)
+      const [scansData, actionsData] = await Promise.all([
+        apiFetch('/scans'),
+        apiFetch('/actions').catch(() => ({ actions: [] })),
+      ])
+      setLatestScan((scansData.scans || [])[0] || null)
+      setActions(actionsData.actions || [])
     } catch {
       setLatestScan(null)
+      setActions([])
     } finally {
       setScansLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    loadLatestScan()
-  }, [loadLatestScan])
+    load()
+  }, [load])
+
+  const openActions = useMemo(
+    () => actions.filter((a) => a.status !== 'done'),
+    [actions],
+  )
+  const doneActions = useMemo(
+    () => actions.filter((a) => a.status === 'done'),
+    [actions],
+  )
+  const nextHighPriority = useMemo(
+    () =>
+      openActions
+        .filter((a) => a.priority === 'high')
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0] ||
+      openActions[0] ||
+      null,
+    [openActions],
+  )
+
+  useEffect(() => {
+    if (!latestScan && !nextHighPriority) return
+    const parts = []
+    if (latestScan) {
+      parts.push(
+        `Latest scan scored ${latestScan.overall_score} for ${latestScan.business_name || 'your business'}.`,
+      )
+    }
+    if (nextHighPriority) {
+      parts.push(`Next up: ${nextHighPriority.title}`)
+    }
+    setLatestInsight(parts.join(' '))
+  }, [latestScan, nextHighPriority])
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -45,8 +84,7 @@ const Dashboard = () => {
           Welcome back, {name}
         </h1>
         <p className="mt-3 max-w-xl text-base leading-relaxed text-[var(--app-text-secondary)]">
-          Your command center is ready. Connect a workspace, run a Business Scanner, and turn store
-          signals into growth wins - starting with{' '}
+          Your command center for scans, action plans, and AI growth tools - starting with{' '}
           <span className="font-medium text-[var(--app-text)]">
             {business?.business_name || 'your business'}
           </span>
@@ -54,16 +92,41 @@ const Dashboard = () => {
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link to="/app/tools/business-scanner" className="app-btn app-btn--primary">
-            Run Business Scanner
+            Run scan
           </Link>
-          <Link to="/app/tools" className="app-btn app-btn--secondary">
-            Explore tools
+          <Link to="/app/action-plan" className="app-btn app-btn--secondary">
+            View action plan
           </Link>
-          <Link to="/app/plans" className="app-btn app-btn--ghost">
-            View plans
+          <Link to="/app/tools/growth-coach" className="app-btn app-btn--secondary">
+            Ask AI coach
+          </Link>
+          <Link to="/app/tools/content-generator" className="app-btn app-btn--ghost">
+            Generate content
           </Link>
         </div>
       </section>
+
+      <div className="app-stagger mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <article className="app-card p-5">
+          <p className="app-eyebrow">Open tasks</p>
+          <p className="app-stat-value mt-2">{openActions.length}</p>
+        </article>
+        <article className="app-card p-5">
+          <p className="app-eyebrow">Completed</p>
+          <p className="app-stat-value mt-2">{doneActions.length}</p>
+        </article>
+        <article className="app-card p-5 sm:col-span-2">
+          <p className="app-eyebrow">Next high-priority task</p>
+          <p className="mt-2 text-sm font-medium text-[var(--app-text)]">
+            {nextHighPriority?.title || 'No open tasks'}
+          </p>
+          {nextHighPriority ? (
+            <Link to="/app/action-plan" className="app-link mt-2 inline-block text-xs font-medium">
+              Open action plan -&gt;
+            </Link>
+          ) : null}
+        </article>
+      </div>
 
       <section className="app-stagger mt-8">
         <article className="app-card p-5">
@@ -114,6 +177,18 @@ const Dashboard = () => {
         </article>
       </section>
 
+      {latestInsight ? (
+        <section className="app-stagger mt-6">
+          <article className="app-card p-5">
+            <p className="app-eyebrow">Latest AI insight</p>
+            <p className="mt-2 text-sm text-[var(--app-text-secondary)]">{latestInsight}</p>
+            <Link to="/app/tools/growth-coach" className="app-link mt-3 inline-block text-sm font-medium">
+              Ask AI coach -&gt;
+            </Link>
+          </article>
+        </section>
+      ) : null}
+
       <div className="app-stagger mt-8 grid gap-4 sm:grid-cols-3">
         <article className="app-card app-card--interactive p-5">
           <p className="app-eyebrow">Business</p>
@@ -135,40 +210,10 @@ const Dashboard = () => {
       </div>
 
       <section className="app-stagger mt-10">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="app-eyebrow">Your next steps</p>
-            <h2 className="mt-1 text-xl font-semibold text-[var(--app-text)]">
-              Build momentum today
-            </h2>
-          </div>
-          <Link to="/app/workspace/github" className="app-link text-sm font-medium">
-            Set up workspace -&gt;
-          </Link>
-        </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <Link to="/app/workspace/github" className="app-card app-card--interactive block p-5">
-            <p className="text-sm font-semibold text-[var(--app-text)]">Connect GitHub</p>
-            <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
-              Sync repos and version your growth experiments.
-            </p>
-          </Link>
-          <Link to="/app/workspace/url" className="app-card app-card--interactive block p-5">
-            <p className="text-sm font-semibold text-[var(--app-text)]">Add your store URL</p>
-            <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
-              Link your site for richer tool context.
-            </p>
-          </Link>
-        </div>
-      </section>
-
-      <section className="app-stagger mt-10">
-        <p className="app-eyebrow">Tools preview</p>
-        <h2 className="mt-1 text-xl font-semibold text-[var(--app-text)]">
-          See what you can do next
-        </h2>
+        <p className="app-eyebrow">Tools</p>
+        <h2 className="mt-1 text-xl font-semibold text-[var(--app-text)]">Quick access</h2>
         <div className="mt-5 grid gap-4 sm:grid-cols-3">
-          {TOOL_CATALOG.map((tool) => (
+          {TOOL_CATALOG.slice(0, 6).map((tool) => (
             <Link key={tool.slug} to={tool.to} className="app-card app-card--interactive block p-5">
               <span className="text-lg text-[var(--app-accent-strong)]">{TOOL_ICONS[tool.icon] || '*'}</span>
               <p className="mt-3 font-semibold text-[var(--app-text)]">{tool.title}</p>

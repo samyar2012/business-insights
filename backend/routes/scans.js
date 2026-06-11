@@ -275,6 +275,26 @@ router.get('/', requireAuth, async (req, res) => {
   }
 })
 
+router.post('/:id/create-action-plan', requireAuth, async (req, res) => {
+  try {
+    const { createActionPlanFromScan } = require('../services/actionPlanService')
+    const result = await createActionPlanFromScan(req.auth.sub, req.params.id)
+    if (result.error === 'not_found') {
+      return res.status(404).json({ error: 'Scan not found' })
+    }
+    if (result.error === 'no_actions') {
+      return res.status(400).json({ error: result.message })
+    }
+    return res.status(result.already_exists ? 200 : 201).json({
+      already_exists: result.already_exists,
+      actions: result.actions,
+    })
+  } catch (err) {
+    console.error('create action plan:', err.message)
+    return res.status(500).json({ error: 'Failed to create action plan' })
+  }
+})
+
 router.get('/:id', requireAuth, async (req, res) => {
   try {
     const result = await query(`${SCAN_SELECT} WHERE s.id = $1 AND s.user_id = $2`, [
