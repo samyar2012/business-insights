@@ -9,6 +9,7 @@ const { scansRouter } = require('./routes/scans')
 const { actionsRouter } = require('./routes/actions')
 const { aiRouter } = require('./routes/ai')
 const { memoryRouter } = require('./routes/memory')
+const { researchRouter } = require('./routes/research')
 
 const app = express()
 
@@ -51,6 +52,7 @@ app.use('/api/scans', scansRouter)
 app.use('/api/actions', actionsRouter)
 app.use('/api/ai', aiRouter)
 app.use('/api/memory', memoryRouter)
+app.use('/api/research', researchRouter)
 
 app.use((err, _req, res, _next) => {
   console.error(err)

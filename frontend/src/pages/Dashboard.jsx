@@ -15,6 +15,8 @@ const Dashboard = () => {
   const { user } = useAuth()
   const [latestScan, setLatestScan] = useState(null)
   const [actions, setActions] = useState([])
+  const [research, setResearch] = useState(null)
+  const [researchBusy, setResearchBusy] = useState(false)
   const [latestInsight, setLatestInsight] = useState('')
   const [scansLoading, setScansLoading] = useState(true)
 
@@ -26,23 +28,40 @@ const Dashboard = () => {
   const load = useCallback(async () => {
     setScansLoading(true)
     try {
-      const [scansData, actionsData] = await Promise.all([
+      const [scansData, actionsData, researchData] = await Promise.all([
         apiFetch('/scans'),
         apiFetch('/actions').catch(() => ({ actions: [] })),
+        business?.id
+          ? apiFetch(`/research/business/${business.id}`).catch(() => ({ profile: null }))
+          : Promise.resolve({ profile: null }),
       ])
       setLatestScan((scansData.scans || [])[0] || null)
       setActions(actionsData.actions || [])
+      setResearch(researchData.profile || null)
     } catch {
       setLatestScan(null)
       setActions([])
     } finally {
       setScansLoading(false)
     }
-  }, [])
+  }, [business?.id])
 
   useEffect(() => {
     load()
   }, [load])
+
+  const runResearch = async () => {
+    if (!business?.id) return
+    setResearchBusy(true)
+    try {
+      const data = await apiFetch(`/research/business/${business.id}/run`, { method: 'POST' })
+      setResearch(data.profile)
+    } catch {
+      // keep dashboard usable if research fails
+    } finally {
+      setResearchBusy(false)
+    }
+  }
 
   const openActions = useMemo(
     () => actions.filter((a) => a.status !== 'done'),
@@ -70,11 +89,14 @@ const Dashboard = () => {
         `Latest scan scored ${latestScan.overall_score} for ${latestScan.business_name || 'your business'}.`,
       )
     }
+    if (research?.scores?.overall_score != null) {
+      parts.push(`Research score: ${research.scores.overall_score}/100.`)
+    }
     if (nextHighPriority) {
       parts.push(`Next up: ${nextHighPriority.title}`)
     }
     setLatestInsight(parts.join(' '))
-  }, [latestScan, nextHighPriority])
+  }, [latestScan, nextHighPriority, research])
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -127,6 +149,59 @@ const Dashboard = () => {
           ) : null}
         </article>
       </div>
+
+      <section className="app-stagger mt-8">
+        <article className="app-card p-5">
+          <p className="app-eyebrow">Business research</p>
+          {research ? (
+            <>
+              <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <p className={`text-4xl font-semibold ${scoreTone(research.scores?.overall_score)}`}>
+                    {research.scores?.overall_score ?? '-'}
+                  </p>
+                  <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
+                    {business?.business_name || 'Business'} - researched {formatScanDate(research.created_at)}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs text-[var(--app-text-muted)]">
+                  <span>Store {research.scores?.store_score}</span>
+                  <span>Trust {research.scores?.trust_score}</span>
+                  <span>Offer {research.scores?.offer_score}</span>
+                  <span>Market {research.scores?.market_score}</span>
+                </div>
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link to={`/app/research/${business?.id}`} className="app-btn app-btn--primary">
+                  Full research report
+                </Link>
+                <button
+                  type="button"
+                  className="app-btn app-btn--secondary"
+                  disabled={researchBusy}
+                  onClick={runResearch}
+                >
+                  {researchBusy ? 'Rescanning...' : 'Rescan'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="mt-3 text-sm text-[var(--app-text-secondary)]">
+                Research your business online using onboarding data and your store URL.
+              </p>
+              <button
+                type="button"
+                className="app-btn app-btn--primary mt-4"
+                disabled={researchBusy || !business?.id}
+                onClick={runResearch}
+              >
+                {researchBusy ? 'Researching...' : 'Run business research'}
+              </button>
+            </>
+          )}
+        </article>
+      </section>
 
       <section className="app-stagger mt-8">
         <article className="app-card p-5">

@@ -1,6 +1,7 @@
 const express = require('express')
 const { query } = require('../db')
 const { requireAuth } = require('../middleware/auth')
+const { saveBusinessContextFromOnboarding } = require('../services/memoryService')
 
 const router = express.Router()
 
@@ -80,7 +81,14 @@ router.post('/onboarding', requireAuth, async (req, res) => {
       ],
     )
 
-    return res.status(201).json({ business: business.rows[0] })
+    const savedBusiness = business.rows[0]
+    try {
+      await saveBusinessContextFromOnboarding(req.auth.sub, savedBusiness)
+    } catch (memErr) {
+      console.warn('onboarding memory save:', memErr.message)
+    }
+
+    return res.status(201).json({ business: savedBusiness })
   } catch (err) {
     console.error('onboarding:', err.message)
     return res.status(500).json({ error: 'Failed to save onboarding' })

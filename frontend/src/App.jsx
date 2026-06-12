@@ -31,6 +31,7 @@ import PlansPage from './pages/PlansPage'
 import ScanHistory from './pages/ScanHistory'
 import ScanReport from './pages/ScanReport'
 import ActionPlan from './pages/ActionPlan'
+import BusinessResearchReport from './pages/BusinessResearchReport'
 import './App.css'
 
 const App = () => {
@@ -56,6 +57,7 @@ const App = () => {
               <Route path="/app/scans" element={<ScanHistory />} />
               <Route path="/app/scans/:id" element={<ScanReport />} />
               <Route path="/app/action-plan" element={<ActionPlan />} />
+              <Route path="/app/research/:businessId" element={<BusinessResearchReport />} />
               <Route path="/app/workspace/github" element={<WorkspaceGitHub />} />
               <Route path="/app/workspace/url" element={<WorkspaceUrl />} />
               <Route path="/app/workspace/create" element={<WorkspaceCreate />} />

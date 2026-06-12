@@ -3,42 +3,26 @@ const { requireAuth } = require('../middleware/auth')
 const { loadFullContext } = require('../services/contextService')
 const { searchWeb } = require('../services/searchService')
 const {
-  generateBusinessAdvice,
+  generateChatAnswer,
   generateContentIdeas,
   summarizeCompetitor,
   analyzeSocial,
   analyzeStoreHealth,
+  wantsCurrentInfo,
 } = require('../services/aiService')
 const { saveChatMessage, learnFromUserMessage } = require('../services/memoryService')
+const { getLatestResearchProfile } = require('../services/businessResearchService')
 const { query } = require('../db')
 
 const router = express.Router()
 
-async function loadScanContext(userId, scanId) {
-  if (!scanId) return null
-  const result = await query(
-    `SELECT s.*, b.business_name, b.business_type
-     FROM business_scans s
-     LEFT JOIN businesses b ON b.id = s.business_id
-     WHERE s.id = $1 AND s.user_id = $2`,
-    [scanId, userId],
-  )
-  const row = result.rows[0]
-  if (!row) return null
-  const resultJson = row.result_json || {}
-  return {
-    id: row.id,
-    overall_score: row.overall_score,
-    store_score: row.store_score,
-    trust_score: row.trust_score,
-    content_score: row.content_score,
-    competitor_score: row.competitor_score,
-    business_name: row.business_name,
-    top_strengths: resultJson.top_strengths || [],
-    top_risks: resultJson.top_risks || [],
-    next_actions: resultJson.next_actions || [],
-    checklist: resultJson.checklist || {},
-  }
+async function loadBusiness(userId, businessId) {
+  if (!businessId) return null
+  const result = await query(`SELECT * FROM businesses WHERE id = $1 AND user_id = $2`, [
+    businessId,
+    userId,
+  ])
+  return result.rows[0] || null
 }
 
 router.post('/chat', requireAuth, async (req, res) => {
@@ -46,45 +30,77 @@ router.post('/chat', requireAuth, async (req, res) => {
   if (!message) return res.status(400).json({ error: 'message is required' })
 
   try {
-    const ctx = await loadFullContext(req.auth.sub)
-    const scanContext = await loadScanContext(req.auth.sub, req.body?.scan_id)
+    const businessId = req.body?.business_id || null
+    const business = businessId
+      ? await loadBusiness(req.auth.sub, businessId)
+      : (await loadFullContext(req.auth.sub)).businesses?.[0] || null
 
-    let searchResults = null
-    if (req.body?.use_search) {
-      const q = req.body.search_query || `${message} ecommerce growth strategy`
-      searchResults = await searchWeb(q, { limit: 5 })
+    if (businessId && !business) {
+      return res.status(404).json({ error: 'Business not found' })
     }
 
-    const result = await generateBusinessAdvice({
-      ctx,
+    const ctx = await loadFullContext(req.auth.sub)
+    const research = business
+      ? await getLatestResearchProfile(req.auth.sub, business.id)
+      : null
+
+    const businessScans = business
+      ? (ctx.scans || []).filter((s) => s.business_id === business.id)
+      : ctx.scans || []
+
+    const businessActions = business
+      ? (ctx.actions || []).filter((a) => a.business_id === business.id)
+      : ctx.actions || []
+
+    let searchResults = null
+    if (req.body?.use_search || wantsCurrentInfo(message)) {
+      const q =
+        req.body?.search_query ||
+        `${business?.business_name || 'ecommerce'} ${business?.product_sold || ''} market trends`.trim()
+      searchResults = await searchWeb(q, {
+        userId: req.auth.sub,
+        businessId: business?.id,
+        limit: 4,
+      })
+    }
+
+    const result = await generateChatAnswer({
+      business,
+      research,
+      scans: businessScans,
+      actions: businessActions,
+      memories: ctx.memories,
       message,
       searchResults,
-      scanContext,
+      businesses: ctx.businesses,
     })
 
     await saveChatMessage(req.auth.sub, {
       role: 'user',
       content: message,
-      business_id: req.body?.business_id,
-      metadata: { scan_id: req.body?.scan_id || null },
+      business_id: business?.id,
+      metadata: {},
     })
     await saveChatMessage(req.auth.sub, {
       role: 'assistant',
-      content: result.reply,
-      business_id: req.body?.business_id,
-      metadata: { provider: result.provider, insights: result.insights },
+      content: result.answer,
+      business_id: business?.id,
+      metadata: {
+        provider: result.provider,
+        score_context: result.score_context,
+        suggested_actions: result.suggested_actions,
+      },
     })
     await learnFromUserMessage(req.auth.sub, message)
 
     return res.json({
-      reply: result.reply,
-      insights: result.insights || [],
+      answer: result.answer,
+      score_context: result.score_context,
+      sources: result.sources,
+      suggested_actions: result.suggested_actions,
+      used_memory: result.used_memory,
       provider: result.provider,
-      search: searchResults ? { provider: searchResults.provider, count: searchResults.results?.length } : null,
-      context: {
-        business: ctx.businesses?.[0]?.business_name || null,
-        open_actions: (ctx.actions || []).filter((a) => a.status !== 'done').length,
-      },
+      reply: result.answer,
     })
   } catch (err) {
     console.error('ai chat:', err.message)
@@ -118,8 +134,13 @@ router.post('/competitor-research', requireAuth, async (req, res) => {
 
   try {
     const ctx = await loadFullContext(req.auth.sub)
+    const business = ctx.businesses?.[0]
     const queryText = competitorName || competitorUrl
-    const searchResults = await searchWeb(`${queryText} ecommerce store offers`, { limit: 6 })
+    const searchResults = await searchWeb(`${queryText} ecommerce store offers`, {
+      userId: req.auth.sub,
+      businessId: business?.id,
+      limit: 6,
+    })
     const result = await summarizeCompetitor({
       ctx,
       input: { competitor_name: competitorName, competitor_url: competitorUrl },
@@ -135,6 +156,7 @@ router.post('/competitor-research', requireAuth, async (req, res) => {
 router.post('/social-analysis', requireAuth, async (req, res) => {
   try {
     const ctx = await loadFullContext(req.auth.sub)
+    const business = ctx.businesses?.[0]
     const input = {
       profile_url: req.body?.profile_url,
       content_notes: req.body?.content_notes,
@@ -144,7 +166,11 @@ router.post('/social-analysis', requireAuth, async (req, res) => {
 
     let searchResults = null
     if (input.profile_url) {
-      searchResults = await searchWeb(`${input.profile_url} social content strategy`, { limit: 4 })
+      searchResults = await searchWeb(`${input.profile_url} social content strategy`, {
+        userId: req.auth.sub,
+        businessId: business?.id,
+        limit: 4,
+      })
     }
 
     const result = await analyzeSocial({ ctx, input, searchResults })
@@ -158,6 +184,10 @@ router.post('/social-analysis', requireAuth, async (req, res) => {
 router.post('/store-health', requireAuth, async (req, res) => {
   try {
     const ctx = await loadFullContext(req.auth.sub)
+    const business = ctx.businesses?.[0]
+    if (business) {
+      ctx.research = await getLatestResearchProfile(req.auth.sub, business.id)
+    }
     const input = {
       store_url: req.body?.store_url,
       focus: req.body?.focus,
@@ -167,7 +197,11 @@ router.post('/store-health', requireAuth, async (req, res) => {
     let searchResults = null
     if (input.store_url || input.topic) {
       const q = input.topic || `${input.store_url} storefront conversion trust signals`
-      searchResults = await searchWeb(q, { limit: 4 })
+      searchResults = await searchWeb(q, {
+        userId: req.auth.sub,
+        businessId: business?.id,
+        limit: 4,
+      })
     }
 
     const result = await analyzeStoreHealth({ ctx, input, searchResults })

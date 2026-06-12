@@ -1,12 +1,13 @@
 const { query } = require('../db')
 
 const MEMORY_TYPES = new Set([
-  'preference',
   'business_context',
-  'tone',
   'goal',
   'audience',
   'product',
+  'platform',
+  'competitor',
+  'preference',
   'strategy',
 ])
 
@@ -19,6 +20,10 @@ function formatMemory(row) {
     created_at: row.created_at,
     updated_at: row.updated_at,
   }
+}
+
+async function getUserMemory(userId) {
+  return listMemories(userId)
 }
 
 async function listMemories(userId) {
@@ -45,6 +50,111 @@ async function upsertMemory(userId, { memory_type, key, value }) {
     [userId, memory_type, memKey, JSON.stringify(value ?? {})],
   )
   return formatMemory(result.rows[0])
+}
+
+async function saveBusinessContextFromOnboarding(userId, business) {
+  const saved = []
+  if (business.business_name) {
+    saved.push(
+      await upsertMemory(userId, {
+        memory_type: 'business_context',
+        key: 'business_name',
+        value: { name: business.business_name },
+      }),
+    )
+  }
+  if (business.business_type) {
+    saved.push(
+      await upsertMemory(userId, {
+        memory_type: 'business_context',
+        key: 'business_type',
+        value: { type: business.business_type },
+      }),
+    )
+  }
+  if (business.product_sold) {
+    saved.push(
+      await upsertMemory(userId, {
+        memory_type: 'product',
+        key: 'product_sold',
+        value: { product: business.product_sold },
+      }),
+    )
+  }
+  if (business.target_customers) {
+    saved.push(
+      await upsertMemory(userId, {
+        memory_type: 'audience',
+        key: 'target_customers',
+        value: { audience: business.target_customers },
+      }),
+    )
+  }
+  if (business.store_url) {
+    saved.push(
+      await upsertMemory(userId, {
+        memory_type: 'business_context',
+        key: 'store_url',
+        value: { url: business.store_url },
+      }),
+    )
+  }
+  return saved
+}
+
+async function saveResearchMemory(userId, businessId, researchProfile) {
+  const saved = []
+  const signals = researchProfile.extracted_signals || {}
+  const scores = researchProfile.scores || {}
+
+  saved.push(
+    await upsertMemory(userId, {
+      memory_type: 'business_context',
+      key: `research_signals_${businessId}`,
+      value: { signals, researched_at: researchProfile.created_at },
+    }),
+  )
+
+  if (scores.strengths?.length) {
+    saved.push(
+      await upsertMemory(userId, {
+        memory_type: 'strategy',
+        key: `research_strengths_${businessId}`,
+        value: { strengths: scores.strengths },
+      }),
+    )
+  }
+  if (scores.risks?.length) {
+    saved.push(
+      await upsertMemory(userId, {
+        memory_type: 'strategy',
+        key: `research_risks_${businessId}`,
+        value: { risks: scores.risks },
+      }),
+    )
+  }
+  if (scores.next_actions?.length) {
+    saved.push(
+      await upsertMemory(userId, {
+        memory_type: 'goal',
+        key: `research_next_actions_${businessId}`,
+        value: { next_actions: scores.next_actions },
+      }),
+    )
+  }
+
+  const social = signals.website?.social_links || []
+  if (social.length) {
+    saved.push(
+      await upsertMemory(userId, {
+        memory_type: 'platform',
+        key: `social_links_${businessId}`,
+        value: { links: social },
+      }),
+    )
+  }
+
+  return saved
 }
 
 async function deleteMemory(userId, memoryId) {
@@ -78,11 +188,6 @@ function extractMemoriesFromText(text) {
   const memories = []
   const lower = text.toLowerCase()
 
-  const toneMatch = text.match(/tone[:\s]+([a-zA-Z ]{3,40})/i)
-  if (toneMatch) {
-    memories.push({ memory_type: 'tone', key: 'preferred_tone', value: { tone: toneMatch[1].trim() } })
-  }
-
   const goalMatch = text.match(/goal[:\s]+(.{5,120})/i)
   if (goalMatch) {
     memories.push({ memory_type: 'goal', key: 'primary_goal', value: { goal: goalMatch[1].trim() } })
@@ -93,7 +198,7 @@ function extractMemoriesFromText(text) {
     if (lower.includes('tiktok')) platforms.push('TikTok')
     if (lower.includes('instagram')) platforms.push('Instagram')
     if (lower.includes('facebook')) platforms.push('Facebook')
-    memories.push({ memory_type: 'preference', key: 'platforms', value: { platforms } })
+    memories.push({ memory_type: 'platform', key: 'platforms', value: { platforms } })
   }
 
   const audienceMatch = text.match(/customers? (are|include)[:\s]+(.{5,120})/i)
@@ -102,6 +207,15 @@ function extractMemoriesFromText(text) {
       memory_type: 'audience',
       key: 'target_audience',
       value: { audience: audienceMatch[2].trim() },
+    })
+  }
+
+  const competitorMatch = text.match(/competitor[:\s]+(.{3,80})/i)
+  if (competitorMatch) {
+    memories.push({
+      memory_type: 'competitor',
+      key: 'mentioned_competitor',
+      value: { name: competitorMatch[1].trim() },
     })
   }
 
@@ -119,8 +233,11 @@ async function learnFromUserMessage(userId, message) {
 
 module.exports = {
   MEMORY_TYPES,
+  getUserMemory,
   listMemories,
   upsertMemory,
+  saveBusinessContextFromOnboarding,
+  saveResearchMemory,
   deleteMemory,
   saveChatMessage,
   getRecentChat,
