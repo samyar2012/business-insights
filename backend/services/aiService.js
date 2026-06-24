@@ -4,7 +4,18 @@ function wantsCurrentInfo(message) {
   return /current|latest|today|now|trend|news|recent|market/i.test(message)
 }
 
-function pickScoreContext(research, scans) {
+function pickScoreContext(research, scans, webProfile) {
+  if (webProfile?.scores) {
+    return {
+      source: 'website_crawl',
+      overall_score: webProfile.scores.overall_score,
+      store_score: webProfile.scores.store_score,
+      trust_score: webProfile.scores.trust_score,
+      content_score: webProfile.scores.content_score,
+      offer_score: webProfile.scores.offer_score,
+      technical_score: webProfile.scores.technical_score,
+    }
+  }
   if (research?.scores) {
     return {
       source: 'research',
@@ -30,16 +41,30 @@ function pickScoreContext(research, scans) {
   return { source: 'none' }
 }
 
-function buildMockChatAnswer({ business, research, scans, actions, memories, message, searchResults }) {
+function buildMockChatAnswer({
+  business,
+  research,
+  retrievalContext,
+  scans,
+  actions,
+  memories,
+  message,
+  searchResults,
+}) {
   const name = business?.business_name || 'your business'
-  const scores = pickScoreContext(research, scans)
+  const scores = pickScoreContext(research, scans, webProfile)
   const openActions = (actions || []).filter((a) => a.status !== 'done')
 
-  const researchStrengths = research?.scores?.strengths || []
-  const researchRisks = research?.scores?.risks || []
-  const researchActions = research?.scores?.next_actions || []
+  const webProfile = retrievalContext?.profile
+  const websiteChunks = retrievalContext?.website_chunks || []
+
+  const researchStrengths = research?.scores?.strengths || webProfile?.scores?.strengths || []
+  const researchRisks = research?.scores?.risks || webProfile?.scores?.risks || []
+  const researchActions =
+    research?.scores?.next_actions || webProfile?.scores?.recommended_actions || []
 
   const sources = [
+    ...(retrievalContext?.sources || []),
     ...(research?.search_summary?.sources || []).slice(0, 4),
     ...(searchResults?.results || []).slice(0, 2).map((r) => ({
       title: r.title,
@@ -55,8 +80,8 @@ function buildMockChatAnswer({ business, research, scans, actions, memories, mes
   }))
 
   let answer = `For ${name}: ${message}\n\n`
-  if (scores.source === 'research') {
-    answer += `Research score is ${scores.overall_score}/100 (store ${scores.store_score}, trust ${scores.trust_score}, offer ${scores.offer_score}, market ${scores.market_score}). `
+  if (scores.source === 'research' || scores.source === 'website_crawl') {
+    answer += `Research score is ${scores.overall_score}/100 (store ${scores.store_score}, trust ${scores.trust_score}, offer ${scores.offer_score}${scores.market_score != null ? `, market ${scores.market_score}` : ''}). `
   } else if (scores.source === 'scan') {
     answer += `Latest scan score is ${scores.overall_score}/100. `
   } else {
@@ -65,6 +90,10 @@ function buildMockChatAnswer({ business, research, scans, actions, memories, mes
 
   if (researchRisks.length) {
     answer += `Top risk: ${researchRisks[0]}. `
+  }
+  if (websiteChunks.length) {
+    const snippet = websiteChunks[0].content.slice(0, 120)
+    answer += `From your website (${websiteChunks[0].title || websiteChunks[0].url}): "${snippet}..." `
   }
   if (openActions.length) {
     answer += `You have ${openActions.length} open action item(s) - start with "${openActions[0].title}". `

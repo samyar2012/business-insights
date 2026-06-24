@@ -12,6 +12,7 @@ const {
 } = require('../services/aiService')
 const { saveChatMessage, learnFromUserMessage } = require('../services/memoryService')
 const { getLatestResearchProfile } = require('../services/businessResearchService')
+const { getBusinessContext } = require('../services/retrievalService')
 const { query } = require('../db')
 
 const router = express.Router()
@@ -44,6 +45,15 @@ router.post('/chat', requireAuth, async (req, res) => {
       ? await getLatestResearchProfile(req.auth.sub, business.id)
       : null
 
+    const retrievalContext = business
+      ? await getBusinessContext({
+          userId: req.auth.sub,
+          businessId: business.id,
+          query: message,
+          limit: 5,
+        })
+      : null
+
     const businessScans = business
       ? (ctx.scans || []).filter((s) => s.business_id === business.id)
       : ctx.scans || []
@@ -67,6 +77,7 @@ router.post('/chat', requireAuth, async (req, res) => {
     const result = await generateChatAnswer({
       business,
       research,
+      retrievalContext,
       scans: businessScans,
       actions: businessActions,
       memories: ctx.memories,

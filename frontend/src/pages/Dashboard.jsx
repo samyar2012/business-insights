@@ -16,6 +16,8 @@ const Dashboard = () => {
   const [latestScan, setLatestScan] = useState(null)
   const [actions, setActions] = useState([])
   const [research, setResearch] = useState(null)
+  const [webProfile, setWebProfile] = useState(null)
+  const [latestCrawl, setLatestCrawl] = useState(null)
   const [researchBusy, setResearchBusy] = useState(false)
   const [latestInsight, setLatestInsight] = useState('')
   const [scansLoading, setScansLoading] = useState(true)
@@ -28,16 +30,24 @@ const Dashboard = () => {
   const load = useCallback(async () => {
     setScansLoading(true)
     try {
-      const [scansData, actionsData, researchData] = await Promise.all([
+      const [scansData, actionsData, researchData, webData] = await Promise.all([
         apiFetch('/scans'),
         apiFetch('/actions').catch(() => ({ actions: [] })),
         business?.id
           ? apiFetch(`/research/business/${business.id}`).catch(() => ({ profile: null }))
           : Promise.resolve({ profile: null }),
+        business?.id
+          ? apiFetch(`/businesses/${business.id}/web-profile`).catch(() => ({
+              profile: null,
+              latest_crawl: null,
+            }))
+          : Promise.resolve({ profile: null, latest_crawl: null }),
       ])
       setLatestScan((scansData.scans || [])[0] || null)
       setActions(actionsData.actions || [])
       setResearch(researchData.profile || null)
+      setWebProfile(webData.profile || null)
+      setLatestCrawl(webData.latest_crawl || null)
     } catch {
       setLatestScan(null)
       setActions([])
@@ -152,6 +162,75 @@ const Dashboard = () => {
 
       <section className="app-stagger mt-8">
         <article className="app-card p-5">
+          <p className="app-eyebrow">Analyze your website</p>
+          {webProfile ? (
+            <>
+              <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <p className={`text-4xl font-semibold ${scoreTone(webProfile.scores?.overall_score)}`}>
+                    {webProfile.scores?.overall_score ?? '-'}
+                  </p>
+                  <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
+                    {webProfile.summary?.platform
+                      ? `Platform: ${webProfile.summary.platform}`
+                      : 'Website profile ready'}
+                    {webProfile.summary?.pages_analyzed
+                      ? ` - ${webProfile.summary.pages_analyzed} pages`
+                      : ''}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs text-[var(--app-text-muted)]">
+                  <span>Store {webProfile.scores?.store_score}</span>
+                  <span>Trust {webProfile.scores?.trust_score}</span>
+                  <span>Content {webProfile.scores?.content_score}</span>
+                </div>
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link
+                  to={`/app/businesses/${business?.id}/website-report`}
+                  className="app-btn app-btn--primary"
+                >
+                  Website report
+                </Link>
+              </div>
+            </>
+          ) : latestCrawl?.status === 'running' ? (
+            <>
+              <p className="mt-3 text-sm text-[var(--app-text-secondary)]">
+                Crawling your website... {latestCrawl.pages_crawled ?? 0} of{' '}
+                {latestCrawl.pages_discovered ?? '?'} pages
+              </p>
+              <Link
+                to={`/app/businesses/${business?.id}/website-report`}
+                className="app-btn app-btn--secondary mt-4 inline-flex"
+              >
+                View progress
+              </Link>
+            </>
+          ) : (
+            <>
+              <p className="mt-3 text-sm text-[var(--app-text-secondary)]">
+                Crawl your store URL directly — no Google Search required. We scan public same-domain pages
+                and build a structured profile for AI coaching.
+              </p>
+              {!business?.store_url ? (
+                <p className="mt-2 text-xs text-[var(--app-text-muted)]">
+                  Add a store URL in Businesses to enable website analysis.
+                </p>
+              ) : null}
+              <Link
+                to={`/app/businesses/${business?.id}/website-report`}
+                className="app-btn app-btn--primary mt-4 inline-flex"
+              >
+                Analyze your website
+              </Link>
+            </>
+          )}
+        </article>
+      </section>
+
+      <section className="app-stagger mt-8">
+        <article className="app-card p-5">
           <p className="app-eyebrow">Business research</p>
           {research ? (
             <>
@@ -188,7 +267,7 @@ const Dashboard = () => {
           ) : (
             <>
               <p className="mt-3 text-sm text-[var(--app-text-secondary)]">
-                Research your business online using onboarding data and your store URL.
+                Run external market research for competitors, trends, and mentions (optional — uses web search).
               </p>
               <button
                 type="button"

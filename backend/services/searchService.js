@@ -75,15 +75,15 @@ async function getCachedSearch({ userId, businessId, q, provider }) {
   }
 }
 
-async function countDailyApiCalls(userId) {
+async function countDailyApiCalls(userId, providerName) {
   if (!userId) return 0
   const result = await query(
     `SELECT COUNT(*)::int AS count FROM research_events
      WHERE user_id = $1
-       AND provider = 'google'
+       AND provider = $2
        AND COALESCE((result_json->>'api_call')::boolean, false) = true
        AND created_at > now() - interval '24 hours'`,
-    [userId],
+    [userId, providerName],
   )
   return result.rows[0]?.count || 0
 }
@@ -135,6 +135,131 @@ async function searchGoogleRaw(q, { limit = 5 } = {}) {
   )
 }
 
+async function searchBraveRaw(q, { limit = 5 } = {}) {
+  const key = process.env.BRAVE_SEARCH_API_KEY
+  if (!key) {
+    const err = new Error('Brave Search API not configured. Set BRAVE_SEARCH_API_KEY.')
+    err.code = 'NOT_CONFIGURED'
+    throw err
+  }
+
+  const url = new URL('https://api.search.brave.com/res/v1/web/search')
+  url.searchParams.set('q', q)
+  url.searchParams.set('count', String(Math.min(limit, 10)))
+
+  const res = await fetch(url, {
+    headers: { 'X-Subscription-Token': key, Accept: 'application/json' },
+  })
+  const data = await res.json()
+  if (!res.ok) {
+    const err = new Error(data.message || 'Brave search request failed')
+    err.code = 'SEARCH_FAILED'
+    throw err
+  }
+
+  return (data.web?.results || []).map((item) =>
+    normalizeResult(
+      {
+        title: item.title,
+        url: item.url,
+        snippet: item.description,
+        raw: item,
+      },
+      'brave',
+    ),
+  )
+}
+
+async function searchTavilyRaw(q, { limit = 5 } = {}) {
+  const key = process.env.TAVILY_API_KEY
+  if (!key) {
+    const err = new Error('Tavily API not configured. Set TAVILY_API_KEY.')
+    err.code = 'NOT_CONFIGURED'
+    throw err
+  }
+
+  const res = await fetch('https://api.tavily.com/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      api_key: key,
+      query: q,
+      max_results: Math.min(limit, 10),
+      search_depth: 'basic',
+    }),
+  })
+  const data = await res.json()
+  if (!res.ok) {
+    const err = new Error(data.error || 'Tavily search request failed')
+    err.code = 'SEARCH_FAILED'
+    throw err
+  }
+
+  return (data.results || []).map((item) =>
+    normalizeResult(
+      {
+        title: item.title,
+        url: item.url,
+        snippet: item.content,
+        raw: item,
+      },
+      'tavily',
+    ),
+  )
+}
+
+async function searchSerpApiRaw(q, { limit = 5 } = {}) {
+  const key = process.env.SERPAPI_API_KEY
+  if (!key) {
+    const err = new Error('SerpAPI not configured. Set SERPAPI_API_KEY.')
+    err.code = 'NOT_CONFIGURED'
+    throw err
+  }
+
+  const url = new URL('https://serpapi.com/search.json')
+  url.searchParams.set('api_key', key)
+  url.searchParams.set('engine', 'google')
+  url.searchParams.set('q', q)
+  url.searchParams.set('num', String(Math.min(limit, 10)))
+
+  const res = await fetch(url)
+  const data = await res.json()
+  if (!res.ok || data.error) {
+    const err = new Error(data.error || 'SerpAPI search request failed')
+    err.code = 'SEARCH_FAILED'
+    throw err
+  }
+
+  return (data.organic_results || []).map((item) =>
+    normalizeResult(
+      {
+        title: item.title,
+        url: item.link,
+        snippet: item.snippet,
+        raw: item,
+      },
+      'serpapi',
+    ),
+  )
+}
+
+const PROVIDER_SEARCHERS = {
+  google: searchGoogleRaw,
+  brave: searchBraveRaw,
+  tavily: searchTavilyRaw,
+  serpapi: searchSerpApiRaw,
+}
+
+async function searchWithProvider(provider, q, options) {
+  const searcher = PROVIDER_SEARCHERS[provider]
+  if (!searcher) {
+    const err = new Error(`Unknown search provider: ${provider}`)
+    err.code = 'NOT_CONFIGURED'
+    throw err
+  }
+  return searcher(q, options)
+}
+
 async function searchWeb(searchQuery, options = {}) {
   const q = String(searchQuery || '').trim()
   const provider = (options.provider || PROVIDER).toLowerCase()
@@ -159,10 +284,10 @@ async function searchWeb(searchQuery, options = {}) {
     return { provider: 'mock', query: q, cached: false, limit_reached: false, results }
   }
 
-  if (provider === 'google') {
-    const dailyCount = userId ? await countDailyApiCalls(userId) : 0
+  if (PROVIDER_SEARCHERS[provider]) {
+    const dailyCount = userId ? await countDailyApiCalls(userId, provider) : 0
     if (userId && dailyCount >= DAILY_SEARCH_LIMIT) {
-      const staleCache = await getCachedSearch({ userId, businessId, q, provider: 'google' })
+      const staleCache = await getCachedSearch({ userId, businessId, q, provider })
       if (staleCache) {
         return { ...staleCache, limit_reached: true }
       }
@@ -185,13 +310,13 @@ async function searchWeb(searchQuery, options = {}) {
     }
 
     try {
-      const results = (await searchGoogleRaw(q, { limit })).slice(0, limit)
+      const results = (await searchWithProvider(provider, q, { limit })).slice(0, limit)
       const payload = { results, api_call: true, cached: false, limit_reached: false }
-      await saveSearchEvent({ userId, businessId, q, provider: 'google', payload })
-      return { provider: 'google', query: q, cached: false, limit_reached: false, results }
+      await saveSearchEvent({ userId, businessId, q, provider, payload })
+      return { provider, query: q, cached: false, limit_reached: false, results }
     } catch (err) {
-      console.warn('Google search error:', err.message)
-      const staleCache = await getCachedSearch({ userId, businessId, q, provider: 'google' })
+      console.warn(`${provider} search error:`, err.message)
+      const staleCache = await getCachedSearch({ userId, businessId, q, provider })
       if (staleCache) {
         return { ...staleCache, error: err.message }
       }
