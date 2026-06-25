@@ -15,8 +15,9 @@ async function buildBusinessWebProfile({ userId, businessId, business, crawlRunI
   const summary = {
     business_name: business?.business_name || pages[0]?.title || null,
     business_type: inferBusinessType(business, aggregated),
-    products: aggregated.products,
+    products: aggregated.product_names || aggregated.products.map((p) => p.name || p),
     services: aggregated.services,
+    site_classification: aggregated.site_classification,
     target_audience: business?.target_customers || null,
     value_proposition: buildValueProposition(pages, business),
     pricing_signals: aggregated.pricing_signals,
