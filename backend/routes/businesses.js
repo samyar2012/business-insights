@@ -7,6 +7,7 @@ const {
   clearBusinessAnalysisData,
   updateBusinessStoreUrl,
 } = require('../services/businessAnalysisService')
+const { businessCrawlsRouter } = require('./businessCrawls')
 
 const router = express.Router()
 
@@ -100,6 +101,58 @@ router.post('/onboarding', requireAuth, async (req, res) => {
   }
 })
 
+router.use(businessCrawlsRouter)
+
+router.patch('/:id/store-url', requireAuth, async (req, res) => {
+  const businessId = req.params.id
+  const rawUrl = req.body?.store_url
+
+  try {
+    let storeUrl = null
+    if (rawUrl != null && String(rawUrl).trim() !== '') {
+      const parsed = await validatePublicUrl(String(rawUrl).trim())
+      storeUrl = parsed.href
+    }
+
+    const result = await updateBusinessStoreUrl(req.auth.sub, businessId, storeUrl)
+    if (!result) return res.status(404).json({ error: 'Business not found' })
+
+    return res.json({
+      business: result.business,
+      cleared: result.cleared,
+      message: result.cleared
+        ? 'Store URL updated. Previous scans and website analysis were cleared.'
+        : 'Store URL updated.',
+    })
+  } catch (err) {
+    if (err.code === 'INVALID_URL' || err.code === 'SSRF_BLOCKED') {
+      return res.status(400).json({ error: err.message })
+    }
+    console.error('update store url:', err.message)
+    return res.status(500).json({ error: 'Failed to update store URL' })
+  }
+})
+
+router.delete('/:id/analysis-data', requireAuth, async (req, res) => {
+  const businessId = req.params.id
+  try {
+    const existing = await query(`SELECT id FROM businesses WHERE id = $1 AND user_id = $2`, [
+      businessId,
+      req.auth.sub,
+    ])
+    if (!existing.rows[0]) return res.status(404).json({ error: 'Business not found' })
+
+    await clearBusinessAnalysisData(req.auth.sub, businessId)
+    return res.json({
+      ok: true,
+      message: 'Scans, website analysis, and research results were cleared.',
+    })
+  } catch (err) {
+    console.error('clear analysis data:', err.message)
+    return res.status(500).json({ error: 'Failed to clear analysis data' })
+  }
+})
+
 router.patch('/:id', requireAuth, async (req, res) => {
   const id = req.params.id
   const fields = {
@@ -186,56 +239,6 @@ router.post('/', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('create business:', err.message)
     return res.status(500).json({ error: 'Failed to create business' })
-  }
-})
-
-router.patch('/:id/store-url', requireAuth, async (req, res) => {
-  const businessId = req.params.id
-  const rawUrl = req.body?.store_url
-
-  try {
-    let storeUrl = null
-    if (rawUrl != null && String(rawUrl).trim() !== '') {
-      const parsed = await validatePublicUrl(String(rawUrl).trim())
-      storeUrl = parsed.href
-    }
-
-    const result = await updateBusinessStoreUrl(req.auth.sub, businessId, storeUrl)
-    if (!result) return res.status(404).json({ error: 'Business not found' })
-
-    return res.json({
-      business: result.business,
-      cleared: result.cleared,
-      message: result.cleared
-        ? 'Store URL updated. Previous scans and website analysis were cleared.'
-        : 'Store URL updated.',
-    })
-  } catch (err) {
-    if (err.code === 'INVALID_URL' || err.code === 'SSRF_BLOCKED') {
-      return res.status(400).json({ error: err.message })
-    }
-    console.error('update store url:', err.message)
-    return res.status(500).json({ error: 'Failed to update store URL' })
-  }
-})
-
-router.delete('/:id/analysis-data', requireAuth, async (req, res) => {
-  const businessId = req.params.id
-  try {
-    const existing = await query(`SELECT id FROM businesses WHERE id = $1 AND user_id = $2`, [
-      businessId,
-      req.auth.sub,
-    ])
-    if (!existing.rows[0]) return res.status(404).json({ error: 'Business not found' })
-
-    await clearBusinessAnalysisData(req.auth.sub, businessId)
-    return res.json({
-      ok: true,
-      message: 'Scans, website analysis, and research results were cleared.',
-    })
-  } catch (err) {
-    console.error('clear analysis data:', err.message)
-    return res.status(500).json({ error: 'Failed to clear analysis data' })
   }
 })
 
