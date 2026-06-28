@@ -2,19 +2,28 @@ import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import ThemeToggle from '../components/app/ThemeToggle'
 import { apiFetch } from '../lib/api'
+import {
+  businessToFormValues,
+  EMPTY_BUSINESS_FORM,
+  serializeBusinessForm,
+} from '../lib/businessFormConfig'
+import BusinessProfileForm from '../components/app/BusinessProfileForm'
 import Alert from '../components/app/Alert'
 
-const StoreUrlSettings = ({ businesses }) => {
+const BusinessProfileSettings = ({ business, displayName }) => {
   const { refreshUser } = useAuth()
-  const business = businesses[0] || null
-  const [storeUrl, setStoreUrl] = useState(business?.store_url || '')
+  const [form, setForm] = useState({ ...EMPTY_BUSINESS_FORM })
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [busy, setBusy] = useState(false)
 
+  const loadForm = useCallback(() => {
+    setForm(businessToFormValues(business, displayName))
+  }, [business, displayName])
+
   useEffect(() => {
-    setStoreUrl(business?.store_url || '')
-  }, [business?.store_url])
+    loadForm()
+  }, [loadForm])
 
   const handleSave = async (e) => {
     e.preventDefault()
@@ -23,36 +32,11 @@ const StoreUrlSettings = ({ businesses }) => {
     setError('')
     setSuccess('')
     try {
-      const data = await apiFetch(`/businesses/${business.id}/store-url`, {
+      const data = await apiFetch(`/businesses/${business.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ store_url: storeUrl.trim() }),
+        body: JSON.stringify(serializeBusinessForm(form)),
       })
-      setSuccess(data.message || 'Store URL saved.')
-      await refreshUser()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const handleRemove = async () => {
-    if (!business?.id) return
-    const confirmed = window.confirm(
-      'Remove your store URL and delete all scans, website analysis, and research results?',
-    )
-    if (!confirmed) return
-
-    setBusy(true)
-    setError('')
-    setSuccess('')
-    try {
-      const data = await apiFetch(`/businesses/${business.id}/store-url`, {
-        method: 'PATCH',
-        body: JSON.stringify({ store_url: '' }),
-      })
-      setStoreUrl('')
-      setSuccess(data.message || 'Store URL removed and analysis data cleared.')
+      setSuccess(data.message || 'Business profile saved.')
       await refreshUser()
     } catch (err) {
       setError(err.message)
@@ -64,7 +48,7 @@ const StoreUrlSettings = ({ businesses }) => {
   const handleClearResults = async () => {
     if (!business?.id) return
     const confirmed = window.confirm(
-      'Clear all scans, website analysis, and research results? Your store URL will stay the same.',
+      'Clear all scans, website analysis, and research results? Your profile and store URL will stay the same.',
     )
     if (!confirmed) return
 
@@ -72,10 +56,32 @@ const StoreUrlSettings = ({ businesses }) => {
     setError('')
     setSuccess('')
     try {
-      const data = await apiFetch(`/businesses/${business.id}/analysis-data`, {
-        method: 'DELETE',
-      })
+      const data = await apiFetch(`/businesses/${business.id}/analysis-data`, { method: 'DELETE' })
       setSuccess(data.message || 'Analysis data cleared.')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleRemoveUrl = async () => {
+    if (!business?.id) return
+    const confirmed = window.confirm(
+      'Remove your store URL and delete all scans, website analysis, and research results?',
+    )
+    if (!confirmed) return
+
+    setBusy(true)
+    setError('')
+    setSuccess('')
+    try {
+      const data = await apiFetch(`/businesses/${business.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ ...serializeBusinessForm(form), store_url: '' }),
+      })
+      setForm((f) => ({ ...f, store_url: '' }))
+      setSuccess(data.message || 'Store URL removed and analysis data cleared.')
       await refreshUser()
     } catch (err) {
       setError(err.message)
@@ -87,71 +93,56 @@ const StoreUrlSettings = ({ businesses }) => {
   if (!business) {
     return (
       <p className="mt-4 text-sm text-[var(--app-text-muted)]">
-        No business on file yet. Complete onboarding to add a store URL.
+        No business on file yet. Complete onboarding to set up your profile.
       </p>
     )
   }
 
   return (
-    <div className="mt-4">
-      <p className="text-xs font-semibold uppercase text-[var(--app-text-muted)]">
-        {business.business_name}
-      </p>
-
+    <form onSubmit={handleSave} className="mt-4">
       {error ? (
-        <Alert variant="error" title="Could not update" className="mt-4">
+        <Alert variant="error" title="Could not save" className="mb-5">
           {error}
         </Alert>
       ) : null}
 
       {success ? (
-        <Alert variant="success" title="Saved" className="mt-4" onDismiss={() => setSuccess('')}>
+        <Alert variant="success" title="Saved" className="mb-5" onDismiss={() => setSuccess('')}>
           {success}
         </Alert>
       ) : null}
 
-      <form onSubmit={handleSave} className="mt-4 space-y-3">
-        <label className="app-label" htmlFor="settings-store-url">
-          Store URL
-        </label>
-        <input
-          id="settings-store-url"
-          type="url"
-          placeholder="https://yourstore.com"
-          value={storeUrl}
-          onChange={(e) => setStoreUrl(e.target.value)}
-          className="app-field w-full"
+      <BusinessProfileForm
+        form={form}
+        onChange={setForm}
+        disabled={busy}
+        showStoreUrlHint
+      />
+
+      <div className="flex flex-wrap gap-3 pt-6">
+        <button type="submit" className="app-btn app-btn--primary" disabled={busy}>
+          {busy ? 'Saving...' : 'Save business profile'}
+        </button>
+        <button
+          type="button"
+          className="app-btn app-btn--secondary"
           disabled={busy}
-        />
-        <p className="text-xs text-[var(--app-text-muted)]">
-          Saving a different URL removes previous dashboard scans and website reports so you can analyze
-          the new site from scratch.
-        </p>
-        <div className="flex flex-wrap gap-3 pt-1">
-          <button type="submit" className="app-btn app-btn--primary" disabled={busy || !storeUrl.trim()}>
-            {busy ? 'Saving...' : 'Save store URL'}
-          </button>
+          onClick={handleClearResults}
+        >
+          Clear scans &amp; results
+        </button>
+        {form.store_url ? (
           <button
             type="button"
-            className="app-btn app-btn--secondary"
+            className="app-btn app-btn--ghost text-[var(--app-error-icon)]"
             disabled={busy}
-            onClick={handleClearResults}
+            onClick={handleRemoveUrl}
           >
-            Clear scans &amp; results
+            Remove store URL
           </button>
-          {business.store_url ? (
-            <button
-              type="button"
-              className="app-btn app-btn--ghost text-[var(--app-error-icon)]"
-              disabled={busy}
-              onClick={handleRemove}
-            >
-              Remove URL
-            </button>
-          ) : null}
-        </div>
-      </form>
-    </div>
+        ) : null}
+      </div>
+    </form>
   )
 }
 
@@ -161,8 +152,9 @@ const AppSettings = () => {
   const [memoryError, setMemoryError] = useState('')
   const [deletingId, setDeletingId] = useState(null)
 
+  const business = user?.businesses?.[0] || null
+
   const rows = [
-    { label: 'Name', value: user?.profile?.display_name || '-' },
     { label: 'Email', value: user?.email },
     {
       label: 'Plan',
@@ -213,10 +205,22 @@ const AppSettings = () => {
       <header>
         <p className="app-eyebrow">Preferences</p>
         <h1 className="app-page-title mt-2">Settings</h1>
-        <p className="app-page-subtitle">Customize appearance and review account details.</p>
+        <p className="app-page-subtitle">Update your business profile, appearance, and account details.</p>
       </header>
 
       <section className="app-card mt-8 p-6">
+        <h2 className="text-sm font-semibold text-[var(--app-text)]">Business profile</h2>
+        <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
+          Edit the same details you entered during onboarding — name, brand, products, customers, store
+          URL, and stats.
+        </p>
+        <BusinessProfileSettings
+          business={business}
+          displayName={user?.profile?.display_name}
+        />
+      </section>
+
+      <section className="app-card mt-6 p-6">
         <h2 className="text-sm font-semibold text-[var(--app-text)]">Appearance</h2>
         <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
           Choose light, dark, or match your system preference.
@@ -224,16 +228,6 @@ const AppSettings = () => {
         <div className="mt-4">
           <ThemeToggle />
         </div>
-      </section>
-
-      <section className="app-card mt-6 p-6">
-        <h2 className="text-sm font-semibold text-[var(--app-text)]">Store URL</h2>
-        <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
-          Change your store address or remove it to start fresh. Updating or removing the URL clears
-          website crawls, scans, and research results tied to the previous address.
-        </p>
-
-        <StoreUrlSettings businesses={user?.businesses || []} />
       </section>
 
       <section className="app-card mt-6 p-6">

@@ -163,7 +163,7 @@ router.get('/me', requireAuth, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' })
 
     const businesses = await query(
-      `SELECT id, owner_name, business_name, business_type, product_sold, target_customers,
+      `SELECT id, owner_name, business_name, business_type, business_model, product_sold, target_customers,
               store_url, monthly_revenue, customer_count, monthly_orders, created_at, updated_at
        FROM businesses WHERE user_id = $1 ORDER BY created_at ASC`,
       [req.auth.sub],

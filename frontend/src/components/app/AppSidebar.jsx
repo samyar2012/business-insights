@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useSidebar } from '../../context/SidebarContext'
 import PlanAccountSection from './PlanAccountSection'
@@ -54,7 +54,7 @@ const pathMatches = (pathname, to) => {
   return pathname === to || pathname.startsWith(`${to}/`)
 }
 
-const NavDropdown = ({ label, items, pathname, collapsed, defaultOpen = false }) => {
+const NavDropdown = ({ label, items, pathname, collapsed, defaultOpen = false, onNavigate }) => {
   const isSectionActive = items.some((item) => pathMatches(pathname, item.to))
   const [open, setOpen] = useState(defaultOpen || isSectionActive)
 
@@ -68,6 +68,7 @@ const NavDropdown = ({ label, items, pathname, collapsed, defaultOpen = false })
               key={item.to}
               to={item.to}
               title={item.label}
+              onClick={onNavigate}
               className={`app-sidebar__nav-link justify-center px-2 ${active ? 'is-active' : ''}`}
             >
               <span aria-hidden>{item.icon}</span>
@@ -100,6 +101,7 @@ const NavDropdown = ({ label, items, pathname, collapsed, defaultOpen = false })
               <Link
                 key={item.to}
                 to={item.to}
+                onClick={onNavigate}
                 className={`app-sidebar__nav-link app-sidebar__nav-link--sub ${active ? 'is-active' : ''}`}
               >
                 <span className="text-xs opacity-60" aria-hidden>
@@ -117,78 +119,99 @@ const NavDropdown = ({ label, items, pathname, collapsed, defaultOpen = false })
 
 const AppSidebar = () => {
   const { pathname } = useLocation()
-  const { collapsed } = useSidebar()
+  const { collapsed, mobileOpen, isDesktop, closeMobile } = useSidebar()
+  const effectiveCollapsed = collapsed && isDesktop
+  const sidebarVisible = isDesktop ? true : mobileOpen
+
+  useEffect(() => {
+    closeMobile()
+  }, [pathname, closeMobile])
+
+  const handleNavigate = isDesktop ? undefined : closeMobile
+
+  const sidebarStateClass = isDesktop
+    ? effectiveCollapsed
+      ? 'app-sidebar--collapsed'
+      : 'app-sidebar--expanded'
+    : mobileOpen
+      ? 'app-sidebar--expanded'
+      : 'app-sidebar--hidden'
 
   return (
     <aside
-      className={`app-sidebar hidden shrink-0 flex-col lg:flex ${
-        collapsed ? 'app-sidebar--collapsed w-14' : 'w-[13.5rem]'
-      }`}
+      className={`app-sidebar flex min-h-0 shrink-0 flex-col self-stretch ${sidebarStateClass}`}
+      aria-hidden={!sidebarVisible ? true : undefined}
     >
-      <div className="flex flex-1 flex-col overflow-y-auto px-2.5 py-5">
-        {!collapsed ? <p className="app-eyebrow px-2">Navigation</p> : null}
+      <div className="app-sidebar__inner flex min-h-0 flex-1 flex-col">
+        <div className="flex flex-1 flex-col overflow-y-auto px-2.5 py-5">
+          {!effectiveCollapsed ? <p className="app-eyebrow px-2">Navigation</p> : null}
 
-        <nav className={`space-y-1 ${collapsed ? 'mt-2' : 'mt-4'}`}>
-          {topLinks.map((item) => {
-            const active = pathMatches(pathname, item.to)
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                title={collapsed ? item.label : undefined}
-                className={`app-sidebar__nav-link ${active ? 'is-active' : ''} ${
-                  collapsed ? 'justify-center px-2' : ''
-                }`}
-              >
-                <span className="text-xs opacity-60" aria-hidden>
-                  {item.icon}
-                </span>
-                {!collapsed ? item.label : null}
-              </Link>
-            )
-          })}
+          <nav className={`space-y-1 ${effectiveCollapsed ? 'mt-2' : 'mt-4'}`}>
+            {topLinks.map((item) => {
+              const active = pathMatches(pathname, item.to)
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  title={effectiveCollapsed ? item.label : undefined}
+                  onClick={handleNavigate}
+                  className={`app-sidebar__nav-link ${active ? 'is-active' : ''} ${
+                    effectiveCollapsed ? 'justify-center px-2' : ''
+                  }`}
+                >
+                  <span className="text-xs opacity-60" aria-hidden>
+                    {item.icon}
+                  </span>
+                  {!effectiveCollapsed ? <span className="app-sidebar__label">{item.label}</span> : null}
+                </Link>
+              )
+            })}
 
-          <NavDropdown
-            label="Workspace"
-            items={workspaceItems}
-            pathname={pathname}
-            collapsed={collapsed}
-            defaultOpen
-          />
+            <NavDropdown
+              label="Workspace"
+              items={workspaceItems}
+              pathname={pathname}
+              collapsed={effectiveCollapsed}
+              defaultOpen
+              onNavigate={handleNavigate}
+            />
 
-          <NavDropdown
-            label="Tools"
-            items={toolItems}
-            pathname={pathname}
-            collapsed={collapsed}
-          />
+            <NavDropdown
+              label="Tools"
+              items={toolItems}
+              pathname={pathname}
+              collapsed={effectiveCollapsed}
+              onNavigate={handleNavigate}
+            />
 
-          {bottomLinks.map((item) => {
-            const active = pathname === item.to || pathname.startsWith(`${item.to}/`)
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                title={collapsed ? item.label : undefined}
-                className={`app-sidebar__nav-link ${active ? 'is-active' : ''} ${
-                  collapsed ? 'justify-center px-2' : ''
-                }`}
-              >
-                <span className="text-xs opacity-60" aria-hidden>
-                  {item.icon}
-                </span>
-                {!collapsed ? item.label : null}
-              </Link>
-            )
-          })}
-        </nav>
-      </div>
-
-      {!collapsed ? (
-        <div className="app-divider p-3">
-          <PlanAccountSection variant="sidebar" />
+            {bottomLinks.map((item) => {
+              const active = pathname === item.to || pathname.startsWith(`${item.to}/`)
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  title={effectiveCollapsed ? item.label : undefined}
+                  onClick={handleNavigate}
+                  className={`app-sidebar__nav-link ${active ? 'is-active' : ''} ${
+                    effectiveCollapsed ? 'justify-center px-2' : ''
+                  }`}
+                >
+                  <span className="text-xs opacity-60" aria-hidden>
+                    {item.icon}
+                  </span>
+                  {!effectiveCollapsed ? <span className="app-sidebar__label">{item.label}</span> : null}
+                </Link>
+              )
+            })}
+          </nav>
         </div>
-      ) : null}
+
+        {!effectiveCollapsed ? (
+          <div className="app-divider shrink-0 p-3">
+            <PlanAccountSection variant="sidebar" />
+          </div>
+        ) : null}
+      </div>
     </aside>
   )
 }

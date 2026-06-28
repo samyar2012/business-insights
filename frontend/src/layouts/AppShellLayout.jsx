@@ -14,9 +14,9 @@ const AppShellLayout = () => {
         <div className="app-workspace__mesh" aria-hidden />
         <div className="app-workspace__inner flex min-h-screen flex-col">
           <AppTopBar />
-          <div className="flex min-h-0 flex-1">
+          <div className="flex min-h-0 flex-1 overflow-hidden">
             <AppSidebar />
-            <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
+            <main className="app-main flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
               <PageTransition>
                 <Outlet />
               </PageTransition>

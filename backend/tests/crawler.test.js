@@ -285,7 +285,7 @@ describe('businessProfileLogic', () => {
     assert.equal(agg.site_classification.classification, 'shopify_dtc')
   })
 
-  it('calculates bounded scores with explanations', () => {
+  it('calculates bounded scores with explanations and scoring rubric', () => {
     const aggregated = {
       products: [
         { name: 'A', confidence: 85, source: 'json_ld_product' },
@@ -305,6 +305,7 @@ describe('businessProfileLogic', () => {
         total_text_length: 2000,
         page_count: 5,
         ctas: ['Add to cart', 'Shop'],
+        navigation_labels: [],
       },
       platform: 'Shopify',
       extraction_meta: {
@@ -320,12 +321,159 @@ describe('businessProfileLogic', () => {
       },
       site_classification: { classification: 'shopify_dtc', confidence: 80, indicators: [] },
       pricing_signals: ['$29.99'],
+      services: [],
     }
-    const scores = calculateScores(aggregated, { store_url: 'https://shop.com' }, [{}, {}, {}])
+    const scores = calculateScores(
+      aggregated,
+      { store_url: 'https://shop.com', business_model: 'ecommerce_store' },
+      [{}, {}, {}],
+    )
     assert.ok(scores.overall_score >= 0 && scores.overall_score <= 100)
     assert.ok(scores.store_score >= 0 && scores.store_score <= 100)
     assert.ok(Array.isArray(scores.score_explanation))
     assert.ok(scores.score_explanation.length > 0)
+    assert.equal(scores.scoring_rubric, 'ecommerce_store')
+  })
+
+  it('scores ecommerce lower when product cards are missing', () => {
+    const pages = [
+      {
+        final_url: 'https://bare.example/',
+        extracted_text: 'Welcome to our shop. About us. Contact.',
+        extracted_data_json: {
+          products: [],
+          platform: 'unknown',
+          extraction_meta: {
+            has_reliable_product_cards: false,
+            has_product_detail_page: false,
+            high_confidence_product_count: 0,
+            avg_product_confidence: 0,
+          },
+          page_classification_hint: 'unknown',
+        },
+      },
+    ]
+
+    const aggregated = aggregatePages(pages)
+    const scores = calculateScores(
+      aggregated,
+      { store_url: 'https://bare.example', business_model: 'ecommerce_store' },
+      pages,
+    )
+
+    assert.ok(scores.overall_score < 55)
+    assert.equal(scores.scoring_rubric, 'ecommerce_store')
+    assert.ok(
+      scores.score_explanation.some((e) => e.delta < 0 && /product/i.test(e.reason)),
+    )
+  })
+
+  it('scores physical service reasonably high without ecommerce penalties', () => {
+    const pages = [
+      {
+        final_url: 'https://hvacpro.com/',
+        page_type: 'homepage',
+        extracted_text:
+          'Request a free quote. Serving Dallas and Fort Worth. Call us at (214) 555-0100. View our project gallery. Customer reviews and testimonials. Schedule service today.',
+        extracted_data_json: {
+          products: [],
+          phones: ['(214) 555-0100'],
+          ctas: ['Request a quote', 'Schedule service'],
+          review_indicators: true,
+          social_links: ['https://facebook.com/hvacpro'],
+          policies: {},
+          extraction_meta: {
+            has_reliable_product_cards: false,
+            has_product_detail_page: false,
+          },
+          page_classification_hint: 'service',
+        },
+      },
+    ]
+
+    const aggregated = aggregatePages(pages)
+    const scores = calculateScores(
+      aggregated,
+      { store_url: 'https://hvacpro.com', business_model: 'online_plus_physical_service' },
+      pages,
+    )
+
+    assert.equal(scores.scoring_rubric, 'online_plus_physical_service')
+    assert.ok(scores.overall_score >= 58)
+    assert.equal(
+      scores.score_explanation.some((e) => /shipping policy/i.test(e.reason)),
+      false,
+    )
+    assert.equal(
+      scores.score_explanation.some((e) => /product cards/i.test(e.reason)),
+      false,
+    )
+    assert.ok(scores.score_explanation.some((e) => e.delta > 0 && /quote|phone|service area|gallery|review/i.test(e.reason)))
+  })
+
+  it('scores offline store reasonably high with local signals', () => {
+    const pages = [
+      {
+        final_url: 'https://localboutique.com/',
+        page_type: 'contact',
+        extracted_text:
+          'Visit us at 123 Main Street, Austin TX. Store hours: Monday-Friday 9am-6pm. Call (512) 555-0199. Get directions on Google Maps. Customer reviews.',
+        extracted_data_json: {
+          phones: ['(512) 555-0199'],
+          review_indicators: true,
+          navigation_labels: ['Shop', 'Collections'],
+          policies: { privacy: true },
+          extraction_meta: {},
+          page_classification_hint: 'single_brand_ecommerce',
+        },
+      },
+    ]
+
+    const aggregated = aggregatePages(pages)
+    const scores = calculateScores(
+      aggregated,
+      { store_url: 'https://localboutique.com', business_model: 'online_plus_offline_store' },
+      pages,
+    )
+
+    assert.equal(scores.scoring_rubric, 'online_plus_offline_store')
+    assert.ok(scores.overall_score >= 58)
+    assert.ok(
+      scores.score_explanation.some((e) => e.delta > 0 && /address|hours|phone|directions|review/i.test(e.reason)),
+    )
+  })
+
+  it('warns when ecommerce onboarding conflicts with marketplace crawl', () => {
+    const aggregated = aggregatePages([
+      {
+        final_url: 'https://amazon.com/dp/123',
+        extracted_text: 'Sold by Amazon. Sponsored. $29.99',
+        extracted_data_json: {
+          products: [],
+          prices: ['$29.99'],
+          page_classification_hint: 'marketplace',
+          page_classification_indicators: ['marketplace_host', 'marketplace_copy'],
+          extraction_meta: {
+            prices_without_products: true,
+            avg_product_confidence: 0,
+            high_confidence_product_count: 0,
+          },
+        },
+      },
+    ])
+
+    const scores = calculateScores(
+      aggregated,
+      { store_url: 'https://amazon.com/dp/123', business_model: 'ecommerce_store' },
+      [{}],
+    )
+
+    assert.equal(aggregated.site_classification.classification, 'marketplace')
+    assert.ok(scores.mismatch_warnings.length > 0)
+    assert.ok(
+      scores.mismatch_warnings.some((w) => /marketplace/i.test(w)) ||
+        scores.score_explanation.some((e) => /marketplace/i.test(e.reason)),
+    )
   })
 
   it('does not award a high score when product extraction confidence is low', () => {
@@ -355,7 +503,7 @@ describe('businessProfileLogic', () => {
     const aggregated = aggregatePages(pages)
     const scores = calculateScores(
       aggregated,
-      { store_url: 'https://noisy.example', business_type: 'ecommerce' },
+      { store_url: 'https://noisy.example', business_model: 'ecommerce_store' },
       pages,
     )
 
@@ -365,7 +513,7 @@ describe('businessProfileLogic', () => {
     )
   })
 
-  it('penalizes marketplace classification for SMB ecommerce scoring', () => {
+  it('penalizes marketplace classification when ecommerce rubric is used', () => {
     const aggregated = aggregatePages([
       {
         final_url: 'https://amazon.com/dp/123',
@@ -386,14 +534,15 @@ describe('businessProfileLogic', () => {
 
     const scores = calculateScores(
       aggregated,
-      { store_url: 'https://amazon.com/dp/123', business_type: 'ecommerce' },
+      { store_url: 'https://amazon.com/dp/123', business_model: 'ecommerce_store' },
       [{}],
     )
 
-    assert.ok(scores.overall_score < 50)
+    assert.ok(scores.overall_score < 55)
     assert.equal(aggregated.site_classification.classification, 'marketplace')
     assert.ok(
-      scores.score_explanation.some((e) => e.reason.toLowerCase().includes('marketplace')),
+      scores.mismatch_warnings.some((w) => /marketplace/i.test(w)) ||
+        scores.score_explanation.some((e) => e.reason.toLowerCase().includes('marketplace')),
     )
   })
 })

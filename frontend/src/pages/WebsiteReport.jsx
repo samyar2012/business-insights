@@ -172,6 +172,14 @@ const WebsiteReport = () => {
                     : profile.updated_at
                       ? `Updated ${formatScanDate(profile.updated_at)}`
                       : ''}
+                  {scores.scoring_rubric ? (
+                    <span className="block mt-1">
+                      Scoring rubric:{' '}
+                      <span className="font-medium capitalize">
+                        {String(scores.scoring_rubric).replace(/_/g, ' ')}
+                      </span>
+                    </span>
+                  ) : null}
                 </p>
               </div>
               <div className="text-sm">
@@ -191,6 +199,40 @@ const WebsiteReport = () => {
               ))}
             </div>
           </section>
+
+          {scores.mismatch_warnings?.length ? (
+            <Alert variant="warning" title="Model mismatch" className="mt-6">
+              <ul className="list-inside list-disc space-y-1 text-sm">
+                {scores.mismatch_warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </Alert>
+          ) : null}
+
+          {scores.score_explanation?.length ? (
+            <section className="app-card mt-6 p-5">
+              <h2 className="text-sm font-semibold">Score breakdown</h2>
+              <ul className="mt-3 space-y-2 text-sm">
+                {scores.score_explanation.map((item) => (
+                  <li
+                    key={`${item.category}-${item.reason}`}
+                    className={
+                      item.delta > 0
+                        ? 'text-[var(--app-success-icon)]'
+                        : item.delta < 0
+                          ? 'text-[var(--app-danger-icon)]'
+                          : 'text-[var(--app-text-secondary)]'
+                    }
+                  >
+                    {item.delta > 0 ? '+' : ''}
+                    {item.delta !== 0 ? `${item.delta} ` : ''}
+                    {item.reason}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
           <section className="app-card mt-6 p-5">
             <h2 className="text-sm font-semibold">Products &amp; services</h2>

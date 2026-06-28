@@ -11,10 +11,13 @@ const {
 
 async function buildBusinessWebProfile({ userId, businessId, business, crawlRunId, pages, startUrl }) {
   const aggregated = aggregatePages(pages)
+  const scores = calculateScores(aggregated, business, pages)
 
   const summary = {
     business_name: business?.business_name || pages[0]?.title || null,
     business_type: inferBusinessType(business, aggregated),
+    business_model: business?.business_model || null,
+    scoring_rubric: scores.scoring_rubric || null,
     products: aggregated.product_names || aggregated.products.map((p) => p.name || p),
     services: aggregated.services,
     site_classification: aggregated.site_classification,
@@ -31,7 +34,6 @@ async function buildBusinessWebProfile({ userId, businessId, business, crawlRunI
     pages_analyzed: pages.length,
   }
 
-  const scores = calculateScores(aggregated, business, pages)
   const signals = {
     ...aggregated,
     source: 'website_crawl',
@@ -42,7 +44,7 @@ async function buildBusinessWebProfile({ userId, businessId, business, crawlRunI
   const profilePayload = {
     ...scores,
     strengths: buildStrengths(aggregated, scores),
-    risks: buildRisks(aggregated, pages),
+    risks: buildRisks(aggregated, pages, scores),
     recommended_actions: buildRecommendedActions(aggregated, scores),
   }
 

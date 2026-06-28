@@ -1,6 +1,7 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
 const STORAGE_KEY = 'bi-sidebar-collapsed'
+const DESKTOP_MQ = '(min-width: 1024px)'
 
 const SidebarContext = createContext(null)
 
@@ -12,6 +13,30 @@ export const SidebarProvider = ({ children }) => {
       return false
     }
   })
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia(DESKTOP_MQ).matches : true,
+  )
+
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_MQ)
+    const onChange = (e) => {
+      setIsDesktop(e.matches)
+      if (e.matches) setMobileOpen(false)
+    }
+    setIsDesktop(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
+  useEffect(() => {
+    if (!mobileOpen || isDesktop) return undefined
+    const onKey = (e) => {
+      if (e.key === 'Escape') setMobileOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [mobileOpen, isDesktop])
 
   const setCollapsed = useCallback((value) => {
     setCollapsedState(value)
@@ -34,9 +59,22 @@ export const SidebarProvider = ({ children }) => {
     })
   }, [])
 
+  const closeMobile = useCallback(() => setMobileOpen(false), [])
+  const openMobile = useCallback(() => setMobileOpen(true), [])
+  const toggleMobile = useCallback(() => setMobileOpen((o) => !o), [])
+
   const value = useMemo(
-    () => ({ collapsed, setCollapsed, toggleCollapsed }),
-    [collapsed, setCollapsed, toggleCollapsed],
+    () => ({
+      collapsed,
+      setCollapsed,
+      toggleCollapsed,
+      mobileOpen,
+      isDesktop,
+      closeMobile,
+      openMobile,
+      toggleMobile,
+    }),
+    [collapsed, setCollapsed, toggleCollapsed, mobileOpen, isDesktop, closeMobile, openMobile, toggleMobile],
   )
 
   return <SidebarContext.Provider value={value}>{children}</SidebarContext.Provider>

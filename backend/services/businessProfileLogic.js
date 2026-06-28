@@ -1,6 +1,3 @@
-function clamp(value) {
-  return Math.max(0, Math.min(100, Math.round(value)))
-}
 
 function normalizeProductEntry(product) {
   if (!product) return null
@@ -235,290 +232,97 @@ function buildValueProposition(pages, business) {
   return business?.product_sold || null
 }
 
-function addExplanation(explanations, category, delta, reason) {
-  if (!delta) return
-  explanations.push({ category, delta, reason })
-}
+const { calculateScoresWithRubric } = require('./businessScoringRubrics')
 
 function calculateScores(aggregated, business, pages) {
-  const explanations = []
-  const meta = aggregated.extraction_meta || {}
-  const siteClass = aggregated.site_classification?.classification || 'unknown'
-  const isEcommerceContext =
-    inferBusinessType(business, aggregated) === 'ecommerce' ||
-    ['single_brand_ecommerce', 'shopify_dtc'].includes(siteClass)
+  return calculateScoresWithRubric(aggregated, business, pages)
+}
 
-  let product_clarity = 28
-  let offer_clarity = 25
-  let trust = 28
-  let policies = 20
-  let social_proof = 18
-  let content = 25
-  let technical = 30
-
-  const highConfidenceCount = meta.high_confidence_product_count || 0
-  const avgConfidence = meta.avg_product_confidence || 0
-
-  if (highConfidenceCount >= 3) {
-    product_clarity += 18
-    addExplanation(explanations, 'product_clarity', 18, 'Multiple high-confidence products extracted.')
-  } else if (highConfidenceCount >= 1) {
-    product_clarity += 10
-    addExplanation(explanations, 'product_clarity', 10, 'At least one high-confidence product found.')
-  }
-
-  if (meta.has_json_ld_products) {
-    product_clarity += 8
-    addExplanation(explanations, 'product_clarity', 8, 'Structured JSON-LD product data detected.')
-  }
-  if (meta.has_reliable_product_cards) {
-    product_clarity += 10
-    addExplanation(explanations, 'product_clarity', 10, 'Reliable product cards with name and price/image/link.')
-  }
-  if (meta.has_product_detail_page) {
-    product_clarity += 8
-    offer_clarity += 6
-    addExplanation(explanations, 'product_clarity', 8, 'Product detail page signals were crawled.')
-    addExplanation(explanations, 'offer_clarity', 6, 'Product detail page improves offer clarity.')
-  }
-
-  if (aggregated.pricing_signals.length > 0 && highConfidenceCount > 0) {
-    offer_clarity += 10
-    addExplanation(explanations, 'offer_clarity', 10, 'Prices align with extracted products.')
-  }
-  if (aggregated.content_signals.ctas.some((c) => /add to cart|buy|shop now/i.test(c))) {
-    offer_clarity += 8
-    addExplanation(explanations, 'offer_clarity', 8, 'Primary purchase CTA detected.')
-  }
-
-  if (aggregated.trust_signals.https) {
-    trust += 12
-    technical += 10
-    addExplanation(explanations, 'trust', 12, 'Site uses HTTPS.')
-    addExplanation(explanations, 'technical', 10, 'HTTPS improves crawlability trust.')
-  }
-  if (aggregated.policy_signals.shipping) {
-    policies += 14
-    addExplanation(explanations, 'policies', 14, 'Shipping policy signals found.')
-  }
-  if (aggregated.policy_signals.returns) {
-    policies += 14
-    addExplanation(explanations, 'policies', 14, 'Return policy signals found.')
-  }
-  if (aggregated.policy_signals.privacy) {
-    policies += 8
-    addExplanation(explanations, 'policies', 8, 'Privacy policy signals found.')
-  }
-  if (aggregated.trust_signals.review_indicators) {
-    social_proof += 16
-    addExplanation(explanations, 'social_proof', 16, 'Review or testimonial language detected.')
-  }
-  if (aggregated.social_channels.length > 0) {
-    social_proof += 8
-    addExplanation(explanations, 'social_proof', 8, 'Social profile links found.')
-  }
-
-  if (aggregated.content_signals.total_text_length > 1500) {
-    content += 14
-    addExplanation(explanations, 'content', 14, 'Substantial readable content extracted.')
-  }
-  if (aggregated.content_signals.page_count >= 3) {
-    content += 8
-    addExplanation(explanations, 'content', 8, 'Multiple pages crawled.')
-  }
-
-  if (aggregated.platform !== 'unknown') {
-    technical += 8
-    addExplanation(explanations, 'technical', 8, `Platform detected: ${aggregated.platform}.`)
-  }
-  if (pages.length >= 3) {
-    technical += 6
-    addExplanation(explanations, 'technical', 6, 'Crawler reached multiple site pages.')
-  }
-
-  if (meta.low_confidence_extraction) {
-    product_clarity -= 18
-    offer_clarity -= 12
-    addExplanation(
-      explanations,
-      'product_clarity',
-      -18,
-      'Product extraction confidence is low across crawled pages.',
-    )
-    addExplanation(explanations, 'offer_clarity', -12, 'Low-confidence products weaken offer clarity.')
-  }
-  if (meta.noisy_pages > 0) {
-    product_clarity -= 10
-    addExplanation(
-      explanations,
-      'product_clarity',
-      -10,
-      'Headings or promo copy dominated pages without reliable product cards.',
-    )
-  }
-  if (!meta.has_reliable_product_cards && isEcommerceContext) {
-    product_clarity -= 12
-    addExplanation(
-      explanations,
-      'product_clarity',
-      -12,
-      'No reliable product cards with adjacent name, price, and link/image.',
-    )
-  }
-  if (meta.prices_without_products_pages > 0) {
-    offer_clarity -= 10
-    addExplanation(
-      explanations,
-      'offer_clarity',
-      -10,
-      'Crawler found prices but no reliable product cards.',
-    )
-  }
-  if (isEcommerceContext && !meta.has_product_detail_page) {
-    offer_clarity -= 8
-    addExplanation(explanations, 'offer_clarity', -8, 'No product detail page was crawled.')
-  }
-  if (meta.js_rendered_pages > 0) {
-    technical -= 12
-    content -= 8
-    addExplanation(
-      explanations,
-      'technical',
-      -12,
-      'Sparse or JS-rendered HTML reduced crawlability confidence.',
-    )
-    addExplanation(explanations, 'content', -8, 'Limited server-rendered content extracted.')
-  }
-  if (siteClass === 'marketplace' && business?.business_type !== 'marketplace') {
-    product_clarity -= 20
-    offer_clarity -= 15
-    addExplanation(
-      explanations,
-      'product_clarity',
-      -20,
-      'Marketplace page detected; this does not look like a single SMB storefront.',
-    )
-    addExplanation(
-      explanations,
-      'offer_clarity',
-      -15,
-      'Marketplace listing patterns are not scored as a direct-to-consumer storefront.',
-    )
-  }
-  if (isEcommerceContext && aggregated.products.length === 0) {
-    product_clarity -= 15
-    offer_clarity -= 10
-    addExplanation(explanations, 'product_clarity', -15, 'No products extracted from crawled pages.')
-    addExplanation(explanations, 'offer_clarity', -10, 'Missing primary product offer on crawled pages.')
-  }
-  if (!business?.store_url) {
-    technical -= 6
-    addExplanation(explanations, 'technical', -6, 'No store URL saved on the business record.')
-  }
-
-  product_clarity = clamp(product_clarity)
-  offer_clarity = clamp(offer_clarity)
-  trust = clamp(trust)
-  policies = clamp(policies)
-  social_proof = clamp(social_proof)
-  content = clamp(content)
-  technical = clamp(technical)
-
-  const store_score = clamp(product_clarity * 0.55 + offer_clarity * 0.45)
-  const trust_score = clamp(trust * 0.45 + policies * 0.35 + social_proof * 0.2)
-  const offer_score = offer_clarity
-  const content_score = content
-  const technical_score = technical
-
-  const overall_score = clamp(
-    product_clarity * 0.2 +
-      offer_clarity * 0.18 +
-      trust * 0.14 +
-      policies * 0.1 +
-      social_proof * 0.1 +
-      content * 0.14 +
-      technical * 0.14,
-  )
-
-  return {
-    overall_score,
-    store_score,
-    trust_score,
-    offer_score,
-    content_score,
-    technical_score,
-    category_scores: {
-      product_clarity,
-      offer_clarity,
-      trust,
-      policies,
-      social_proof,
-      content,
-      technical_crawlability: technical,
-    },
-    score_explanation: explanations.slice(0, 20),
-  }
+function isEcommerceRubric(rubric) {
+  return rubric === 'ecommerce_store'
 }
 
 function buildStrengths(aggregated, scores) {
   const strengths = []
   const meta = aggregated.extraction_meta || {}
+  const rubric = scores.scoring_rubric || 'ecommerce_store'
+  const positiveReasons = (scores.score_explanation || [])
+    .filter((e) => e.delta > 0 && e.category !== 'mismatch')
+    .map((e) => e.reason)
 
   if (aggregated.trust_signals.https) strengths.push('Website is served over HTTPS.')
-  if (meta.has_json_ld_products) strengths.push('Structured product data (JSON-LD) is present.')
-  if (meta.high_confidence_product_count >= 2) {
+  if (isEcommerceRubric(rubric) && meta.has_json_ld_products) {
+    strengths.push('Structured product data (JSON-LD) is present.')
+  }
+  if (isEcommerceRubric(rubric) && meta.high_confidence_product_count >= 2) {
     strengths.push(`${meta.high_confidence_product_count} high-confidence products extracted.`)
   }
   if (aggregated.platform !== 'unknown') {
     strengths.push(`Detected platform: ${aggregated.platform}.`)
   }
-  if (aggregated.site_classification?.classification === 'shopify_dtc') {
-    strengths.push('Site matches Shopify/DTC storefront patterns.')
-  }
   if (aggregated.social_channels.length) strengths.push('Social profiles are linked from the site.')
-  if (aggregated.policy_signals.shipping && aggregated.policy_signals.returns) {
+  if (
+    isEcommerceRubric(rubric) &&
+    aggregated.policy_signals.shipping &&
+    aggregated.policy_signals.returns
+  ) {
     strengths.push('Shipping and return policies are discoverable.')
   }
   if (scores.overall_score >= 70) strengths.push('Overall website presentation score is solid.')
+  for (const reason of positiveReasons.slice(0, 3)) {
+    strengths.push(reason)
+  }
   return [...new Set(strengths)].slice(0, 6)
 }
 
-function buildRisks(aggregated, pages) {
+function buildRisks(aggregated, pages, scores = {}) {
   const risks = []
   const meta = aggregated.extraction_meta || {}
   const siteClass = aggregated.site_classification?.classification
+  const rubric = scores.scoring_rubric || 'ecommerce_store'
+  const ecommerceRubric = isEcommerceRubric(rubric)
 
   if (pages.length === 0) risks.push('No pages could be crawled from the submitted URL.')
   if (!aggregated.trust_signals.https) risks.push('Site may not use HTTPS consistently.')
-  if (meta.prices_without_products_pages > 0) {
+
+  if (ecommerceRubric && meta.prices_without_products_pages > 0) {
     risks.push('Crawler found prices but no reliable product cards.')
   }
-  if (siteClass === 'marketplace') {
+  if (siteClass === 'marketplace' && rubric !== 'marketplace_listing') {
     risks.push('Marketplace page detected; this does not look like a single SMB storefront.')
   }
-  if (meta.low_confidence_extraction) {
+  if (ecommerceRubric && meta.low_confidence_extraction) {
     risks.push(
       'Product extraction confidence is low because headings/promos dominated the page.',
     )
   }
-  if (meta.noisy_pages > 0 && meta.high_confidence_product_count === 0) {
+  if (ecommerceRubric && meta.noisy_pages > 0 && meta.high_confidence_product_count === 0) {
     risks.push('Promo headings and navigation labels were noisy but no product cards were confirmed.')
   }
-  if (!meta.has_reliable_product_cards && aggregated.products.length > 0) {
+  if (ecommerceRubric && !meta.has_reliable_product_cards && aggregated.products.length > 0) {
     risks.push('Products were inferred weakly without card-level name, price, and link/image signals.')
   }
-  if (!meta.has_product_detail_page && inferBusinessType(null, aggregated) === 'ecommerce') {
+  if (ecommerceRubric && !meta.has_product_detail_page) {
     risks.push('No product detail page was crawled.')
   }
   if (meta.js_rendered_pages > 0) {
     risks.push('Very little readable content extracted — site may be JavaScript-heavy.')
   }
-  if (!aggregated.policy_signals.returns) risks.push('Return policy page not detected.')
-  if (!aggregated.policy_signals.shipping) risks.push('Shipping policy page not detected.')
+  if (ecommerceRubric && !aggregated.policy_signals.returns) {
+    risks.push('Return policy page not detected.')
+  }
+  if (ecommerceRubric && !aggregated.policy_signals.shipping) {
+    risks.push('Shipping policy page not detected.')
+  }
   if (!aggregated.trust_signals.review_indicators) {
     risks.push('No review or testimonial signals detected on crawled pages.')
   }
-  if (aggregated.social_channels.length === 0) risks.push('No social profile links found.')
+  if (aggregated.social_channels.length === 0 && rubric === 'content_social_business') {
+    risks.push('No social profile links found.')
+  }
+  for (const warning of scores.mismatch_warnings || []) {
+    risks.push(warning)
+  }
   return [...new Set(risks)].slice(0, 8)
 }
 
@@ -526,39 +330,62 @@ function buildRecommendedActions(aggregated, scores) {
   const actions = []
   const meta = aggregated.extraction_meta || {}
   const explanations = scores.score_explanation || []
+  const rubric = scores.scoring_rubric || 'ecommerce_store'
+  const ecommerceRubric = isEcommerceRubric(rubric)
 
   const penalized = (category) =>
     explanations.some((e) => e.category === category && e.delta < 0)
 
-  if (meta.prices_without_products_pages > 0 || penalized('offer_clarity')) {
+  if (ecommerceRubric && (meta.prices_without_products_pages > 0 || penalized('offer_clarity'))) {
     actions.push('Expose product names beside prices in product cards or JSON-LD Product markup.')
   }
-  if (!meta.has_reliable_product_cards) {
+  if (ecommerceRubric && !meta.has_reliable_product_cards) {
     actions.push('Use consistent product card markup with title, price, image, and product link together.')
   }
-  if (!meta.has_product_detail_page) {
+  if (ecommerceRubric && !meta.has_product_detail_page) {
     actions.push('Ensure product detail URLs are linked internally so the crawler can reach PDPs.')
   }
-  if (meta.low_confidence_extraction || penalized('product_clarity')) {
+  if (ecommerceRubric && (meta.low_confidence_extraction || penalized('product_clarity'))) {
     actions.push('Reduce promo/section headings that look like product names in listing pages.')
   }
   if (meta.js_rendered_pages > 0 || penalized('technical')) {
     actions.push('Improve server-rendered HTML for key storefront pages (title, products, policies).')
   }
-  if (!aggregated.policy_signals.shipping) actions.push('Publish and link a shipping policy page.')
-  if (!aggregated.policy_signals.returns) {
+  if (ecommerceRubric && !aggregated.policy_signals.shipping) {
+    actions.push('Publish and link a shipping policy page.')
+  }
+  if (ecommerceRubric && !aggregated.policy_signals.returns) {
     actions.push('Add a clear return policy to reduce purchase hesitation.')
+  }
+  if (
+    ['online_plus_offline_store', 'online_plus_physical_service', 'local_service_business'].includes(
+      rubric,
+    ) &&
+    penalized('trust')
+  ) {
+    actions.push('Add phone, address, hours, and a contact page so local customers can reach you.')
+  }
+  if (
+    ['online_plus_physical_service', 'local_service_business'].includes(rubric) &&
+    penalized('offer_clarity')
+  ) {
+    actions.push('Add a clear quote or booking CTA and describe your service area.')
   }
   if (!aggregated.trust_signals.review_indicators || penalized('social_proof')) {
     actions.push('Add customer reviews or testimonials above the fold.')
   }
-  if (aggregated.social_channels.length === 0) {
+  if (aggregated.social_channels.length === 0 && rubric === 'content_social_business') {
     actions.push('Link Instagram or TikTok from your homepage footer.')
   }
-  if (aggregated.site_classification?.classification === 'marketplace') {
+  if (siteClassMismatch(aggregated, rubric)) {
     actions.push('Submit your own brand storefront URL instead of a marketplace listing page.')
   }
   return [...new Set(actions)].slice(0, 8)
+}
+
+function siteClassMismatch(aggregated, rubric) {
+  const siteClass = aggregated.site_classification?.classification
+  return siteClass === 'marketplace' && rubric !== 'marketplace_listing'
 }
 
 module.exports = {
