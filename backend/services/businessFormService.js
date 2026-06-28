@@ -68,7 +68,7 @@ function businessToFormValues(business, displayName) {
       owner_name: displayName || '',
       business_name: '',
       business_type: 'Shopify',
-      business_model: 'ecommerce_store',
+      business_model: '',
       product_sold: '',
       target_customers: '',
       store_url: '',

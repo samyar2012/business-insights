@@ -160,7 +160,50 @@ async function updateBusinessProfile(userId, businessId, body) {
   return { business: saved, storeCleared }
 }
 
+async function createBusinessProfile(userId, body, { isPremium = false, businessCount = 0 } = {}) {
+  if (businessCount >= 1 && !isPremium) {
+    const err = new Error('Upgrade required to add another business')
+    err.code = 'UPGRADE_REQUIRED'
+    throw err
+  }
+
+  const fields = await parseBusinessFormBody(body, { requireCore: true })
+
+  const inserted = await query(
+    `INSERT INTO businesses (
+       user_id, owner_name, business_name, business_type, business_model, product_sold,
+       target_customers, store_url, monthly_revenue, customer_count, monthly_orders
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     RETURNING *`,
+    [
+      userId,
+      fields.ownerName,
+      fields.businessName,
+      fields.businessType,
+      fields.businessModel,
+      fields.productSold,
+      fields.targetCustomers,
+      fields.storeUrl,
+      fields.monthlyRevenue,
+      fields.customerCount,
+      fields.monthlyOrders,
+    ],
+  )
+
+  const saved = inserted.rows[0]
+  await syncOwnerDisplayName(userId, fields.ownerName)
+
+  try {
+    await saveBusinessContextFromOnboarding(userId, saved)
+  } catch (memErr) {
+    console.warn('create business memory save:', memErr.message)
+  }
+
+  return saved
+}
+
 module.exports = {
   completeOnboarding,
   updateBusinessProfile,
+  createBusinessProfile,
 }

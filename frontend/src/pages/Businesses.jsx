@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Alert from '../components/app/Alert'
+import BusinessProfileForm from '../components/app/BusinessProfileForm'
 import PricingCard from '../components/app/PricingCard'
 import { apiFetch } from '../lib/api'
+import { EMPTY_BUSINESS_FORM, serializeBusinessForm } from '../lib/businessFormConfig'
 
 const Businesses = () => {
   const { user, refreshUser } = useAuth()
@@ -11,7 +13,7 @@ const Businesses = () => {
   const [showUpgrade, setShowUpgrade] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [form, setForm] = useState({ business_name: '', business_type: '', store_url: '' })
+  const [form, setForm] = useState({ ...EMPTY_BUSINESS_FORM })
 
   const load = useCallback(async () => {
     const data = await apiFetch('/businesses')
@@ -29,8 +31,11 @@ const Businesses = () => {
     setSuccess('')
     setShowUpgrade(false)
     try {
-      await apiFetch('/businesses', { method: 'POST', body: JSON.stringify(form) })
-      setForm({ business_name: '', business_type: '', store_url: '' })
+      await apiFetch('/businesses', {
+        method: 'POST',
+        body: JSON.stringify(serializeBusinessForm(form)),
+      })
+      setForm({ ...EMPTY_BUSINESS_FORM })
       setSuccess('Business added successfully.')
       await load()
     } catch (err) {
@@ -101,26 +106,8 @@ const Businesses = () => {
         <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
           Requires a premium plan if you already have one business.
         </p>
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          <input
-            placeholder="Business name"
-            value={form.business_name}
-            onChange={(e) => setForm((f) => ({ ...f, business_name: e.target.value }))}
-            className="app-field"
-            required
-          />
-          <input
-            placeholder="Type"
-            value={form.business_type}
-            onChange={(e) => setForm((f) => ({ ...f, business_type: e.target.value }))}
-            className="app-field"
-          />
-          <input
-            placeholder="Store URL"
-            value={form.store_url}
-            onChange={(e) => setForm((f) => ({ ...f, store_url: e.target.value }))}
-            className="app-field"
-          />
+        <div className="mt-5">
+          <BusinessProfileForm form={form} onChange={setForm} />
         </div>
 
         {error ? (

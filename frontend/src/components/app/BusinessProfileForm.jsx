@@ -57,6 +57,9 @@ const BusinessProfileForm = ({
           className="app-field"
           disabled={disabled}
         >
+          <option value="" disabled>
+            Select your business model
+          </option>
           {BUSINESS_MODELS.map((m) => (
             <option key={m.value} value={m.value}>
               {m.label}

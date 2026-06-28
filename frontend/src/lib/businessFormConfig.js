@@ -35,7 +35,7 @@ export const EMPTY_BUSINESS_FORM = {
   owner_name: '',
   business_name: '',
   business_type: 'Shopify',
-  business_model: 'ecommerce_store',
+  business_model: '',
   product_sold: '',
   target_customers: '',
   store_url: '',

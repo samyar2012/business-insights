@@ -138,12 +138,25 @@ const AppSidebar = () => {
       : 'app-sidebar--hidden'
 
   return (
-    <aside
-      className={`app-sidebar flex min-h-0 shrink-0 flex-col self-stretch ${sidebarStateClass}`}
-      aria-hidden={!sidebarVisible ? true : undefined}
-    >
-      <div className="app-sidebar__inner flex min-h-0 flex-1 flex-col">
-        <div className="flex flex-1 flex-col overflow-y-auto px-2.5 py-5">
+    <>
+      {!isDesktop && mobileOpen ? (
+        <button
+          type="button"
+          className="app-sidebar-backdrop"
+          aria-label="Close navigation"
+          onClick={closeMobile}
+        />
+      ) : null}
+      <aside
+        className={`app-sidebar flex min-h-0 shrink-0 flex-col self-stretch ${sidebarStateClass}`}
+        aria-hidden={!sidebarVisible ? true : undefined}
+      >
+        <div className="app-sidebar__inner flex min-h-0 flex-1 flex-col">
+          <div
+            className={`flex flex-1 flex-col overflow-y-auto py-5 ${
+              effectiveCollapsed ? 'px-1.5' : 'px-2.5'
+            }`}
+          >
           {!effectiveCollapsed ? <p className="app-eyebrow px-2">Navigation</p> : null}
 
           <nav className={`space-y-1 ${effectiveCollapsed ? 'mt-2' : 'mt-4'}`}>
@@ -211,8 +224,9 @@ const AppSidebar = () => {
             <PlanAccountSection variant="sidebar" />
           </div>
         ) : null}
-      </div>
-    </aside>
+        </div>
+      </aside>
+    </>
   )
 }
 

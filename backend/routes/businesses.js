@@ -7,7 +7,11 @@ const {
   updateBusinessStoreUrl,
 } = require('../services/businessAnalysisService')
 const { businessCrawlsRouter } = require('./businessCrawls')
-const { completeOnboarding, updateBusinessProfile } = require('../services/businessUpdateService')
+const {
+  completeOnboarding,
+  updateBusinessProfile,
+  createBusinessProfile,
+} = require('../services/businessUpdateService')
 
 const router = express.Router()
 
@@ -135,39 +139,31 @@ router.patch('/:id', requireAuth, async (req, res) => {
 })
 
 router.post('/', requireAuth, async (req, res) => {
-  const profile = await getUserPremium(req.auth.sub)
-  const countResult = await query(`SELECT COUNT(*)::int AS count FROM businesses WHERE user_id = $1`, [
-    req.auth.sub,
-  ])
-  const count = countResult.rows[0]?.count || 0
-
-  if (count >= 1 && !profile.is_premium) {
-    return res.status(402).json({
-      error: 'Upgrade required to add another business',
-      code: 'UPGRADE_REQUIRED',
-    })
-  }
-
-  const businessName = String(req.body?.business_name || '').trim()
-  if (!businessName) return res.status(400).json({ error: 'Business name is required' })
-
   try {
-    const result = await query(
-      `INSERT INTO businesses (user_id, business_name, business_type, business_model, product_sold, target_customers, store_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [
-        req.auth.sub,
-        businessName,
-        String(req.body?.business_type || '').trim() || null,
-        String(req.body?.business_model || '').trim() || 'ecommerce_store',
-        String(req.body?.product_sold || '').trim() || null,
-        String(req.body?.target_customers || '').trim() || null,
-        String(req.body?.store_url || '').trim() || null,
-      ],
-    )
-    return res.status(201).json({ business: result.rows[0] })
+    const profile = await getUserPremium(req.auth.sub)
+    const countResult = await query(`SELECT COUNT(*)::int AS count FROM businesses WHERE user_id = $1`, [
+      req.auth.sub,
+    ])
+    const count = countResult.rows[0]?.count || 0
+
+    const business = await createBusinessProfile(req.auth.sub, req.body, {
+      isPremium: profile.is_premium,
+      businessCount: count,
+    })
+    return res.status(201).json({ business })
   } catch (err) {
+    if (err.code === 'UPGRADE_REQUIRED') {
+      return res.status(402).json({
+        error: err.message,
+        code: 'UPGRADE_REQUIRED',
+      })
+    }
+    if (err.code === 'VALIDATION') {
+      return res.status(400).json({ error: err.message })
+    }
+    if (err.code === 'INVALID_URL' || err.code === 'SSRF_BLOCKED') {
+      return res.status(400).json({ error: err.message })
+    }
     console.error('create business:', err.message)
     return res.status(500).json({ error: 'Failed to create business' })
   }
