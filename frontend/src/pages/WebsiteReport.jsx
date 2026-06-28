@@ -4,6 +4,31 @@ import { apiFetch } from '../lib/api'
 import Alert from '../components/app/Alert'
 import ScoreBar, { formatScanDate, scoreTone } from '../components/app/ScanUi'
 
+const WEIGHTED_CATEGORIES = [
+  { label: 'Safety', key: 'safety_score', max: 30 },
+  { label: 'Functionality', key: 'functionality_score', max: 20 },
+  { label: 'UX / UI', key: 'ux_ui_score', max: 20 },
+  { label: 'Business fit', key: 'business_fit_score', max: 20 },
+  { label: 'Customer attraction', key: 'customer_attraction_score', max: 10 },
+]
+
+function readWeightedScore(scores, key) {
+  const value = scores?.[key]
+  if (typeof value === 'number' && !Number.isNaN(value)) return value
+  return null
+}
+
+function weightedCategorySum(scores) {
+  return WEIGHTED_CATEGORIES.reduce((sum, { key }) => {
+    const value = readWeightedScore(scores, key)
+    return sum + (value ?? 0)
+  }, 0)
+}
+
+function hasMissingWeightedScores(scores) {
+  return WEIGHTED_CATEGORIES.some(({ key }) => readWeightedScore(scores, key) === null)
+}
+
 const WebsiteReport = () => {
   const { businessId } = useParams()
   const [business, setBusiness] = useState(null)
@@ -82,6 +107,13 @@ const WebsiteReport = () => {
   const summary = profile?.summary || {}
   const scores = profile?.scores || {}
   const isRunning = latestCrawl?.status === 'running' || busy
+  const missingWeightedScores = profile ? hasMissingWeightedScores(scores) : false
+  const weightedSum = weightedCategorySum(scores)
+  const scoreSumMismatch =
+    !missingWeightedScores &&
+    typeof scores.overall_score === 'number' &&
+    scores.overall_score !== weightedSum &&
+    !(scores.score_caps_applied?.length > 0)
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -188,16 +220,44 @@ const WebsiteReport = () => {
               </div>
             </div>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              {[
-                ['Store', scores.store_score],
-                ['Trust', scores.trust_score],
-                ['Offer', scores.offer_score],
-                ['Content', scores.content_score],
-                ['Technical', scores.technical_score],
-              ].map(([label, value]) => (
-                <ScoreBar key={label} label={label} value={value ?? 0} />
-              ))}
+              {WEIGHTED_CATEGORIES.map(({ label, key, max }) => {
+                const value = readWeightedScore(scores, key)
+                if (value === null) {
+                  return (
+                    <div key={label}>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-[var(--app-text-secondary)]">{label}</span>
+                        <span className="font-medium text-[var(--app-warning-icon)]">Missing score data</span>
+                      </div>
+                    </div>
+                  )
+                }
+                return <ScoreBar key={label} label={label} value={value} max={max} />
+              })}
             </div>
+            {missingWeightedScores ? (
+              <Alert variant="warning" title="Outdated score data" className="mt-4">
+                This report uses an older score format. Rescan the website to refresh weighted category
+                scores.
+              </Alert>
+            ) : null}
+            {scoreSumMismatch ? (
+              <Alert variant="warning" title="Score mismatch" className="mt-4">
+                Overall score ({scores.overall_score}) does not equal the weighted category sum ({weightedSum}
+                ). Rescan the website if this persists.
+              </Alert>
+            ) : null}
+            {scores.safety_status ? (
+              <p className="mt-4 text-xs text-[var(--app-text-muted)]">
+                Safety status:{' '}
+                <span className="font-medium capitalize">{scores.safety_status}</span>
+                {scores.score_caps_applied?.length ? (
+                  <span className="block mt-1">
+                    Score caps applied: {scores.score_caps_applied.join(', ')}
+                  </span>
+                ) : null}
+              </p>
+            ) : null}
           </section>
 
           {scores.mismatch_warnings?.length ? (
@@ -305,7 +365,9 @@ const WebsiteReport = () => {
                   {(items || []).map((item) => (
                     <li key={item}>{item}</li>
                   ))}
-                  {!items?.length ? <li>-</li> : null}
+                  {!items?.length ? (
+                    <li className="text-[var(--app-text-muted)]">No items identified yet.</li>
+                  ) : null}
                 </ul>
               </section>
             ))}

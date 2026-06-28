@@ -396,6 +396,10 @@ describe('businessProfileLogic', () => {
       aggregated,
       { store_url: 'https://hvacpro.com', business_model: 'online_plus_physical_service' },
       pages,
+      {
+        safetyResult: { status: 'safe', configured: true, threats: [], message: 'Safe.' },
+        crawlMeta: { homepage_fetch_ok: true, pages_discovered: 1, pages_crawled: 1 },
+      },
     )
 
     assert.equal(scores.scoring_rubric, 'online_plus_physical_service')
@@ -434,6 +438,10 @@ describe('businessProfileLogic', () => {
       aggregated,
       { store_url: 'https://localboutique.com', business_model: 'online_plus_offline_store' },
       pages,
+      {
+        safetyResult: { status: 'safe', configured: true, threats: [], message: 'Safe.' },
+        crawlMeta: { homepage_fetch_ok: true, pages_discovered: 1, pages_crawled: 1 },
+      },
     )
 
     assert.equal(scores.scoring_rubric, 'online_plus_offline_store')

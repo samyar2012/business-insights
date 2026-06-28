@@ -1,7 +1,55 @@
 const { resolveScoringRubric } = require('./businessModelConfig')
 
-function clamp(value) {
-  return Math.max(0, Math.min(100, Math.round(value)))
+const WEIGHTED_CATEGORY_MAX = {
+  safety_score: 30,
+  functionality_score: 20,
+  ux_ui_score: 20,
+  business_fit_score: 20,
+  customer_attraction_score: 10,
+}
+
+const WEIGHTED_SCORE_FIELDS = Object.keys(WEIGHTED_CATEGORY_MAX)
+
+function clamp(value, max = 100) {
+  return Math.max(0, Math.min(max, Math.round(value)))
+}
+
+function validateWeightedScore(scores) {
+  const errors = []
+
+  for (const key of WEIGHTED_SCORE_FIELDS) {
+    if (typeof scores?.[key] !== 'number' || Number.isNaN(scores[key])) {
+      errors.push(`Missing or invalid ${key}`)
+    } else if (scores[key] < 0 || scores[key] > WEIGHTED_CATEGORY_MAX[key]) {
+      errors.push(`${key} (${scores[key]}) is outside 0–${WEIGHTED_CATEGORY_MAX[key]}`)
+    }
+  }
+
+  if (typeof scores?.overall_score !== 'number' || Number.isNaN(scores.overall_score)) {
+    errors.push('Missing or invalid overall_score')
+  } else if (errors.length === 0) {
+    const sum = WEIGHTED_SCORE_FIELDS.reduce((total, key) => total + scores[key], 0)
+    const caps = scores.score_caps_applied || []
+    if (caps.length === 0 && scores.overall_score !== sum) {
+      errors.push(`overall_score (${scores.overall_score}) does not equal category sum (${sum})`)
+    } else if (caps.length > 0 && scores.overall_score > sum) {
+      errors.push(`overall_score (${scores.overall_score}) exceeds category sum (${sum})`)
+    }
+  }
+
+  return { valid: errors.length === 0, errors }
+}
+
+function needsWeightedScoreRehydration(scores) {
+  if (!scores || typeof scores !== 'object') return true
+  return WEIGHTED_SCORE_FIELDS.some(
+    (key) => typeof scores[key] !== 'number' || Number.isNaN(scores[key]),
+  )
+}
+
+function addWeightedExplanation(explanations, category, delta, reason) {
+  if (!reason) return
+  explanations.push({ category, delta, reason })
 }
 
 function addExplanation(explanations, category, delta, reason) {
@@ -495,6 +543,170 @@ function scoreForRubric(rubric, ctx) {
   }
 }
 
+function scoreBusinessFitWeighted(rubric, ctx, explanations) {
+  const { aggregated, signals } = ctx
+  const meta = aggregated.extraction_meta || {}
+  const max = WEIGHTED_CATEGORY_MAX.business_fit_score
+  let points = 0
+
+  if (['online_plus_physical_service', 'local_service_business'].includes(rubric)) {
+    points = 6
+    addWeightedExplanation(
+      explanations,
+      'business_fit',
+      6,
+      'Service-business baseline for a crawlable website.',
+    )
+
+    if (signals.has_phone) {
+      points += 2
+      addWeightedExplanation(explanations, 'business_fit', 2, 'Phone contact detected for local service customers.')
+    }
+    if (signals.has_quote_cta) {
+      points += 2
+      addWeightedExplanation(explanations, 'business_fit', 2, 'Quote or estimate CTA matches service sales flow.')
+    }
+    if (signals.has_booking_cta) {
+      points += 2
+      addWeightedExplanation(explanations, 'business_fit', 2, 'Booking or scheduling CTA detected.')
+    }
+    if (signals.has_consultation) {
+      points += 2
+      addWeightedExplanation(explanations, 'business_fit', 2, 'Consultation offer language detected.')
+    }
+    if (signals.has_service_categories) {
+      points += 2
+      addWeightedExplanation(explanations, 'business_fit', 2, 'Dedicated service pages or categories are discoverable.')
+    }
+    if (signals.has_gallery) {
+      points += 2
+      addWeightedExplanation(explanations, 'business_fit', 2, 'Gallery or portfolio proof supports a service business.')
+    }
+    if (aggregated.trust_signals?.review_indicators) {
+      points += 2
+      addWeightedExplanation(explanations, 'business_fit', 2, 'Reviews or testimonials reinforce service credibility.')
+    }
+    if (signals.has_service_area || signals.has_local_city) {
+      points += 2
+      addWeightedExplanation(explanations, 'business_fit', 2, 'Service-area or local city signals match the business model.')
+    }
+    if (signals.has_contact_page || signals.has_address) {
+      points += 1
+      addWeightedExplanation(explanations, 'business_fit', 1, 'Contact page or address helps local customers reach you.')
+    }
+  } else if (rubric === 'online_plus_offline_store') {
+    points = 8
+    addWeightedExplanation(
+      explanations,
+      'business_fit',
+      8,
+      'Hybrid online + physical store baseline.',
+    )
+    if (signals.has_phone || signals.has_address) {
+      points += 3
+      addWeightedExplanation(explanations, 'business_fit', 3, 'Local storefront contact or address signals detected.')
+    }
+    if (signals.has_product_categories || (aggregated.high_confidence_products || []).length > 0) {
+      points += 3
+      addWeightedExplanation(explanations, 'business_fit', 3, 'Online product or category offers are visible.')
+    }
+    if (signals.has_hours || signals.has_map_directions) {
+      points += 2
+      addWeightedExplanation(explanations, 'business_fit', 2, 'Hours or directions support in-person visits.')
+    }
+    if (aggregated.trust_signals?.review_indicators) {
+      points += 2
+      addWeightedExplanation(explanations, 'business_fit', 2, 'Reviews support both online and local trust.')
+    }
+    if (signals.has_service_categories) {
+      points += 2
+      addWeightedExplanation(explanations, 'business_fit', 2, 'Service categories complement the hybrid model.')
+    }
+  } else if (rubric === 'content_social_business') {
+    points = 7
+    addWeightedExplanation(explanations, 'business_fit', 7, 'Content/social business baseline.')
+    if ((aggregated.social_channels || []).length >= 2) {
+      points += 4
+      addWeightedExplanation(explanations, 'business_fit', 4, 'Multiple social/creator profile links detected.')
+    } else if ((aggregated.social_channels || []).length === 1) {
+      points += 2
+      addWeightedExplanation(explanations, 'business_fit', 2, 'At least one social profile is linked.')
+    }
+    if (aggregated.content_signals?.newsletter_indicators) {
+      points += 3
+      addWeightedExplanation(explanations, 'business_fit', 3, 'Newsletter or audience-building CTA detected.')
+    }
+    if (signals.has_niche_language) {
+      points += 3
+      addWeightedExplanation(explanations, 'business_fit', 3, 'Niche audience content depth detected.')
+    }
+    if ((aggregated.content_signals?.navigation_labels || []).length >= 4) {
+      points += 3
+      addWeightedExplanation(explanations, 'business_fit', 3, 'Consistent content navigation categories found.')
+    }
+  } else if (rubric === 'marketplace_listing') {
+    points = 6
+    addWeightedExplanation(explanations, 'business_fit', 6, 'Marketplace listing baseline.')
+    if (aggregated.site_classification?.classification === 'marketplace') {
+      points += 8
+      addWeightedExplanation(explanations, 'business_fit', 8, 'Crawler detected marketplace listing patterns.')
+    } else {
+      points += 2
+      addWeightedExplanation(
+        explanations,
+        'business_fit',
+        2,
+        'Limited marketplace listing signals on the submitted URL.',
+      )
+    }
+    if ((aggregated.products || []).length > 0) {
+      points += 4
+      addWeightedExplanation(explanations, 'business_fit', 4, 'Listing products or offers were extracted.')
+    }
+  } else {
+    points = 5
+    addWeightedExplanation(explanations, 'business_fit', 5, 'Ecommerce store baseline.')
+    const highConfidenceCount = meta.high_confidence_product_count || 0
+    if (highConfidenceCount >= 2) {
+      points += 4
+      addWeightedExplanation(explanations, 'business_fit', 4, 'Multiple high-confidence products extracted.')
+    } else if (highConfidenceCount >= 1) {
+      points += 2
+      addWeightedExplanation(explanations, 'business_fit', 2, 'At least one high-confidence product found.')
+    }
+    if (meta.has_reliable_product_cards) {
+      points += 3
+      addWeightedExplanation(explanations, 'business_fit', 3, 'Reliable product cards with name, price, and link/image.')
+    }
+    if (meta.has_json_ld_products) {
+      points += 2
+      addWeightedExplanation(explanations, 'business_fit', 2, 'Structured JSON-LD product data detected.')
+    }
+    if (meta.has_product_detail_page) {
+      points += 2
+      addWeightedExplanation(explanations, 'business_fit', 2, 'Product detail page signals were crawled.')
+    }
+    if (aggregated.policy_signals?.shipping && aggregated.policy_signals?.returns) {
+      points += 3
+      addWeightedExplanation(explanations, 'business_fit', 3, 'Shipping and return policies are discoverable.')
+    }
+    if (ctx.signals.has_add_to_cart) {
+      points += 2
+      addWeightedExplanation(explanations, 'business_fit', 2, 'Primary purchase CTA detected.')
+    }
+    if (meta.low_confidence_extraction) {
+      points -= 4
+      addWeightedExplanation(explanations, 'business_fit', -4, 'Product extraction confidence is low.')
+    }
+    if (!meta.has_reliable_product_cards && highConfidenceCount === 0) {
+      points -= 3
+      addWeightedExplanation(explanations, 'business_fit', -3, 'No reliable product cards detected.')
+    }
+  }
+
+  return clamp(points, max)
+}
+
 function finalizeScores(categoryScores, rubric, explanations, mismatchWarnings) {
   const product_clarity = clamp(categoryScores.product_clarity)
   const offer_clarity = clamp(categoryScores.offer_clarity)
@@ -542,25 +754,13 @@ function finalizeScores(categoryScores, rubric, explanations, mismatchWarnings) 
   }
 }
 
-function calculateScoresWithRubric(aggregated, business, pages) {
-  const explanations = []
-  const signals = detectOperationalSignals(pages, aggregated)
-  const rubric = resolveScoringRubric(business, aggregated)
-  const mismatchWarnings = detectMismatchWarnings(rubric, aggregated, business)
-
-  for (const warning of mismatchWarnings) {
-    addExplanation(explanations, 'mismatch', 0, warning)
-  }
-
-  const categoryScores = scoreForRubric(rubric, {
+function calculateScoresWithRubric(aggregated, business, pages, options = {}) {
+  return require('./priorityWebsiteScoring').calculatePriorityScores(
     aggregated,
     business,
     pages,
-    signals,
-    explanations,
-  })
-
-  return finalizeScores(categoryScores, rubric, explanations, mismatchWarnings)
+    options,
+  )
 }
 
 module.exports = {
@@ -568,5 +768,10 @@ module.exports = {
   detectMismatchWarnings,
   calculateScoresWithRubric,
   scoreForRubric,
+  scoreBusinessFitWeighted,
+  validateWeightedScore,
+  needsWeightedScoreRehydration,
+  WEIGHTED_SCORE_FIELDS,
+  WEIGHTED_CATEGORY_MAX,
   resolveScoringRubric,
 }

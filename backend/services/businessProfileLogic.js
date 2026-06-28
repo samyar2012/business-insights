@@ -78,6 +78,7 @@ function aggregatePages(pages) {
   const services = new Set()
   const social = new Set()
   const emails = new Set()
+  const phones = new Set()
   const prices = new Set()
   const ctas = new Set()
   const navLabels = new Set()
@@ -126,6 +127,7 @@ function aggregatePages(pages) {
     if (page.page_type === 'services') services.add(page.title)
     ;(data.social_links || []).forEach((s) => social.add(s))
     ;(data.emails || []).forEach((e) => emails.add(e))
+    ;(data.phones || []).forEach((p) => phones.add(p))
     ;(data.prices || []).forEach((p) => prices.add(p))
     ;(data.ctas || []).forEach((c) => ctas.add(c))
     ;(data.navigation_labels || []).forEach((n) => navLabels.add(n))
@@ -190,7 +192,7 @@ function aggregatePages(pages) {
     high_confidence_products: highConfidenceProducts,
     services: [...services].slice(0, 15),
     social_channels: [...social],
-    contact_signals: { emails: [...emails], phones: [] },
+    contact_signals: { emails: [...emails], phones: [...phones] },
     pricing_signals: [...prices].slice(0, 20),
     policy_signals: policies,
     trust_signals: {
@@ -232,10 +234,20 @@ function buildValueProposition(pages, business) {
   return business?.product_sold || null
 }
 
-const { calculateScoresWithRubric } = require('./businessScoringRubrics')
+const { calculatePriorityScores } = require('./priorityWebsiteScoring')
 
-function calculateScores(aggregated, business, pages) {
-  return calculateScoresWithRubric(aggregated, business, pages)
+function calculateScores(aggregated, business, pages, options = {}) {
+  return calculatePriorityScores(aggregated, business, pages, options)
+}
+
+function buildProfileScoresPayload(aggregated, business, pages, options = {}) {
+  const scores = calculateScores(aggregated, business, pages, options)
+  return {
+    ...scores,
+    strengths: buildStrengths(aggregated, scores),
+    risks: buildRisks(aggregated, pages, scores),
+    recommended_actions: buildRecommendedActions(aggregated, scores),
+  }
 }
 
 function isEcommerceRubric(rubric) {
@@ -282,6 +294,27 @@ function buildRisks(aggregated, pages, scores = {}) {
   const rubric = scores.scoring_rubric || 'ecommerce_store'
   const ecommerceRubric = isEcommerceRubric(rubric)
 
+  if (scores.safety_status === 'unsafe') {
+    risks.push(
+      scores.score_explanation?.find((e) => e.category === 'safety' && /flagged|unsafe|phishing|malware/i.test(e.reason))
+        ?.reason || 'Site was flagged as unsafe by security checks (malware, phishing, or social engineering).',
+    )
+  }
+  if (scores.safety_status === 'unknown') {
+    risks.push(
+      'Live Google Safe Browsing verification is not configured — safety could not be fully verified.',
+    )
+  }
+  if (scores.score_caps_applied?.includes('homepage_failure_cap_40')) {
+    risks.push('Homepage failed to load; overall score is capped until the site is reachable.')
+  }
+  if (scores.score_caps_applied?.includes('key_pages_failure_cap_60')) {
+    risks.push('Many key pages failed to crawl; contact, services, or gallery pages may be missing or unreachable.')
+  }
+  if (scores.functionality_score != null && scores.functionality_score < 10) {
+    risks.push('Website functionality score is low — HTTPS, crawl success, or readable content may be failing.')
+  }
+
   if (pages.length === 0) risks.push('No pages could be crawled from the submitted URL.')
   if (!aggregated.trust_signals.https) risks.push('Site may not use HTTPS consistently.')
 
@@ -323,6 +356,9 @@ function buildRisks(aggregated, pages, scores = {}) {
   for (const warning of scores.mismatch_warnings || []) {
     risks.push(warning)
   }
+  if (risks.length === 0) {
+    risks.push('No major risks detected on crawled pages — continue improving UX and conversion signals.')
+  }
   return [...new Set(risks)].slice(0, 8)
 }
 
@@ -336,7 +372,7 @@ function buildRecommendedActions(aggregated, scores) {
   const penalized = (category) =>
     explanations.some((e) => e.category === category && e.delta < 0)
 
-  if (ecommerceRubric && (meta.prices_without_products_pages > 0 || penalized('offer_clarity'))) {
+  if (ecommerceRubric && (meta.prices_without_products_pages > 0 || penalized('business_fit'))) {
     actions.push('Expose product names beside prices in product cards or JSON-LD Product markup.')
   }
   if (ecommerceRubric && !meta.has_reliable_product_cards) {
@@ -345,10 +381,10 @@ function buildRecommendedActions(aggregated, scores) {
   if (ecommerceRubric && !meta.has_product_detail_page) {
     actions.push('Ensure product detail URLs are linked internally so the crawler can reach PDPs.')
   }
-  if (ecommerceRubric && (meta.low_confidence_extraction || penalized('product_clarity'))) {
+  if (ecommerceRubric && (meta.low_confidence_extraction || penalized('business_fit'))) {
     actions.push('Reduce promo/section headings that look like product names in listing pages.')
   }
-  if (meta.js_rendered_pages > 0 || penalized('technical')) {
+  if (meta.js_rendered_pages > 0 || penalized('functionality')) {
     actions.push('Improve server-rendered HTML for key storefront pages (title, products, policies).')
   }
   if (ecommerceRubric && !aggregated.policy_signals.shipping) {
@@ -361,17 +397,17 @@ function buildRecommendedActions(aggregated, scores) {
     ['online_plus_offline_store', 'online_plus_physical_service', 'local_service_business'].includes(
       rubric,
     ) &&
-    penalized('trust')
+    penalized('business_fit')
   ) {
     actions.push('Add phone, address, hours, and a contact page so local customers can reach you.')
   }
   if (
     ['online_plus_physical_service', 'local_service_business'].includes(rubric) &&
-    penalized('offer_clarity')
+    penalized('business_fit')
   ) {
     actions.push('Add a clear quote or booking CTA and describe your service area.')
   }
-  if (!aggregated.trust_signals.review_indicators || penalized('social_proof')) {
+  if (!aggregated.trust_signals.review_indicators || penalized('customer_attraction')) {
     actions.push('Add customer reviews or testimonials above the fold.')
   }
   if (aggregated.social_channels.length === 0 && rubric === 'content_social_business') {
@@ -379,6 +415,24 @@ function buildRecommendedActions(aggregated, scores) {
   }
   if (siteClassMismatch(aggregated, rubric)) {
     actions.push('Submit your own brand storefront URL instead of a marketplace listing page.')
+  }
+  if (scores.safety_status === 'unsafe') {
+    actions.push('Resolve malware or phishing flags with your host and request a Safe Browsing review before promoting the site.')
+  }
+  if (scores.safety_status === 'unknown') {
+    actions.push('Configure GOOGLE_SAFE_BROWSING_API_KEY in production to verify visitor safety before driving traffic.')
+  }
+  if (scores.score_caps_applied?.includes('homepage_failure_cap_40')) {
+    actions.push('Fix homepage availability and SSL so the primary URL loads over HTTPS without errors.')
+  }
+  if (scores.functionality_score != null && scores.functionality_score < 12) {
+    actions.push('Improve crawlability: ensure key pages return HTML (not blank JS shells) and link contact/services pages internally.')
+  }
+  if (scores.ux_ui_score != null && scores.ux_ui_score < 12) {
+    actions.push('Add a clear H1 hero message, navigation labels, visible contact info, and a mobile viewport meta tag.')
+  }
+  if (actions.length === 0) {
+    actions.push('Maintain current strengths and A/B test primary CTAs to improve customer attraction.')
   }
   return [...new Set(actions)].slice(0, 8)
 }
@@ -393,6 +447,7 @@ module.exports = {
   inferBusinessType,
   buildValueProposition,
   calculateScores,
+  buildProfileScoresPayload,
   buildStrengths,
   buildRisks,
   buildRecommendedActions,

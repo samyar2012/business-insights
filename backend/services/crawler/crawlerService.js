@@ -11,7 +11,8 @@ const { fetchRobots, isPathDisallowed } = require('./robotsService')
 const { discoverSitemapUrls, detectPageType, scoreUrlPriority } = require('./sitemapService')
 const { fetchPage } = require('./pageFetcher')
 const { extractPage, chunkText } = require('./pageExtractor')
-const { buildBusinessWebProfile } = require('../businessProfileService')
+const { buildBusinessWebProfile, formatWebProfile, rehydrateWebProfileScores } = require('../businessProfileService')
+const { checkUrlSafety } = require('../safeBrowsingService')
 const {
   DEFAULT_MAX_PAGES,
   DEFAULT_MAX_DEPTH,
@@ -292,11 +293,23 @@ async function crawlBusinessWebsite({
          ORDER BY created_at DESC LIMIT 1`,
         [businessId, cached.id],
       )
+      const businessRow = await query(`SELECT * FROM businesses WHERE id = $1`, [businessId])
+      const pages = await getCrawlPages(userId, cached.id)
+      let profile = profileResult.rows[0] ? formatWebProfile(profileResult.rows[0]) : null
+      if (profile && pages.length) {
+        profile = await rehydrateWebProfileScores({
+          profile,
+          business: businessRow.rows[0],
+          pages,
+          crawlRun: cached,
+          startUrl: cached.start_url || businessRow.rows[0]?.store_url,
+        })
+      }
       return {
         cached: true,
         crawlRun: cached,
-        profile: profileResult.rows[0] || null,
-        pages: [],
+        profile,
+        pages,
       }
     }
   }
@@ -343,6 +356,7 @@ async function crawlBusinessWebsite({
     })
 
     const businessRow = await query(`SELECT * FROM businesses WHERE id = $1`, [businessId])
+    const safetyResult = await checkUrlSafety(canonicalStart)
     const profile = await buildBusinessWebProfile({
       userId,
       businessId,
@@ -350,6 +364,12 @@ async function crawlBusinessWebsite({
       crawlRunId: crawlRun.id,
       pages,
       startUrl: canonicalStart,
+      crawlMeta: {
+        homepage_fetch_ok: Boolean(homeFetch.ok && homeFetch.html),
+        pages_discovered: queue.length,
+        pages_crawled: pages.length,
+      },
+      safetyResult,
     })
 
     await updateCrawlRun(crawlRun.id, {

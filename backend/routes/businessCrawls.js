@@ -8,7 +8,7 @@ const {
   DEFAULT_MAX_PAGES,
   DEFAULT_MAX_DEPTH,
 } = require('../services/crawler/crawlerService')
-const { getBusinessWebProfile } = require('../services/businessProfileService')
+const { getBusinessWebProfile, formatWebProfile, rehydrateWebProfileScores } = require('../services/businessProfileService')
 const { validatePublicUrl } = require('../services/crawler/urlSecurity')
 
 const router = express.Router({ mergeParams: true })
@@ -47,13 +47,20 @@ router.get('/:businessId/web-profile', requireAuth, async (req, res) => {
     const business = await loadOwnedBusiness(req.auth.sub, req.params.businessId)
     if (!business) return res.status(404).json({ error: 'Business not found' })
 
-    const profile = await getBusinessWebProfile(req.auth.sub, business.id)
     const crawls = await listCrawlRuns(req.auth.sub, business.id)
     const latestCrawl = crawls[0] || null
     let pages = []
     if (latestCrawl) {
       pages = await getCrawlPages(req.auth.sub, latestCrawl.id)
     }
+
+    const profile = await getBusinessWebProfile(req.auth.sub, business.id, {
+      rehydrateScores: true,
+      business,
+      pages,
+      crawlRun: latestCrawl,
+      startUrl: latestCrawl?.start_url || business.store_url,
+    })
 
     return res.json({
       business,
