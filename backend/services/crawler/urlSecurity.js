@@ -81,24 +81,78 @@ function assertSafeResolvedAddress(hostname, addresses) {
   return true
 }
 
-async function resolveHostname(hostname) {
-  const host = String(hostname || '').toLowerCase().replace(/\.$/, '')
+function normalizeHostname(hostname) {
+  return String(hostname || '').toLowerCase().replace(/\.$/, '')
+}
+
+function hostnameResolutionCandidates(hostname) {
+  const host = normalizeHostname(hostname)
+  if (!host) return []
+
+  const candidates = [host]
+  if (host.startsWith('www.')) {
+    const apex = host.slice(4)
+    if (apex && !candidates.includes(apex)) candidates.push(apex)
+  } else if (host.includes('.') && !host.includes(' ')) {
+    const wwwHost = `www.${host}`
+    if (!candidates.includes(wwwHost)) candidates.push(wwwHost)
+  }
+  return candidates
+}
+
+async function lookupAddresses(host) {
+  const addresses = []
+
   try {
-    const [v4, v6] = await Promise.allSettled([
-      dns.resolve4(host),
-      dns.resolve6(host),
-    ])
-    const addresses = []
+    const results = await dns.lookup(host, { all: true, verbatim: false })
+    for (const entry of results) {
+      if (entry?.address) addresses.push(entry.address)
+    }
+  } catch {
+    // Fall back to direct DNS record lookups below.
+  }
+
+  if (addresses.length === 0) {
+    const [v4, v6] = await Promise.allSettled([dns.resolve4(host), dns.resolve6(host)])
     if (v4.status === 'fulfilled') addresses.push(...v4.value)
     if (v6.status === 'fulfilled') addresses.push(...v6.value)
-    assertSafeResolvedAddress(host, addresses)
-    return addresses
-  } catch (err) {
-    if (err.code === 'SSRF_BLOCKED') throw err
-    const blocked = new Error(`DNS resolution failed for ${host}`)
-    blocked.code = 'SSRF_BLOCKED'
-    throw blocked
   }
+
+  return [...new Set(addresses)]
+}
+
+function isResolutionFailureError(err) {
+  if (!err) return false
+  if (err.code === 'SSRF_BLOCKED' && /Could not resolve hostname|DNS resolution failed/i.test(err.message)) {
+    return true
+  }
+  const code = String(err.code || '')
+  return ['ENOTFOUND', 'ENODATA', 'ESERVFAIL', 'ETIMEOUT', 'EAI_AGAIN'].includes(code)
+}
+
+async function resolveHostname(hostname) {
+  const requestedHost = normalizeHostname(hostname)
+  const candidates = hostnameResolutionCandidates(requestedHost)
+  let lastError = null
+
+  for (const host of candidates) {
+    try {
+      const addresses = await lookupAddresses(host)
+      assertSafeResolvedAddress(host, addresses)
+      return addresses
+    } catch (err) {
+      lastError = err
+      if (!isResolutionFailureError(err)) throw err
+    }
+  }
+
+  const apexHint = requestedHost.startsWith('www.') ? requestedHost.slice(4) : `www.${requestedHost}`
+  const err = new Error(
+    `Could not verify website hostname (DNS lookup failed for ${requestedHost}). Check the URL spelling or try ${apexHint}.`,
+  )
+  err.code = 'SSRF_BLOCKED'
+  if (lastError?.message) err.cause = lastError
+  throw err
 }
 
 function normalizeUrlString(raw) {
@@ -212,6 +266,9 @@ module.exports = {
   validateRedirectUrl,
   assertSafeResolvedAddress,
   resolveHostname,
+  lookupAddresses,
+  hostnameResolutionCandidates,
+  normalizeHostname,
   normalizeUrlString,
   isBlockedCrawlPath,
   canonicalizeUrl,

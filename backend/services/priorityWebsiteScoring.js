@@ -36,6 +36,19 @@ function pageData(page) {
   return data
 }
 
+const WEIGHTED_EXPLANATION_CATEGORIES = new Set([
+  'safety',
+  'functionality',
+  'ux_ui',
+  'business_fit',
+  'customer_attraction',
+  'mismatch',
+])
+
+function filterWeightedExplanations(explanations) {
+  return explanations.filter((item) => WEIGHTED_EXPLANATION_CATEGORIES.has(item.category))
+}
+
 function inferCrawlHealth(pages, startUrl, crawlMeta = {}) {
   const homepage = pages.find((p) => p.page_type === 'homepage') || pages[0] || null
   const homepageOk =
@@ -45,8 +58,11 @@ function inferCrawlHealth(pages, startUrl, crawlMeta = {}) {
 
   const discovered = crawlMeta.pages_discovered || pages.length
   const crawled = crawlMeta.pages_crawled ?? pages.length
+  const pagesFailed = Math.max(0, Number(crawlMeta.pages_failed ?? crawlMeta.fetch_failures ?? 0) || 0)
+  const attemptedFetches = crawled + pagesFailed
+  const skippedDueToLimit = Math.max(0, discovered - crawled - pagesFailed)
   const fetchFailureRate =
-    discovered > 0 ? Math.max(0, (discovered - crawled) / discovered) : pages.length === 0 ? 1 : 0
+    attemptedFetches > 0 ? pagesFailed / attemptedFetches : pages.length === 0 && pagesFailed > 0 ? 1 : 0
 
   const hasContact = pages.some((p) => p.page_type === 'contact')
   const hasServices = pages.some((p) => p.page_type === 'services')
@@ -56,17 +72,24 @@ function inferCrawlHealth(pages, startUrl, crawlMeta = {}) {
 
   const keyPageTypes = [hasContact, hasServices, hasGallery].filter(Boolean).length
   const keyPagesMostlyFailed =
-    fetchFailureRate > 0.5 || (discovered >= 4 && crawled < 2) || (pages.length > 0 && keyPageTypes === 0 && discovered >= 6)
+    !homepageOk ||
+    (pagesFailed >= 3 && fetchFailureRate > 0.5) ||
+    (attemptedFetches >= 3 && crawled === 0 && pagesFailed > 0) ||
+    (pages.length > 0 && keyPageTypes === 0 && pagesFailed >= 2 && fetchFailureRate > 0.5)
 
   return {
     homepageOk,
     homepage,
     discovered,
     crawled,
+    pagesFailed,
+    skippedDueToLimit,
+    attemptedFetches,
     fetchFailureRate,
     hasContact,
     hasServices,
     hasGallery,
+    keyPageTypes,
     keyPagesMostlyFailed,
     startUrl,
   }
@@ -160,11 +183,34 @@ function scoreFunctionalityPoints(aggregated, pages, crawlHealth, explanations) 
     addExplanation(explanations, 'functionality', 0, 'No pages were crawled from the submitted URL.')
   }
 
-  if (crawlHealth.fetchFailureRate < 0.35) {
-    points += 2
-    addExplanation(explanations, 'functionality', 2, 'Few crawl fetch failures relative to pages discovered.')
+  if (crawlHealth.pagesFailed === 0) {
+    if (crawlHealth.skippedDueToLimit > 0) {
+      points += 2
+      addExplanation(
+        explanations,
+        'functionality',
+        2,
+        `Crawl page limit reached (${crawlHealth.crawled} pages analyzed); ${crawlHealth.skippedDueToLimit} additional URLs were discovered but not fetched.`,
+      )
+    } else {
+      points += 2
+      addExplanation(explanations, 'functionality', 2, 'No page fetch failures during crawl.')
+    }
   } else if (crawlHealth.fetchFailureRate >= 0.5) {
-    addExplanation(explanations, 'functionality', 0, 'Many discovered pages failed to fetch.')
+    addExplanation(
+      explanations,
+      'functionality',
+      0,
+      `${crawlHealth.pagesFailed} page fetch failure(s) reported during crawl.`,
+    )
+  } else {
+    points += 1
+    addExplanation(
+      explanations,
+      'functionality',
+      1,
+      `${crawlHealth.pagesFailed} page fetch failure(s), but most attempted pages loaded successfully.`,
+    )
   }
 
   const reachableKeyPages = [
@@ -264,8 +310,82 @@ function scoreUxUiPoints(pages, aggregated, signals, explanations) {
   return clamp(points, UX_UI_MAX)
 }
 
-function scoreCustomerAttractionPoints(aggregated, signals, explanations) {
+function scoreCustomerAttractionPoints(aggregated, signals, explanations, options = {}) {
+  const rubric = options.rubric || 'ecommerce_store'
+  const ux = options.uxSignals || {}
+  const isService = ['online_plus_physical_service', 'local_service_business'].includes(rubric)
   let points = 0
+
+  if (isService) {
+    if (signals.has_quote_cta || signals.has_booking_cta) {
+      points += 2
+      addExplanation(
+        explanations,
+        'customer_attraction',
+        2,
+        'Quote or booking CTA gives visitors a clear next step.',
+      )
+    }
+    if (signals.has_consultation) {
+      points += 1
+      addExplanation(
+        explanations,
+        'customer_attraction',
+        1,
+        'Consultation language lowers friction for high-intent leads.',
+      )
+    }
+    if (signals.has_phone || signals.has_contact_page) {
+      points += 2
+      addExplanation(
+        explanations,
+        'customer_attraction',
+        2,
+        'Phone number or contact page makes it easy to reach you.',
+      )
+    }
+    if (aggregated.trust_signals?.review_indicators) {
+      points += 2
+      addExplanation(explanations, 'customer_attraction', 2, 'Reviews or testimonials build trust.')
+    }
+    if (signals.has_gallery) {
+      points += 1
+      addExplanation(
+        explanations,
+        'customer_attraction',
+        1,
+        'Gallery or portfolio proof supports conversion.',
+      )
+    }
+    if (signals.has_service_area || signals.has_local_city) {
+      points += 1
+      addExplanation(
+        explanations,
+        'customer_attraction',
+        1,
+        'Service-area or local city wording helps nearby customers find you.',
+      )
+    }
+    if (signals.has_service_categories) {
+      points += 1
+      addExplanation(
+        explanations,
+        'customer_attraction',
+        1,
+        'Dedicated services content clarifies what you offer.',
+      )
+    }
+    if (ux.hasH1 && ux.navLabelCount >= 2) {
+      points += 1
+      addExplanation(
+        explanations,
+        'customer_attraction',
+        1,
+        'Clear hero message and navigation help visitors understand your offer quickly.',
+      )
+    }
+    return clamp(points, CUSTOMER_ATTRACTION_MAX)
+  }
 
   const strongCta =
     signals.has_quote_cta ||
@@ -364,6 +484,7 @@ function applyScoreCaps({
 
 function calculatePriorityScores(aggregated, business, pages, options = {}) {
   const explanations = []
+  const legacyExplanations = []
   const scoreCapsApplied = []
   const signals = detectOperationalSignals(pages, aggregated)
   const rubric = resolveScoringRubric(business, aggregated)
@@ -377,10 +498,14 @@ function calculatePriorityScores(aggregated, business, pages, options = {}) {
   const safety = scoreSafetyPoints(options.safetyResult, explanations)
   const functionality_score = scoreFunctionalityPoints(aggregated, pages, crawlHealth, explanations)
   const ux_ui_score = scoreUxUiPoints(pages, aggregated, signals, explanations)
-  const rubricCtx = { aggregated, business, pages, signals, explanations }
-  const categoryScores = scoreForRubric(rubric, rubricCtx)
+  const rubricCtx = { aggregated, business, pages, signals }
+  const categoryScores = scoreForRubric(rubric, { ...rubricCtx, explanations: legacyExplanations })
   const business_fit_score = scoreBusinessFitWeighted(rubric, rubricCtx, explanations)
-  const customer_attraction_score = scoreCustomerAttractionPoints(aggregated, signals, explanations)
+  const uxSignals = collectUxSignals(pages, aggregated)
+  const customer_attraction_score = scoreCustomerAttractionPoints(aggregated, signals, explanations, {
+    rubric,
+    uxSignals,
+  })
 
   let overall_score =
     safety.points +
@@ -410,7 +535,7 @@ function calculatePriorityScores(aggregated, business, pages, options = {}) {
     score_caps_applied: scoreCapsApplied,
     ...legacy,
     scoring_rubric: rubric,
-    score_explanation: explanations.slice(0, 32),
+    score_explanation: filterWeightedExplanations(explanations).slice(0, 24),
     mismatch_warnings: mismatchWarnings,
   }
 
@@ -425,6 +550,8 @@ function calculatePriorityScores(aggregated, business, pages, options = {}) {
 module.exports = {
   calculatePriorityScores,
   validateWeightedScore,
+  filterWeightedExplanations,
+  WEIGHTED_EXPLANATION_CATEGORIES,
   SAFETY_MAX,
   UNKNOWN_SAFETY_SCORE,
   FUNCTIONALITY_MAX,

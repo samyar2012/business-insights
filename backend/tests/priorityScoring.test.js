@@ -4,6 +4,7 @@ const {
   calculatePriorityScores,
   SAFETY_MAX,
   UNKNOWN_SAFETY_SCORE,
+  inferCrawlHealth,
 } = require('../services/priorityWebsiteScoring')
 const { validateWeightedScore, needsWeightedScoreRehydration } = require('../services/businessScoringRubrics')
 const { unknownResult } = require('../services/safeBrowsingService')
@@ -487,6 +488,167 @@ describe('priorityWebsiteScoring', () => {
     )
   })
 
+  it('does not apply key_pages_failure_cap_60 when discovered exceeds crawled but pages_failed is 0', () => {
+    const pages = richPages()
+    const crawlMeta = {
+      homepage_fetch_ok: true,
+      pages_discovered: 40,
+      pages_crawled: 3,
+      pages_failed: 0,
+    }
+
+    const health = inferCrawlHealth(pages, 'https://shop.com', crawlMeta)
+    assert.equal(health.keyPagesMostlyFailed, false)
+    assert.ok(health.skippedDueToLimit > 0)
+
+    const scores = calculatePriorityScores(
+      STRONG_ECOMMERCE_AGG,
+      { store_url: 'https://shop.com', business_model: 'ecommerce_store' },
+      pages,
+      {
+        safetyResult: { status: 'safe', configured: true, threats: [], message: 'Safe.' },
+        crawlMeta,
+      },
+    )
+
+    assert.equal(scores.score_caps_applied.includes('key_pages_failure_cap_60'), false)
+    assert.ok(
+      scores.score_explanation.some((e) => /page limit reached|discovered but not fetched/i.test(e.reason)),
+    )
+  })
+
+  it('score_explanation only includes weighted scoring categories', () => {
+    const pages = richPages()
+    const aggregated = require('../services/businessProfileLogic').aggregatePages(pages)
+    const scores = calculateScores(
+      aggregated,
+      { store_url: 'https://shop.com', business_model: 'ecommerce_store' },
+      pages,
+      {
+        safetyResult: unknownResult(),
+        crawlMeta: { homepage_fetch_ok: true, pages_discovered: 3, pages_crawled: 3, pages_failed: 0 },
+      },
+    )
+
+    const allowed = new Set([
+      'safety',
+      'functionality',
+      'ux_ui',
+      'business_fit',
+      'customer_attraction',
+      'mismatch',
+    ])
+    assert.ok(scores.score_explanation.length > 0)
+    assert.ok(scores.score_explanation.every((e) => allowed.has(e.category)))
+    assert.equal(
+      scores.score_explanation.some((e) =>
+        ['product_clarity', 'offer_clarity', 'trust', 'policies', 'social_proof', 'content', 'technical'].includes(
+          e.category,
+        ),
+      ),
+      false,
+    )
+  })
+
+  it('does not recommend marketplace storefront action for service sites with sponsored wording', () => {
+    const pages = [
+      {
+        final_url: 'https://la-shades.com/',
+        page_type: 'homepage',
+        extracted_text:
+          'Custom window shades. Book a consultation. We sponsored a local home show. Customer reviews.',
+        extracted_data_json: {
+          phones: ['(310) 555-0199'],
+          ctas: ['Book a consultation'],
+          review_indicators: true,
+          headings: { h1: ['LA Shades'] },
+          has_mobile_viewport: true,
+          image_count: 4,
+          navigation_labels: ['Services', 'Gallery', 'Contact'],
+          page_classification_hint: 'service',
+          page_classification_indicators: ['service_language'],
+        },
+      },
+    ]
+
+    const aggregated = require('../services/businessProfileLogic').aggregatePages(pages)
+    assert.notEqual(aggregated.site_classification.classification, 'marketplace')
+    const scores = calculateScores(
+      aggregated,
+      { store_url: 'https://la-shades.com', business_model: 'online_plus_physical_service' },
+      pages,
+      {
+        safetyResult: { status: 'safe', configured: true, threats: [], message: 'Safe.' },
+        crawlMeta: { homepage_fetch_ok: true, pages_discovered: 1, pages_crawled: 1, pages_failed: 0 },
+      },
+    )
+    const actions = buildRecommendedActions(aggregated, pages, scores)
+    assert.equal(
+      actions.some((a) => /submit your own brand storefront url/i.test(a)),
+      false,
+    )
+  })
+
+  it('returns ranked priority fixes with impact and no placeholder dashes', () => {
+    const pages = richPages()
+    const aggregated = require('../services/businessProfileLogic').aggregatePages(pages)
+    const payload = require('../services/businessProfileLogic').buildProfileScoresPayload(
+      aggregated,
+      { store_url: 'https://shop.com', business_model: 'ecommerce_store' },
+      pages,
+      {
+        safetyResult: unknownResult(),
+        crawlMeta: { homepage_fetch_ok: true, pages_discovered: 3, pages_crawled: 3, pages_failed: 0 },
+      },
+    )
+
+    assert.ok(payload.priority_fixes.length > 0)
+    assert.ok(payload.priority_fixes.every((fix) => fix.rank >= 1 && fix.action && fix.action !== '-'))
+    assert.ok(payload.priority_fixes.every((fix) => ['critical', 'high', 'medium', 'low'].includes(fix.priority)))
+    assert.deepEqual(
+      payload.recommended_actions,
+      payload.priority_fixes.map((fix) => fix.action),
+    )
+    assert.ok(payload.risks.every((risk) => risk !== '-'))
+  })
+
+  it('uses crawl fallback risk copy when no serious issues are found', () => {
+    const pages = [
+      {
+        page_type: 'homepage',
+        status_code: 200,
+        final_url: 'https://hvacpro.com/',
+        extracted_text:
+          'Request a free quote. Serving Dallas. Call (214) 555-0100. Gallery. Reviews. Schedule service.',
+        extracted_data_json: {
+          phones: ['(214) 555-0100'],
+          ctas: ['Request a quote', 'Schedule service'],
+          review_indicators: true,
+          headings: { h1: ['HVAC Pro'] },
+          has_mobile_viewport: true,
+          image_count: 4,
+          navigation_labels: ['Services', 'Gallery', 'Contact'],
+          page_classification_hint: 'service',
+        },
+      },
+    ]
+    const aggregated = require('../services/businessProfileLogic').aggregatePages(pages)
+    const risks = buildRisks(
+      aggregated,
+      pages,
+      calculateScores(
+        aggregated,
+        { store_url: 'https://hvacpro.com', business_model: 'online_plus_physical_service' },
+        pages,
+        {
+          safetyResult: { status: 'safe', configured: true, threats: [], message: 'Safe.' },
+          crawlMeta: { homepage_fetch_ok: true, pages_discovered: 1, pages_crawled: 1, pages_failed: 0 },
+        },
+      ),
+    )
+    assert.ok(risks.some((risk) => /No major risks detected from this crawl/i.test(risk)))
+  })
+
   it('returns specific risks and recommended actions (never placeholder dashes)', () => {
     const pages = richPages()
     const aggregated = require('../services/businessProfileLogic').aggregatePages(pages)
@@ -501,7 +663,7 @@ describe('priorityWebsiteScoring', () => {
     )
 
     const risks = buildRisks(aggregated, pages, scores)
-    const actions = buildRecommendedActions(aggregated, scores)
+    const actions = buildRecommendedActions(aggregated, pages, scores)
 
     assert.ok(risks.length > 0)
     assert.ok(actions.length > 0)

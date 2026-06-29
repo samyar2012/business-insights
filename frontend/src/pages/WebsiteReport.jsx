@@ -29,6 +29,69 @@ function hasMissingWeightedScores(scores) {
   return WEIGHTED_CATEGORIES.some(({ key }) => readWeightedScore(scores, key) === null)
 }
 
+const WEIGHTED_EXPLANATION_CATEGORIES = new Set([
+  'safety',
+  'functionality',
+  'ux_ui',
+  'business_fit',
+  'customer_attraction',
+  'mismatch',
+])
+
+function weightedScoreExplanations(scores) {
+  return (scores?.score_explanation || []).filter((item) =>
+    WEIGHTED_EXPLANATION_CATEGORIES.has(item.category),
+  )
+}
+
+function lensStatus(value, max) {
+  if (value == null || max <= 0) return { label: 'Unknown', tone: 'muted' }
+  const pct = value / max
+  if (pct >= 0.7) return { label: 'Good', tone: 'success' }
+  if (pct >= 0.45) return { label: 'Needs work', tone: 'warning' }
+  return { label: 'Priority fix', tone: 'error' }
+}
+
+const ANALYZER_LENSES = [
+  {
+    question: 'Is my site safe?',
+    key: 'safety_score',
+    max: 30,
+    detail: 'Malware, phishing, and HTTPS trust signals.',
+  },
+  {
+    question: 'Is my site functional?',
+    key: 'functionality_score',
+    max: 20,
+    detail: 'Pages load, HTTPS works, and content is reachable.',
+  },
+  {
+    question: 'Is my UX/UI good enough?',
+    key: 'ux_ui_score',
+    max: 20,
+    detail: 'Headings, navigation, CTAs, and mobile layout.',
+  },
+  {
+    question: 'Does my site match my business type?',
+    key: 'business_fit_score',
+    max: 20,
+    detail: 'Signals align with your selected business model.',
+  },
+  {
+    question: 'Will this site attract and convert customers?',
+    key: 'customer_attraction_score',
+    max: 10,
+    detail: 'CTAs, proof, contact paths, and local relevance.',
+  },
+]
+
+const PRIORITY_LABELS = {
+  critical: 'Critical',
+  high: 'High impact',
+  medium: 'Medium impact',
+  low: 'Polish',
+}
+
 const WebsiteReport = () => {
   const { businessId } = useParams()
   const [business, setBusiness] = useState(null)
@@ -114,19 +177,29 @@ const WebsiteReport = () => {
     typeof scores.overall_score === 'number' &&
     scores.overall_score !== weightedSum &&
     !(scores.score_caps_applied?.length > 0)
+  const scoreExplanations = weightedScoreExplanations(scores)
+  const priorityFixes = scores.priority_fixes?.length
+    ? scores.priority_fixes
+    : (scores.recommended_actions || []).map((action, index) => ({
+        rank: index + 1,
+        priority: index === 0 ? 'high' : 'medium',
+        category: 'customer_attraction',
+        action,
+        impact: '',
+      }))
 
   return (
     <div className="mx-auto max-w-4xl">
       <Link to="/app" className="app-link text-sm font-medium">&lt;- Dashboard</Link>
 
       <header className="mt-4">
-        <p className="app-eyebrow">Website analysis</p>
+        <p className="app-eyebrow">Website improvement workspace</p>
         <h1 className="app-page-title mt-2">{business?.business_name || 'Website report'}</h1>
         <p className="app-page-subtitle">
           {business?.store_url ? (
             <span className="break-all">{business.store_url}</span>
           ) : (
-            'Add a store URL to analyze your website.'
+            'Add a store URL to analyze how well your site attracts and converts customers.'
           )}
         </p>
       </header>
@@ -138,7 +211,7 @@ const WebsiteReport = () => {
       {!profile && !isRunning ? (
         <div className="app-card mt-8 p-6 text-center">
           <p className="text-sm text-[var(--app-text-secondary)]">
-            Analyze your public website pages to build a structured business profile — no search API required.
+            Run a customer-attraction analysis on your public pages — see what helps or hurts conversions.
           </p>
           <button
             type="button"
@@ -191,6 +264,49 @@ const WebsiteReport = () => {
 
       {profile ? (
         <>
+          {!missingWeightedScores ? (
+            <section className="app-card mt-8 p-6">
+              <h2 className="text-sm font-semibold">What this analysis answers</h2>
+              <ul className="mt-4 space-y-3">
+                {ANALYZER_LENSES.map(({ question, key, max, detail }) => {
+                  const value = readWeightedScore(scores, key)
+                  const status = lensStatus(value, max)
+                  return (
+                    <li
+                      key={key}
+                      className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-[var(--app-border)] px-4 py-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-[var(--app-text)]">{question}</p>
+                        <p className="mt-0.5 text-xs text-[var(--app-text-muted)]">{detail}</p>
+                      </div>
+                      <div className="text-right text-sm shrink-0">
+                        <span
+                          className={
+                            status.tone === 'success'
+                              ? 'font-semibold text-[var(--app-success-icon)]'
+                              : status.tone === 'warning'
+                                ? 'font-semibold text-[var(--app-warning-icon)]'
+                                : status.tone === 'error'
+                                  ? 'font-semibold text-[var(--app-danger-icon)]'
+                                  : 'text-[var(--app-text-muted)]'
+                          }
+                        >
+                          {status.label}
+                        </span>
+                        {value != null ? (
+                          <p className="text-xs text-[var(--app-text-muted)]">
+                            {value}/{max}
+                          </p>
+                        ) : null}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
+          ) : null}
+
           <section className="app-card mt-8 p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -270,11 +386,14 @@ const WebsiteReport = () => {
             </Alert>
           ) : null}
 
-          {scores.score_explanation?.length ? (
+          {scoreExplanations.length ? (
             <section className="app-card mt-6 p-5">
               <h2 className="text-sm font-semibold">Score breakdown</h2>
+              <p className="mt-1 text-xs text-[var(--app-text-muted)]">
+                Weighted categories only — safety, functionality, UX, business fit, and customer attraction.
+              </p>
               <ul className="mt-3 space-y-2 text-sm">
-                {scores.score_explanation.map((item) => (
+                {scoreExplanations.map((item) => (
                   <li
                     key={`${item.category}-${item.reason}`}
                     className={
@@ -285,6 +404,10 @@ const WebsiteReport = () => {
                           : 'text-[var(--app-text-secondary)]'
                     }
                   >
+                    <span className="text-xs uppercase tracking-wide text-[var(--app-text-muted)]">
+                      {String(item.category).replace(/_/g, ' ')}
+                    </span>
+                    {' — '}
                     {item.delta > 0 ? '+' : ''}
                     {item.delta !== 0 ? `${item.delta} ` : ''}
                     {item.reason}
@@ -294,64 +417,35 @@ const WebsiteReport = () => {
             </section>
           ) : null}
 
-          <section className="app-card mt-6 p-5">
-            <h2 className="text-sm font-semibold">Products &amp; services</h2>
-            <div className="mt-3 grid gap-4 sm:grid-cols-2">
-              <div>
-                <p className="text-xs text-[var(--app-text-muted)]">Products</p>
-                <ul className="mt-1 list-inside list-disc text-sm text-[var(--app-text-secondary)]">
-                  {(summary.products || []).slice(0, 8).map((p) => (
-                    <li key={p}>{p}</li>
-                  ))}
-                  {!summary.products?.length ? <li>-</li> : null}
-                </ul>
-              </div>
-              <div>
-                <p className="text-xs text-[var(--app-text-muted)]">Services</p>
-                <ul className="mt-1 list-inside list-disc text-sm text-[var(--app-text-secondary)]">
-                  {(summary.services || []).slice(0, 8).map((s) => (
-                    <li key={s}>{s}</li>
-                  ))}
-                  {!summary.services?.length ? <li>-</li> : null}
-                </ul>
-              </div>
-            </div>
-          </section>
-
-          <section className="app-card mt-6 p-5">
-            <h2 className="text-sm font-semibold">Social &amp; contact</h2>
-            <ul className="mt-3 space-y-1 text-sm text-[var(--app-text-secondary)]">
-              {(summary.social_channels || []).map((url) => (
-                <li key={url}>
-                  <a href={url} target="_blank" rel="noreferrer" className="app-link break-all">
-                    {url}
-                  </a>
-                </li>
-              ))}
-              {!summary.social_channels?.length ? <li>No social links detected</li> : null}
-              {(summary.contact_signals?.emails || []).map((email) => (
-                <li key={email}>{email}</li>
-              ))}
-            </ul>
-          </section>
-
-          <section className="app-card mt-6 p-5">
-            <h2 className="text-sm font-semibold">Policies detected</h2>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {Object.entries(summary.policy_signals || {}).map(([key, found]) => (
-                <span
-                  key={key}
-                  className={`rounded-full px-3 py-1 text-xs font-medium ${
-                    found
-                      ? 'bg-[var(--app-success-bg)] text-[var(--app-success-icon)]'
-                      : 'bg-[var(--app-input-bg)] text-[var(--app-text-muted)]'
-                  }`}
-                >
-                  {key}
-                </span>
-              ))}
-            </div>
-          </section>
+          {priorityFixes.length ? (
+            <section className="app-card mt-6 p-5">
+              <h2 className="text-sm font-semibold">Fix first — ranked by customer impact</h2>
+              <ol className="mt-4 space-y-4">
+                {priorityFixes.map((fix) => (
+                  <li key={`${fix.rank}-${fix.action}`} className="flex gap-3">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--app-input-bg)] text-xs font-bold">
+                      {fix.rank}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium uppercase tracking-wide text-[var(--app-warning-icon)]">
+                        {PRIORITY_LABELS[fix.priority] || fix.priority}
+                        {fix.category ? (
+                          <span className="text-[var(--app-text-muted)]">
+                            {' '}
+                            · {String(fix.category).replace(/_/g, ' ')}
+                          </span>
+                        ) : null}
+                      </p>
+                      <p className="mt-1 text-sm font-medium text-[var(--app-text)]">{fix.action}</p>
+                      {fix.impact ? (
+                        <p className="mt-1 text-xs text-[var(--app-text-muted)]">{fix.impact}</p>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ) : null}
 
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
             {[

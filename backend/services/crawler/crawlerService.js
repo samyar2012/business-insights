@@ -193,6 +193,7 @@ async function crawlPages({
   const pages = []
   const visitedCanonical = new Set()
   let discovered = queue.length
+  let pagesFailed = 0
 
   const workers = []
   const pending = [...queue]
@@ -223,7 +224,10 @@ async function crawlPages({
         userAgent: DEFAULT_UA,
       })
 
-      if (!fetchResult.ok || !fetchResult.html) continue
+      if (!fetchResult.ok || !fetchResult.html) {
+        pagesFailed += 1
+        continue
+      }
 
       const extracted = extractPage(fetchResult.html, fetchResult.finalUrl || parsed.href, hostname)
       const pageType = detectPageType(fetchResult.finalUrl || parsed.href)
@@ -261,7 +265,7 @@ async function crawlPages({
   }
   await Promise.all(workers)
 
-  return pages
+  return { pages, pages_failed: pagesFailed, pages_discovered: discovered }
 }
 
 async function crawlBusinessWebsite({
@@ -344,7 +348,7 @@ async function crawlBusinessWebsite({
     }
 
     const queue = buildCrawlQueue(canonicalStart, sitemapUrls, homepageLinks)
-    const pages = await crawlPages({
+    const crawlResult = await crawlPages({
       crawlRun,
       userId,
       businessId,
@@ -354,6 +358,9 @@ async function crawlBusinessWebsite({
       maxDepth: Math.min(maxDepth, DEFAULT_MAX_DEPTH),
       disallowRules: robots.disallow,
     })
+    const pages = crawlResult.pages
+    const pagesFailed = crawlResult.pages_failed
+    const pagesDiscovered = crawlResult.pages_discovered
 
     const businessRow = await query(`SELECT * FROM businesses WHERE id = $1`, [businessId])
     const safetyResult = await checkUrlSafety(canonicalStart)
@@ -366,15 +373,17 @@ async function crawlBusinessWebsite({
       startUrl: canonicalStart,
       crawlMeta: {
         homepage_fetch_ok: Boolean(homeFetch.ok && homeFetch.html),
-        pages_discovered: queue.length,
+        pages_discovered: pagesDiscovered,
         pages_crawled: pages.length,
+        pages_failed: pagesFailed,
+        fetch_failures: pagesFailed,
       },
       safetyResult,
     })
 
     await updateCrawlRun(crawlRun.id, {
       status: 'completed',
-      pages_discovered: queue.length,
+      pages_discovered: pagesDiscovered,
       pages_crawled: pages.length,
       completed_at: new Date().toISOString(),
     })

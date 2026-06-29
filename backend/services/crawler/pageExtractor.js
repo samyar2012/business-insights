@@ -478,14 +478,35 @@ function classifyPageHints($, html, url, products, platform, navLabels) {
       return ''
     }
   })()
+  const pathname = (() => {
+    try {
+      return new URL(url).pathname
+    } catch {
+      return ''
+    }
+  })()
   const text = cleanText($('body').text()).toLowerCase()
   const indicators = []
 
   const isMarketplaceHost = MARKETPLACE_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))
   if (isMarketplaceHost) indicators.push('marketplace_host')
 
-  if (/sold by|fulfilled by amazon|compare with similar|sponsored|ad feedback/i.test(text)) {
-    indicators.push('marketplace_copy')
+  const marketplaceCopyStrong =
+    /sold by|fulfilled by amazon|compare with similar|ships from|seller information|marketplace seller|ad feedback/i.test(
+      text,
+    )
+  if (marketplaceCopyStrong) indicators.push('marketplace_copy')
+
+  const hasMarketplaceListingUrl = /\/dp\/|\/itm\/|\/gp\/product|\/listing\//i.test(
+    `${pathname} ${url}`,
+  )
+  if (hasMarketplaceListingUrl) indicators.push('marketplace_listing_url')
+
+  if (
+    /sponsored/i.test(text) &&
+    (isMarketplaceHost || marketplaceCopyStrong || hasMarketplaceListingUrl)
+  ) {
+    indicators.push('marketplace_sponsored')
   }
 
   const headingCount = $('h2, h3').length
@@ -495,20 +516,32 @@ function classifyPageHints($, html, url, products, platform, navLabels) {
   }
 
   if (platform === 'Shopify') indicators.push('shopify_platform')
-  if (/\/book\b|schedule a call|get a quote|our services|book now/i.test(text)) {
+  if (/\/book\b|schedule a call|get a quote|our services|book now|consultation/i.test(text)) {
     indicators.push('service_language')
   }
   if ((text.match(/blog|article|read more/gi) || []).length >= 3) indicators.push('content_heavy')
 
+  const marketplaceSignals = [
+    'marketplace_copy',
+    'marketplace_listing_url',
+    'marketplace_sponsored',
+  ].filter((signal) => indicators.includes(signal))
+  const pageIsMarketplace =
+    indicators.includes('marketplace_host') ||
+    marketplaceSignals.length >= 2 ||
+    (indicators.includes('marketplace_copy') && indicators.includes('marketplace_listing_url'))
+
   let hint = 'unknown'
-  if (indicators.includes('marketplace_host') || indicators.includes('marketplace_copy')) {
+  if (pageIsMarketplace && !indicators.includes('service_language')) {
+    hint = 'marketplace'
+  } else if (indicators.includes('service_language')) {
+    hint = 'service'
+  } else if (pageIsMarketplace) {
     hint = 'marketplace'
   } else if (indicators.includes('shopify_platform') && !indicators.includes('marketplace_host')) {
     hint = 'shopify_dtc'
   } else if (products.some((p) => p.confidence >= 70)) {
     hint = 'single_brand_ecommerce'
-  } else if (indicators.includes('service_language')) {
-    hint = 'service'
   } else if (indicators.includes('content_heavy')) {
     hint = 'content_social'
   }

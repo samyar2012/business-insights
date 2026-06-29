@@ -7,6 +7,8 @@ const {
   sameOrigin,
   assertSafeResolvedAddress,
   isPrivateIpv4,
+  hostnameResolutionCandidates,
+  resolveHostname,
 } = require('../services/crawler/urlSecurity')
 const { parseRobotsTxt, isPathDisallowed } = require('../services/crawler/robotsService')
 const { parseSitemapXml, detectPageType } = require('../services/crawler/sitemapService')
@@ -138,6 +140,27 @@ describe('urlSecurity', () => {
     assert.equal(sameOrigin('www.shop.com', 'shop.com'), true)
     assert.equal(sameOrigin('evil.com', 'shop.com'), false)
   })
+
+  it('builds www and apex hostname resolution candidates', () => {
+    assert.deepEqual(hostnameResolutionCandidates('www.la-shades.com'), [
+      'www.la-shades.com',
+      'la-shades.com',
+    ])
+    assert.deepEqual(hostnameResolutionCandidates('la-shades.com'), [
+      'la-shades.com',
+      'www.la-shades.com',
+    ])
+  })
+
+  it('resolves public hostnames for store URL validation', async () => {
+    const addresses = await resolveHostname('www.la-shades.com')
+    assert.ok(addresses.length > 0)
+    for (const ip of addresses) {
+      if (String(ip).includes('.')) {
+        assert.equal(isPrivateIpv4(ip), false)
+      }
+    }
+  })
 })
 
 describe('robotsService', () => {
@@ -188,6 +211,17 @@ describe('pageExtractor', () => {
     assert.ok(products.every((p) => p.confidence >= 70))
     assert.ok(extracted.extracted_data_json.extraction_meta.has_json_ld_products)
     assert.ok(extracted.extracted_data_json.extraction_meta.has_reliable_product_cards)
+  })
+
+  it('does not classify a service page as marketplace from generic sponsored wording', () => {
+    const html = `<html><head><title>LA Shades</title></head><body>
+      <h1>Custom Window Shades</h1>
+      <p>Book a consultation today. We sponsored a local home show last year.</p>
+      <a href="/services">Our Services</a>
+    </body></html>`
+    const extracted = extractPage(html, 'https://la-shades.com/', 'la-shades.com')
+    assert.notEqual(extracted.extracted_data_json.page_classification_hint, 'marketplace')
+    assert.equal(extracted.extracted_data_json.page_classification_hint, 'service')
   })
 
   it('does not treat marketplace headings as products', () => {
@@ -516,8 +550,13 @@ describe('businessProfileLogic', () => {
     )
 
     assert.ok(scores.overall_score < 55)
+    assert.ok(scores.business_fit_score < 12)
     assert.ok(
-      scores.score_explanation.some((e) => e.delta < 0 && /confidence|reliable|prices/i.test(e.reason)),
+      !scores.score_explanation.some((e) =>
+        ['product_clarity', 'offer_clarity', 'trust', 'policies', 'social_proof', 'content', 'technical'].includes(
+          e.category,
+        ),
+      ),
     )
   })
 
