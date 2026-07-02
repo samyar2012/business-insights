@@ -1,0 +1,1 @@
+python train_ux_model.py --dataset "S:/crawler_for_BI_excell/business-insights-dataset-builder/output/ux_training_dataset_sorted.csv" --model random_forest

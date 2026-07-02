@@ -7,6 +7,9 @@ const {
   buildValueProposition,
   buildProfileScoresPayload,
 } = require('./businessProfileLogic')
+const { runVisualAudit, stripScreenshotsForStorage } = require('./visualAuditService')
+const { extractUxFeatures } = require('./uxFeatureExtractor')
+const { applyUxModelLayer } = require('./uxModelService')
 
 function parseJsonField(value, fallback = null) {
   if (value == null) return fallback
@@ -64,13 +67,23 @@ async function rehydrateWebProfileScores({
     startUrl || crawlRun.start_url || business?.store_url || profile.summary?.start_url || null
   const resolvedSafety =
     safetyResult || (resolvedStartUrl ? await checkUrlSafety(resolvedStartUrl) : null)
+  const { visualAudit, uxFeatures } = await resolveVisualAuditContext(resolvedStartUrl, pages, aggregated)
   const profilePayload = buildProfileScoresPayload(aggregated, business, pages, {
     crawlMeta: inferCrawlMetaFromPages(pages, crawlRun),
     safetyResult: resolvedSafety,
+    visualAudit,
+    uxFeatures,
   })
+  await applyUxModelLayer(profilePayload, { uxFeatures, business })
 
   const row = await persistProfileScores(profile.id, profilePayload)
   return row ? formatWebProfile(row) : { ...profile, scores: profilePayload }
+}
+
+async function resolveVisualAuditContext(startUrl, pages, aggregated) {
+  const visualAudit = startUrl ? await runVisualAudit(startUrl) : null
+  const uxFeatures = extractUxFeatures({ visualAudit, pages, aggregated })
+  return { visualAudit, uxFeatures }
 }
 
 async function buildBusinessWebProfile({
@@ -86,10 +99,14 @@ async function buildBusinessWebProfile({
   const aggregated = aggregatePages(pages)
   const resolvedSafety =
     safetyResult || (startUrl ? await checkUrlSafety(startUrl) : null)
+  const { visualAudit, uxFeatures } = await resolveVisualAuditContext(startUrl, pages, aggregated)
   const profilePayload = buildProfileScoresPayload(aggregated, business, pages, {
     crawlMeta,
     safetyResult: resolvedSafety,
+    visualAudit,
+    uxFeatures,
   })
+  await applyUxModelLayer(profilePayload, { uxFeatures, business })
 
   const summary = {
     business_name: business?.business_name || pages[0]?.title || null,
@@ -110,6 +127,8 @@ async function buildBusinessWebProfile({
     platform: aggregated.platform,
     start_url: startUrl,
     pages_analyzed: pages.length,
+    ux_features: uxFeatures,
+    visual_audit_status: visualAudit?.ok ? 'completed' : visualAudit?.enabled ? 'skipped_or_failed' : 'disabled',
   }
 
   const signals = {
@@ -117,6 +136,8 @@ async function buildBusinessWebProfile({
     source: 'website_crawl',
     crawl_run_id: crawlRunId,
     obtained_at: new Date().toISOString(),
+    visual_audit: visualAudit ? stripScreenshotsForStorage(visualAudit) : null,
+    ux_features: uxFeatures,
   }
 
   const existing = await query(
@@ -194,4 +215,5 @@ module.exports = {
   formatWebProfile,
   rehydrateWebProfileScores,
   parseJsonField,
+  resolveVisualAuditContext,
 }

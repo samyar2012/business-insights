@@ -7,6 +7,7 @@ const {
   scoreBusinessFitWeighted,
   validateWeightedScore,
 } = require('./businessScoringRubrics')
+const { buildUxFeatureExplanations } = require('./uxFeatureExtractor')
 
 const SAFETY_MAX = 30
 const UNKNOWN_SAFETY_SCORE = 15
@@ -245,7 +246,24 @@ function scoreFunctionalityPoints(aggregated, pages, crawlHealth, explanations) 
   return clamp(points, FUNCTIONALITY_MAX)
 }
 
-function scoreUxUiPoints(pages, aggregated, signals, explanations) {
+function scoreUxUiFromVisualFeatures(uxFeatures, explanations) {
+  const points = clamp(Math.round((uxFeatures.overall_static_ux_score / 100) * UX_UI_MAX), UX_UI_MAX)
+
+  addExplanation(
+    explanations,
+    'ux_ui',
+    points,
+    `Visual UX audit score: ${uxFeatures.overall_static_ux_score}/100 mapped to ${points}/${UX_UI_MAX}.`,
+  )
+
+  for (const reason of buildUxFeatureExplanations(uxFeatures)) {
+    addExplanation(explanations, 'ux_ui', 0, reason)
+  }
+
+  return points
+}
+
+function scoreUxUiPointsStatic(pages, aggregated, signals, explanations) {
   const ux = collectUxSignals(pages, aggregated)
   let points = 0
 
@@ -298,16 +316,15 @@ function scoreUxUiPoints(pages, aggregated, signals, explanations) {
     addExplanation(explanations, 'ux_ui', 2, 'Contact information is visible on crawled pages.')
   }
 
-  if (process.env.VISUAL_AUDIT_ENABLED === 'true') {
-    addExplanation(
-      explanations,
-      'ux_ui',
-      0,
-      'Visual audit is enabled but screenshot analysis is not wired in this build (static checks only).',
-    )
-  }
-
   return clamp(points, UX_UI_MAX)
+}
+
+function scoreUxUiPoints(pages, aggregated, signals, explanations, options = {}) {
+  const { uxFeatures, visualAudit } = options
+  if (uxFeatures && visualAudit?.ok) {
+    return scoreUxUiFromVisualFeatures(uxFeatures, explanations)
+  }
+  return scoreUxUiPointsStatic(pages, aggregated, signals, explanations)
 }
 
 function scoreCustomerAttractionPoints(aggregated, signals, explanations, options = {}) {
@@ -497,7 +514,10 @@ function calculatePriorityScores(aggregated, business, pages, options = {}) {
   const crawlHealth = inferCrawlHealth(pages, business?.store_url, options.crawlMeta || {})
   const safety = scoreSafetyPoints(options.safetyResult, explanations)
   const functionality_score = scoreFunctionalityPoints(aggregated, pages, crawlHealth, explanations)
-  const ux_ui_score = scoreUxUiPoints(pages, aggregated, signals, explanations)
+  const ux_ui_score = scoreUxUiPoints(pages, aggregated, signals, explanations, {
+    uxFeatures: options.uxFeatures,
+    visualAudit: options.visualAudit,
+  })
   const rubricCtx = { aggregated, business, pages, signals }
   const categoryScores = scoreForRubric(rubric, { ...rubricCtx, explanations: legacyExplanations })
   const business_fit_score = scoreBusinessFitWeighted(rubric, rubricCtx, explanations)
@@ -537,6 +557,11 @@ function calculatePriorityScores(aggregated, business, pages, options = {}) {
     scoring_rubric: rubric,
     score_explanation: filterWeightedExplanations(explanations).slice(0, 24),
     mismatch_warnings: mismatchWarnings,
+    ux_scoring_mode: options.visualAudit?.ok ? 'visual_audit' : 'static_html',
+  }
+
+  if (options.uxFeatures) {
+    result.ux_features = options.uxFeatures
   }
 
   const validation = validateWeightedScore(result)
@@ -561,4 +586,8 @@ module.exports = {
   inferCrawlHealth,
   scoreSafetyPoints,
   scoreFunctionalityPoints,
+  scoreUxUiPoints,
+  scoreUxUiPointsStatic,
+  scoreUxUiFromVisualFeatures,
+  collectUxSignals,
 }
