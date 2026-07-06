@@ -209,6 +209,31 @@ async function collectViewportMetrics(page, meta = {}) {
         })
       })
 
+      const textCandidates = []
+      document.querySelectorAll('h1, h2, h3, p, a, button, div, span').forEach((el) => {
+        if (!isVisible(el)) return
+        const text = (el.innerText || '').replace(/\s+/g, ' ').trim()
+        if (text.length < 8 || text.length > 180) return
+        const rect = el.getBoundingClientRect()
+        if (rect.top > viewportH * 1.2 || rect.bottom < 0) return
+        const style = window.getComputedStyle(el)
+        const fontSize = Number.parseFloat(style.fontSize) || 0
+        const weight = Number.parseInt(style.fontWeight, 10) || 400
+        textCandidates.push({
+          tag: el.tagName.toLowerCase(),
+          text: text.slice(0, 160),
+          top: Math.round(rect.top),
+          left: Math.round(rect.left),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          above_fold: rect.top < viewportH && rect.bottom > 0,
+          font_size_px: fontSize,
+          font_weight: weight,
+          score: Math.round(fontSize * 2 + (weight >= 600 ? 12 : 0) + (rect.top < viewportH ? 15 : 0)),
+        })
+      })
+      textCandidates.sort((a, b) => b.score - a.score)
+
       const clickable = []
       document.querySelectorAll('a, button, [role="button"], input[type="submit"]').forEach((el) => {
         if (!isVisible(el)) return
@@ -543,6 +568,7 @@ async function collectViewportMetrics(page, meta = {}) {
             : 0,
         max_text_block_length: textBlocks.length > 0 ? Math.max(...textBlocks) : 0,
         headings,
+        hero_text_candidates: textCandidates.slice(0, 12),
         clickable_elements: clickable.slice(0, 40),
         cta_elements: ctaElements.slice(0, 15),
         cta_above_fold: ctaElements.some((item) => item.above_fold),
