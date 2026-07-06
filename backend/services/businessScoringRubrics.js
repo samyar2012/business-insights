@@ -8,7 +8,22 @@ const WEIGHTED_CATEGORY_MAX = {
   customer_attraction_score: 10,
 }
 
+const WEIGHTED_CATEGORY_MAX_V2 = {
+  safety_score: 20,
+  functionality_score: 15,
+  ux_ui_score: 25,
+  business_fit_score: 20,
+  customer_attraction_score: 20,
+}
+
 const WEIGHTED_SCORE_FIELDS = Object.keys(WEIGHTED_CATEGORY_MAX)
+
+function resolveCategoryMax(scores) {
+  if (scores?.scoring_version === 'business_insights_analyzer_v2') {
+    return WEIGHTED_CATEGORY_MAX_V2
+  }
+  return WEIGHTED_CATEGORY_MAX
+}
 
 function clamp(value, max = 100) {
   return Math.max(0, Math.min(max, Math.round(value)))
@@ -16,12 +31,13 @@ function clamp(value, max = 100) {
 
 function validateWeightedScore(scores) {
   const errors = []
+  const categoryMax = resolveCategoryMax(scores)
 
   for (const key of WEIGHTED_SCORE_FIELDS) {
     if (typeof scores?.[key] !== 'number' || Number.isNaN(scores[key])) {
       errors.push(`Missing or invalid ${key}`)
-    } else if (scores[key] < 0 || scores[key] > WEIGHTED_CATEGORY_MAX[key]) {
-      errors.push(`${key} (${scores[key]}) is outside 0–${WEIGHTED_CATEGORY_MAX[key]}`)
+    } else if (scores[key] < 0 || scores[key] > categoryMax[key]) {
+      errors.push(`${key} (${scores[key]}) is outside 0–${categoryMax[key]}`)
     }
   }
 
@@ -42,6 +58,7 @@ function validateWeightedScore(scores) {
 
 function needsWeightedScoreRehydration(scores) {
   if (!scores || typeof scores !== 'object') return true
+  if (scores.scoring_version !== 'business_insights_analyzer_v2') return true
   return WEIGHTED_SCORE_FIELDS.some(
     (key) => typeof scores[key] !== 'number' || Number.isNaN(scores[key]),
   )
@@ -130,12 +147,12 @@ function detectMismatchWarnings(rubric, aggregated, business) {
       'Onboarding says service business, but the crawler detected Shopify/ecommerce storefront patterns.',
     )
   }
-  if (rubric === 'marketplace_listing' && ecommerceSites.includes(site) && !marketplaceSites.includes(site)) {
+  if (rubric === 'listing' && ecommerceSites.includes(site) && !marketplaceSites.includes(site)) {
     warnings.push(
       'Onboarding says marketplace listing, but the crawler detected a direct brand storefront.',
     )
   }
-  if (rubric === 'content_social_business' && ecommerceSites.includes(site)) {
+  if (rubric === 'content_business' && ecommerceSites.includes(site)) {
     warnings.push(
       'Onboarding says content/social business, but the crawler found strong ecommerce storefront signals.',
     )
@@ -487,7 +504,7 @@ function scoreMarketplaceListing(ctx) {
       'Marketplace listing patterns match selected business model.',
     )
     addExplanation(explanations, 'offer_clarity', 8, 'Listing page structure recognized.')
-  } else if (business?.business_model === 'marketplace_listing') {
+  } else if (business?.business_model === 'listing') {
     scores.product_clarity -= 12
     scores.offer_clarity -= 10
     addExplanation(
@@ -504,7 +521,7 @@ function scoreMarketplaceListing(ctx) {
     )
   }
 
-  if (site === 'marketplace' && business?.business_model !== 'marketplace_listing') {
+  if (site === 'marketplace' && business?.business_model !== 'listing') {
     scores.product_clarity -= 18
     scores.offer_clarity -= 14
     addExplanation(
@@ -533,9 +550,9 @@ function scoreForRubric(rubric, ctx) {
       return scorePhysicalService(ctx)
     case 'local_service_business':
       return scoreLocalService(ctx)
-    case 'content_social_business':
+    case 'content_business':
       return scoreContentSocial(ctx)
-    case 'marketplace_listing':
+    case 'listing':
       return scoreMarketplaceListing(ctx)
     case 'ecommerce_store':
     default:
@@ -622,7 +639,7 @@ function scoreBusinessFitWeighted(rubric, ctx, explanations) {
       points += 2
       addWeightedExplanation(explanations, 'business_fit', 2, 'Service categories complement the hybrid model.')
     }
-  } else if (rubric === 'content_social_business') {
+  } else if (rubric === 'content_business') {
     points = 7
     addWeightedExplanation(explanations, 'business_fit', 7, 'Content/social business baseline.')
     if ((aggregated.social_channels || []).length >= 2) {
@@ -644,7 +661,7 @@ function scoreBusinessFitWeighted(rubric, ctx, explanations) {
       points += 3
       addWeightedExplanation(explanations, 'business_fit', 3, 'Consistent content navigation categories found.')
     }
-  } else if (rubric === 'marketplace_listing') {
+  } else if (rubric === 'listing') {
     points = 6
     addWeightedExplanation(explanations, 'business_fit', 6, 'Marketplace listing baseline.')
     if (aggregated.site_classification?.classification === 'marketplace') {
@@ -773,5 +790,7 @@ module.exports = {
   needsWeightedScoreRehydration,
   WEIGHTED_SCORE_FIELDS,
   WEIGHTED_CATEGORY_MAX,
+  WEIGHTED_CATEGORY_MAX_V2,
+  resolveCategoryMax,
   resolveScoringRubric,
 }

@@ -168,7 +168,7 @@ async function rehydrateWebProfileScores({
 
     safetyResult || (resolvedStartUrl ? await checkUrlSafety(resolvedStartUrl) : null)
 
-  const { visualAudit, uxFeatures } = await resolveVisualAuditContext(resolvedStartUrl, pages, aggregated)
+  const { visualAudit, uxFeatures } = await resolveVisualAuditContext(resolvedStartUrl, pages, aggregated, business)
 
   const profilePayload = buildProfileScoresPayload(aggregated, business, pages, {
 
@@ -196,14 +196,14 @@ async function rehydrateWebProfileScores({
 
 
 
-async function resolveVisualAuditContext(startUrl, pages, aggregated) {
-
+async function resolveVisualAuditContext(startUrl, pages, aggregated, business = null) {
   const visualAudit = startUrl ? await runVisualAudit(startUrl) : null
-
-  const uxFeatures = extractUxFeatures({ visualAudit, pages, aggregated })
-
+  const { detectOperationalSignals } = require('./businessScoringRubrics')
+  const { resolveScoringRubric } = require('./businessModelConfig')
+  const rubric = resolveScoringRubric(business || {}, aggregated)
+  const signals = detectOperationalSignals(pages, aggregated)
+  const uxFeatures = extractUxFeatures({ visualAudit, pages, aggregated, businessModel: rubric, signals })
   return { visualAudit, uxFeatures }
-
 }
 
 
@@ -234,7 +234,7 @@ async function buildBusinessWebProfile({
 
     safetyResult || (startUrl ? await checkUrlSafety(startUrl) : null)
 
-  const { visualAudit, uxFeatures } = await resolveVisualAuditContext(startUrl, pages, aggregated)
+  const { visualAudit, uxFeatures } = await resolveVisualAuditContext(startUrl, pages, aggregated, business)
 
   const profilePayload = buildProfileScoresPayload(aggregated, business, pages, {
 

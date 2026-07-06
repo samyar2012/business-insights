@@ -8,27 +8,52 @@ export const BUSINESS_TYPES = [
 ]
 
 export const BUSINESS_MODELS = [
-  { value: 'ecommerce_store', label: 'E-commerce store (online only)' },
-  { value: 'online_plus_offline_store', label: 'Online + offline store' },
-  { value: 'online_plus_physical_service', label: 'Online + physical service' },
+  { value: 'ecommerce_store', label: 'E-commerce store, online only' },
+  { value: 'online_plus_offline_store', label: 'Online plus offline store' },
+  { value: 'online_gallery_physical_service', label: 'Online gallery store with physical services' },
+  { value: 'online_plus_physical_service', label: 'Online plus physical service' },
   { value: 'local_service_business', label: 'Local service business' },
-  { value: 'content_social_business', label: 'Content / social business' },
-  { value: 'marketplace_listing', label: 'Marketplace listing' },
+  { value: 'content_business', label: 'Content business' },
+  { value: 'blog', label: 'Blog' },
+  { value: 'listing', label: 'Listing / marketplace profile' },
 ]
 
 export const BUSINESS_MODEL_HELPERS = {
   ecommerce_store:
-    'We score product pages, prices, checkout signals, shipping/returns, and reviews.',
+    'We score product discovery, pricing, checkout/cart path, shipping/returns, reviews, and mobile shopping UX.',
   online_plus_offline_store:
-    'We score location, hours, contact info, and local trust — not just online checkout.',
+    'We score store/location info, hours, online catalog, visit/contact CTA, map signals, and local trust.',
+  online_gallery_physical_service:
+    'We score gallery quality, portfolio proof, service explanation, consultation/contact CTA, and inquiry path — not checkout.',
   online_plus_physical_service:
-    'We score quote/booking CTAs, service area, gallery proof, and reviews — not product cards.',
+    'We score service explanation, quote/booking/contact flow, service area, proof, testimonials, and clarity.',
   local_service_business:
-    'We score phone, service pages, local wording, and proof — not e-commerce checkout.',
-  content_social_business:
-    'We score social links, content depth, niche clarity, and audience-building CTAs.',
-  marketplace_listing:
-    'Marketplace URLs have limited brand control; scoring reflects listing-page constraints.',
+    'We score phone/contact, local area, service pages, reviews, booking/quote CTA, trust, and local SEO signals.',
+  content_business:
+    'We score niche clarity, content organization, social links, newsletter capture, audience CTAs, and creator identity.',
+  blog:
+    'We score article structure, readability, navigation, categories, internal links, author trust, and content depth.',
+  listing:
+    'We score listing title, images, description, reviews, CTA/contact/buy path, limitations, and trust — not full site structure.',
+}
+
+export const BUSINESS_MODEL_LABELS = Object.fromEntries(
+  BUSINESS_MODELS.map((item) => [item.value, item.label]),
+)
+
+export function getBusinessModelLabel(model) {
+  if (!model) return ''
+  const aliases = {
+    content_social_business: 'content_business',
+    marketplace_listing: 'listing',
+    online_plus_physical: 'online_plus_physical_service',
+    physical_service: 'online_plus_physical_service',
+    ecommerce: 'ecommerce_store',
+    shopify: 'ecommerce_store',
+    marketplace: 'listing',
+  }
+  const canonical = aliases[model] || model
+  return BUSINESS_MODEL_LABELS[canonical] || canonical.replace(/_/g, ' ')
 }
 
 export const EMPTY_BUSINESS_FORM = {
@@ -52,11 +77,21 @@ export function businessToFormValues(business, displayName) {
     }
   }
 
+  const aliases = {
+    content_social_business: 'content_business',
+    marketplace_listing: 'listing',
+    online_plus_physical: 'online_plus_physical_service',
+    physical_service: 'online_plus_physical_service',
+    ecommerce: 'ecommerce_store',
+    shopify: 'ecommerce_store',
+    marketplace: 'listing',
+  }
+
   return {
     owner_name: business.owner_name || displayName || '',
     business_name: business.business_name || '',
     business_type: business.business_type || 'Shopify',
-    business_model: business.business_model || 'ecommerce_store',
+    business_model: aliases[business.business_model] || business.business_model || 'ecommerce_store',
     product_sold: business.product_sold || '',
     target_customers: business.target_customers || '',
     store_url: business.store_url || '',

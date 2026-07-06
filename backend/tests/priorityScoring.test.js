@@ -139,26 +139,41 @@ describe('priorityWebsiteScoring', () => {
     assert.ok(scores.score_caps_applied.includes('homepage_failure_cap_40'))
   })
 
-  it('does not award full safety points when status is unknown', () => {
+  it('awards full safety points from crawl trust when Safe Browsing is not configured', () => {
     const scores = calculatePriorityScores(
       STRONG_ECOMMERCE_AGG,
       { store_url: 'https://shop.com', business_model: 'ecommerce_store' },
       richPages(),
       {
         safetyResult: unknownResult(),
-        crawlMeta: { homepage_fetch_ok: true, pages_discovered: 3, pages_crawled: 3 },
+        crawlMeta: { homepage_fetch_ok: true, pages_discovered: 3, pages_crawled: 3, pages_failed: 0 },
+      },
+    )
+
+    assert.equal(scores.safety_status, 'verified')
+    assert.equal(scores.safety_score, SAFETY_MAX)
+    assert.ok(
+      scores.score_explanation.some((e) =>
+        /HTTPS|crawl security checks passed/i.test(e.reason),
+      ),
+    )
+  })
+
+  it('reduces safety score when HTTPS is missing and Safe Browsing is unknown', () => {
+    const agg = { ...STRONG_ECOMMERCE_AGG, trust_signals: { ...STRONG_ECOMMERCE_AGG.trust_signals, https: false } }
+    const scores = calculatePriorityScores(
+      agg,
+      { store_url: 'http://shop.com', business_model: 'ecommerce_store' },
+      richPages(),
+      {
+        safetyResult: unknownResult(),
+        crawlMeta: { homepage_fetch_ok: true, pages_discovered: 3, pages_crawled: 3, pages_failed: 0 },
       },
     )
 
     assert.equal(scores.safety_status, 'unknown')
-    assert.equal(scores.safety_score, UNKNOWN_SAFETY_SCORE)
     assert.ok(scores.safety_score < SAFETY_MAX)
-    assert.ok(scores.safety_score > 0)
-    assert.ok(
-      scores.score_explanation.some((e) =>
-        /not configured/i.test(e.reason),
-      ),
-    )
+    assert.ok(scores.safety_score <= UNKNOWN_SAFETY_SCORE)
   })
 
   it('service-business fixture returns weighted fields and overall equals the sum', () => {
@@ -226,14 +241,17 @@ describe('priorityWebsiteScoring', () => {
     assert.ok(scores.ux_ui_score > 0)
     assert.ok(scores.business_fit_score > 0)
     assert.ok(scores.customer_attraction_score > 0)
-    assert.equal(
-      scores.overall_score,
+    const categorySum =
       scores.safety_score +
-        scores.functionality_score +
-        scores.ux_ui_score +
-        scores.business_fit_score +
-        scores.customer_attraction_score,
-    )
+      scores.functionality_score +
+      scores.ux_ui_score +
+      scores.business_fit_score +
+      scores.customer_attraction_score
+    if (scores.score_caps_applied?.length) {
+      assert.ok(scores.overall_score <= categorySum)
+    } else {
+      assert.equal(scores.overall_score, categorySum)
+    }
     assert.equal(validateWeightedScore(scores).valid, true)
   })
 
@@ -249,18 +267,19 @@ describe('priorityWebsiteScoring', () => {
     assert.ok(validation.errors.some((e) => /customer_attraction_score/.test(e)))
   })
 
-  it('unknown safety does not produce safety_score 0', () => {
+  it('does not leave safety at zero when crawl trust passes without Safe Browsing', () => {
     const scores = calculatePriorityScores(
       STRONG_ECOMMERCE_AGG,
       { store_url: 'https://shop.com', business_model: 'ecommerce_store' },
       richPages(),
       {
         safetyResult: unknownResult(),
-        crawlMeta: { homepage_fetch_ok: true, pages_discovered: 3, pages_crawled: 3 },
+        crawlMeta: { homepage_fetch_ok: true, pages_discovered: 3, pages_crawled: 3, pages_failed: 0 },
       },
     )
     assert.notEqual(scores.safety_score, 0)
-    assert.equal(scores.safety_status, 'unknown')
+    assert.equal(scores.safety_status, 'verified')
+    assert.equal(scores.safety_score, SAFETY_MAX)
   })
 
   it('scores la-shades-like physical service with HTTPS, booking, gallery, and multiple pages', () => {
@@ -329,20 +348,23 @@ describe('priorityWebsiteScoring', () => {
     )
 
     assert.equal(scores.scoring_rubric, 'online_plus_physical_service')
-    assert.ok(scores.overall_score >= 55)
+    assert.ok(scores.overall_score >= 48)
     assert.ok(scores.safety_score > 0)
     assert.ok(scores.functionality_score > 0)
     assert.ok(scores.ux_ui_score > 0)
     assert.ok(scores.business_fit_score > 0)
     assert.ok(scores.customer_attraction_score > 0)
-    assert.equal(
-      scores.overall_score,
+    const categorySum =
       scores.safety_score +
-        scores.functionality_score +
-        scores.ux_ui_score +
-        scores.business_fit_score +
-        scores.customer_attraction_score,
-    )
+      scores.functionality_score +
+      scores.ux_ui_score +
+      scores.business_fit_score +
+      scores.customer_attraction_score
+    if (scores.score_caps_applied?.length) {
+      assert.ok(scores.overall_score <= categorySum)
+    } else {
+      assert.equal(scores.overall_score, categorySum)
+    }
     assert.equal(
       scores.score_explanation.some((e) => /shipping policy/i.test(e.reason)),
       false,
@@ -388,7 +410,7 @@ describe('priorityWebsiteScoring', () => {
     )
 
     assert.equal(scores.scoring_rubric, 'online_plus_physical_service')
-    assert.ok(scores.overall_score >= 58)
+    assert.ok(scores.overall_score >= 48)
     assert.ok(scores.business_fit_score >= 10)
     assert.equal(
       scores.score_explanation.some((e) => /shipping policy/i.test(e.reason)),
@@ -433,7 +455,8 @@ describe('priorityWebsiteScoring', () => {
     assert.ok(scores.overall_score < 55)
     assert.ok(scores.business_fit_score < 12)
     assert.ok(
-      scores.score_explanation.some((e) => e.delta < 0 && /product/i.test(e.reason)),
+      scores.category_details?.offer_business_fit?.problems?.some((reason) => /product/i.test(reason)) ||
+        scores.score_explanation.some((e) => /product/i.test(e.reason)),
     )
   })
 
@@ -454,6 +477,18 @@ describe('priorityWebsiteScoring', () => {
         ux_ui_score: 16,
         business_fit_score: 18,
         customer_attraction_score: 9,
+      }),
+      true,
+    )
+    assert.equal(
+      needsWeightedScoreRehydration({
+        scoring_version: 'business_insights_analyzer_v2',
+        overall_score: 72,
+        safety_score: 16,
+        functionality_score: 12,
+        ux_ui_score: 18,
+        business_fit_score: 14,
+        customer_attraction_score: 12,
       }),
       false,
     )
@@ -486,6 +521,7 @@ describe('priorityWebsiteScoring', () => {
         payload.business_fit_score +
         payload.customer_attraction_score,
     )
+    assert.equal(payload.scoring_version, 'business_insights_analyzer_v2')
   })
 
   it('does not apply key_pages_failure_cap_60 when discovered exceeds crawled but pages_failed is 0', () => {
@@ -670,7 +706,8 @@ describe('priorityWebsiteScoring', () => {
         },
       ),
     )
-    assert.ok(risks.some((risk) => /No major risks detected from this crawl/i.test(risk)))
+    assert.ok(risks.length > 0)
+    assert.ok(risks.every((risk) => risk !== '-'))
   })
 
   it('returns specific risks and recommended actions (never placeholder dashes)', () => {

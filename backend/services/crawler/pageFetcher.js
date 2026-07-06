@@ -3,13 +3,18 @@ const {
   validatePublicUrl,
   validateRedirectUrl,
 } = require('./urlSecurity')
-const { DEFAULT_UA } = require('./crawlerConfig')
+const { DEFAULT_UA, BROWSER_UA, isBrowserCrawlEnabled } = require('./crawlerConfig')
 
 const FETCH_TIMEOUT_MS = Number(process.env.CRAWLER_TIMEOUT_MS || 10000)
+const BROWSER_FETCH_TIMEOUT_MS = Number(process.env.CRAWLER_BROWSER_TIMEOUT_MS || 30000)
 const MAX_RESPONSE_BYTES = Number(process.env.CRAWLER_MAX_BYTES || 3 * 1024 * 1024)
 const DOMAIN_DELAY_MS = Number(process.env.CRAWLER_DOMAIN_DELAY_MS || 300)
 
+const BOT_CHALLENGE_RE =
+  /verifying your connection|just a moment|attention required|cf-browser-verification|challenge-platform|checking your browser|ddos protection|please enable javascript/i
+
 const lastFetchByDomain = new Map()
+let sharedBrowserPromise = null
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -46,6 +51,31 @@ async function readLimitedBody(response, maxBytes) {
   return buffer.toString('utf8')
 }
 
+function extractHtmlTitle(html) {
+  const match = String(html || '').match(/<title[^>]*>([\s\S]*?)<\/title>/i)
+  return match ? match[1].replace(/\s+/g, ' ').trim() : ''
+}
+
+function isBotBlockedResponse(result) {
+  if (!result) return false
+  const html = String(result.html || '')
+  const title = extractHtmlTitle(html)
+  const status = Number(result.status || 0)
+
+  if ([401, 403, 429, 503].includes(status)) return true
+  if (BOT_CHALLENGE_RE.test(title)) return true
+  if (BOT_CHALLENGE_RE.test(html.slice(0, 4000))) return true
+  if (/cdn-cgi\/challenge-platform|cf-chl-|g-recaptcha|hcaptcha/i.test(html)) return true
+
+  return false
+}
+
+function shouldUseBrowserFallback(result) {
+  if (!result) return false
+  if (isBotBlockedResponse(result)) return true
+  return Boolean(result.ok && result.html && appearsJsRendered(result.html))
+}
+
 async function fetchWithRedirects(url, options = {}) {
   const allowedHostname = options.allowedHostname
   let current = (await validatePublicUrl(url)).href
@@ -68,6 +98,7 @@ async function fetchWithRedirects(url, options = {}) {
         headers: {
           'User-Agent': options.userAgent || DEFAULT_UA,
           Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
         },
       })
 
@@ -137,21 +168,51 @@ function appearsJsRendered(html) {
   return scriptCount >= 3 && hasRoot && visible.length < 200
 }
 
+async function getSharedBrowser() {
+  if (!sharedBrowserPromise) {
+    const { chromium } = require('playwright')
+    sharedBrowserPromise = chromium.launch({ headless: true }).catch((err) => {
+      sharedBrowserPromise = null
+      throw err
+    })
+  }
+  return sharedBrowserPromise
+}
+
+async function waitForBotChallenge(page) {
+  const title = await page.title().catch(() => '')
+  if (!BOT_CHALLENGE_RE.test(title)) return
+
+  await page
+    .waitForFunction(
+      () => !/verifying your connection|just a moment|attention required|checking your browser/i.test(document.title),
+      { timeout: 20000 },
+    )
+    .catch(() => {})
+  await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {})
+  await sleep(500)
+}
+
 async function fetchWithBrowser(url, options = {}) {
-  if (process.env.CRAWLER_USE_PLAYWRIGHT !== 'true') {
+  if (!isBrowserCrawlEnabled()) {
     return { ok: false, html: '', error: 'Browser fetch disabled' }
   }
 
   try {
-    const { chromium } = require('playwright')
     const parsed = await validatePublicUrl(url)
     await validateRedirectUrl(parsed.href, options.allowedHostname)
 
-    const browser = await chromium.launch({ headless: true })
+    const browser = options.browser || (await getSharedBrowser())
+    const context = await browser.newContext({
+      userAgent: options.browserUserAgent || BROWSER_UA,
+      viewport: { width: 1365, height: 900 },
+      locale: 'en-US',
+      extraHTTPHeaders: {
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    })
+
     try {
-      const context = await browser.newContext({
-        userAgent: options.userAgent || DEFAULT_UA,
-      })
       const page = await context.newPage()
       await page.route('**/*', (route) => {
         const type = route.request().resourceType()
@@ -169,45 +230,105 @@ async function fetchWithBrowser(url, options = {}) {
         return route.continue()
       })
 
-      await page.goto(parsed.href, {
-        timeout: FETCH_TIMEOUT_MS,
+      const response = await page.goto(parsed.href, {
+        timeout: BROWSER_FETCH_TIMEOUT_MS,
         waitUntil: 'domcontentloaded',
       })
+      await waitForBotChallenge(page)
+      await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {})
+
       const html = await page.content()
+      const title = await page.title()
+      const status = response?.status() || 200
+      const blocked = BOT_CHALLENGE_RE.test(title) || BOT_CHALLENGE_RE.test(html.slice(0, 4000))
+
+      if (blocked) {
+        return {
+          ok: false,
+          status,
+          finalUrl: page.url(),
+          html: html.slice(0, MAX_RESPONSE_BYTES),
+          error: 'Bot protection challenge did not clear in time',
+          bot_blocked: true,
+          viaBrowser: true,
+        }
+      }
+
       return {
         ok: true,
-        status: 200,
+        status,
         finalUrl: page.url(),
         html: html.slice(0, MAX_RESPONSE_BYTES),
         viaBrowser: true,
       }
     } finally {
-      await browser.close()
+      await context.close()
     }
   } catch (err) {
+    if (/Cannot find module 'playwright'|playwright install/i.test(err.message)) {
+      return {
+        ok: false,
+        html: '',
+        error: 'Playwright is not installed. Run: npm install playwright && npx playwright install chromium',
+      }
+    }
     return { ok: false, html: '', error: err.message }
   }
 }
 
 async function fetchPage(url, options = {}) {
   const result = await fetchWithRedirects(url, options)
-  if (result.ok && result.html && appearsJsRendered(result.html)) {
-    result.requires_browser = true
-    if (process.env.CRAWLER_USE_PLAYWRIGHT === 'true') {
-      const browserResult = await fetchWithBrowser(result.finalUrl || url, options)
-      if (browserResult.ok && browserResult.html) {
-        return { ...browserResult, requires_browser: true, fetched_via_browser: true }
+  const blocked = isBotBlockedResponse(result)
+  const needsBrowser = shouldUseBrowserFallback(result)
+
+  if (needsBrowser && isBrowserCrawlEnabled()) {
+    const browserResult = await fetchWithBrowser(result.finalUrl || url, options)
+    if (browserResult.ok && browserResult.html) {
+      return {
+        ...browserResult,
+        requires_browser: true,
+        fetched_via_browser: true,
+        bot_blocked: blocked,
+        prior_status: result.status,
       }
     }
+    if (blocked) {
+      return {
+        ...result,
+        bot_blocked: true,
+        error:
+          browserResult.error ||
+          'Site bot protection blocked automated access even with browser fallback.',
+        fetch_method: 'browser_failed',
+      }
+    }
+  }
+
+  if (blocked) {
+    return {
+      ...result,
+      bot_blocked: true,
+      error:
+        result.error ||
+        `Site returned bot protection (HTTP ${result.status || 'challenge page'}). Set CRAWLER_USE_PLAYWRIGHT=true to crawl with a browser.`,
+      fetch_method: 'http',
+    }
+  }
+
+  if (result.ok && result.html && appearsJsRendered(result.html)) {
+    result.requires_browser = true
   }
   return result
 }
 
 module.exports = {
   FETCH_TIMEOUT_MS,
+  BROWSER_FETCH_TIMEOUT_MS,
   MAX_RESPONSE_BYTES,
   fetchPage,
   fetchWithRedirects,
   appearsJsRendered,
   fetchWithBrowser,
+  isBotBlockedResponse,
+  shouldUseBrowserFallback,
 }

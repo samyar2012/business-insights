@@ -93,7 +93,7 @@ describe('uxModelService', () => {
     )
   })
 
-  it('blends layout signals and ML scores using 35/65 weighting', () => {
+  it('blends layout signals and ML scores with default weighting', () => {
     const merged = mergeUxUiScore(14, {
       predicted_ux_score: 85,
       confidence: 0.42,
@@ -104,6 +104,23 @@ describe('uxModelService', () => {
     assert.equal(merged.finalScore, expected)
     assert.equal(merged.mlScoreOn20Scale, 17)
     assert.equal(merged.usedMl, true)
+  })
+
+  it('favors layout signals for visually verified premium sites', () => {
+    const merged = mergeUxUiScore(
+      17,
+      { predicted_ux_score: 70, confidence: 0.5 },
+      {
+        uxFeatures: {
+          source: 'visual_audit+crawler',
+          overall_static_ux_score: 86,
+          display_polish_score: 82,
+        },
+      },
+    )
+
+    assert.ok(merged.finalScore >= 16)
+    assert.ok(merged.blendWeights.deterministic >= 0.62)
   })
 
   it('keeps blended UX/UI score within 0-20 range', async () => {

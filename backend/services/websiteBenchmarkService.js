@@ -1,5 +1,9 @@
 const fs = require('node:fs')
 const path = require('node:path')
+const {
+  resolveCanonicalBusinessModel,
+  BUSINESS_MODEL_ALIASES,
+} = require('./businessModelConfig')
 
 const SCORE_COLUMNS = [
   { key: 'safety_score', label: 'Safety', max: 30 },
@@ -14,17 +18,6 @@ const BENCHMARK_TARGETS = {
   strong: 18,
   top: 19,
   elite: 20,
-}
-
-const BUSINESS_MODEL_ALIASES = {
-  online_plus_physical: 'online_plus_physical_service',
-  physical_service: 'online_plus_physical_service',
-  service: 'local_service_business',
-  ecommerce: 'ecommerce_store',
-  shopify: 'ecommerce_store',
-  content: 'content_social_business',
-  social: 'content_social_business',
-  marketplace: 'marketplace_listing',
 }
 
 const LEVELS = [
@@ -160,9 +153,7 @@ function roundHumanScore(value) {
 }
 
 function normalizeBusinessModel(model) {
-  const raw = String(model || '').trim()
-  if (!raw) return ''
-  return BUSINESS_MODEL_ALIASES[raw] || raw
+  return resolveCanonicalBusinessModel(model) || String(model || '').trim()
 }
 
 function toHumanEquivalentScore(row = {}) {
@@ -612,6 +603,13 @@ function buildWebsiteBenchmark({
     targetLevel,
   })
 
+  const sameLevelExamples = competitorExamples.nearest_examples.filter(
+    (row) => row.level_id === targetLevel.id,
+  )
+  const sameModelExamples = partition.sameModelRows
+    .slice(0, EXAMPLE_LIMIT)
+    .map((row) => mapExampleRow(row, targetHumanScore))
+
   return {
     enabled: true,
     source_path: loaded.datasetPath || null,
@@ -626,7 +624,12 @@ function buildWebsiteBenchmark({
     competitor_data_needed: partition.insufficient_competitors
       ? buildCompetitorDataNeededMessage(businessModel, partition.sameModelRows.length)
       : null,
+    benchmark_warning: partition.insufficient_competitors
+      ? buildCompetitorDataNeededMessage(businessModel, partition.sameModelRows.length)
+      : null,
     target_human_score: targetHumanScore,
+    current_human_equivalent_score: targetHumanScore,
+    current_benchmark_level: targetLevel.label,
     target_score: targetScore,
     target_level: targetLevel.label,
     target_level_id: targetLevel.id,
@@ -643,6 +646,8 @@ function buildWebsiteBenchmark({
       competitorRows[0]?.human_equivalent_score ?? BENCHMARK_TARGETS.elite,
     ),
     ...competitorExamples,
+    same_model_examples: sameModelExamples,
+    same_level_examples: sameLevelExamples,
     ux_improvement_actions: uxImprovementActions,
     category_comparisons: categoryComparisons,
     explanations: buildBenchmarkExplanations({

@@ -1,12 +1,12 @@
 const { CTA_PATTERN } = require('./visualAuditService')
+const {
+  buildVisualUxScore,
+  mapVisualScoreToCategoryPoints,
+  mapVisualScoreToLegacy20,
+} = require('./uxVisualScorer')
 
 const READABILITY_BLOCK_SOFT = 400
-const READABILITY_BLOCK_HARD = 900
 const DENSE_PARAGRAPH_THRESHOLD = 350
-
-function clampScore(value) {
-  return Math.max(0, Math.min(100, Math.round(value)))
-}
 
 function pageData(page) {
   let data = page?.extracted_data_json || {}
@@ -46,95 +46,23 @@ function crawlerParagraphStats(pages = []) {
   }
 }
 
-function scoreReadability({ avgParagraphLength, maxTextBlockLength }) {
-  let score = 100
-  if (maxTextBlockLength > READABILITY_BLOCK_HARD) score -= 35
-  else if (maxTextBlockLength > READABILITY_BLOCK_SOFT) score -= 20
-
-  if (avgParagraphLength > DENSE_PARAGRAPH_THRESHOLD) score -= 20
-  else if (avgParagraphLength > 220) score -= 10
-
-  return clampScore(score)
-}
-
-function scoreCtaVisibility({ ctaAboveFold, ctaCount }) {
-  let score = 35
-  if (ctaAboveFold) score += 45
-  if (ctaCount >= 2) score += 15
-  else if (ctaCount >= 1) score += 8
-  return clampScore(score)
-}
-
-function scoreNavVisibility({ navAboveFold, navCount }) {
-  let score = 30
-  if (navAboveFold) score += 50
-  if (navCount >= 3) score += 20
-  else if (navCount >= 1) score += 10
-  return clampScore(score)
-}
-
-function scoreVisualHierarchy({ hasH1, h1AboveFold, headingLevels }) {
-  let score = 40
-  if (hasH1) score += 25
-  if (h1AboveFold) score += 20
-  if (headingLevels >= 2) score += 15
-  return clampScore(score)
-}
-
-function scoreMobileUsability({ hasMobileViewport, mobileOverflow, mobileTextDensity, desktopTextDensity }) {
-  let score = 40
-  if (hasMobileViewport) score += 20
-  else score -= 25
-  if (!mobileOverflow) score += 25
-  else score -= 30
-  if (mobileTextDensity > 0 && desktopTextDensity > 0) {
-    const ratio = mobileTextDensity / desktopTextDensity
-    if (ratio > 2.5) score -= 15
-    else if (ratio <= 1.8) score += 10
-  }
-  return clampScore(score)
-}
-
-function scoreImageSupport(imageCount) {
-  if (imageCount >= 5) return 90
-  if (imageCount >= 3) return 75
-  if (imageCount >= 1) return 55
-  return 25
-}
-
-function scoreLayoutOverflow({ desktopOverflow, mobileOverflow }) {
-  let score = 100
-  if (desktopOverflow) score -= 25
-  if (mobileOverflow) score -= 45
-  return clampScore(score)
-}
-
-function scoreContrast(contrast) {
-  if (!contrast) return 60
-  if (contrast.min_ratio >= 4.5) return 92
-  if (contrast.min_ratio >= 3) return 72
-  if (contrast.average_ratio >= 4.5) return 78
-  return 45
-}
-
-function scoreTextDensity(density) {
-  if (density <= 0) return 70
-  if (density < 0.0008) return 85
-  if (density < 0.0015) return 70
-  if (density < 0.0025) return 55
-  return 35
-}
-
 function collectCrawlerSignals(pages = [], aggregated = {}) {
   let hasH1 = false
+  let h1Text = ''
   let hasMobileViewport = false
   let imageCount = 0
   let ctaCount = 0
+  let pageText = ''
 
   for (const page of pages) {
+    pageText += ` ${page.extracted_text || ''}`
     const data = pageData(page)
     const headings = data.headings || page.headings || {}
-    if ((headings.h1 || []).length > 0) hasH1 = true
+    const h1s = headings.h1 || []
+    if (h1s.length > 0) {
+      hasH1 = true
+      h1Text = h1Text || h1s[0]
+    }
     if (data.has_mobile_viewport) hasMobileViewport = true
     imageCount += data.image_count || 0
     ctaCount += (data.ctas || []).length
@@ -142,196 +70,192 @@ function collectCrawlerSignals(pages = [], aggregated = {}) {
 
   const aggregatedCtas = aggregated.content_signals?.ctas || []
   ctaCount = Math.max(ctaCount, aggregatedCtas.length)
+  const navLabels = aggregated.content_signals?.navigation_labels || []
 
   return {
     hasH1,
+    h1Text,
     hasMobileViewport,
     imageCount,
     ctaCount,
-    navCount: (aggregated.content_signals?.navigation_labels || []).length,
+    navCount: navLabels.length,
+    navAboveFold: navLabels.length >= 2,
+    pageText,
+    sectionCount: pages.filter((p) => (p.extracted_text || '').length > 200).length,
   }
 }
 
-function extractUxFeatures({ visualAudit = null, pages = [], aggregated = {} } = {}) {
+function computeVisitorAppealIndex(components, visualScore) {
+  const layout = components.layout_balance_score ?? visualScore
+  const readability = components.readability_score ?? visualScore
+  const hierarchy = components.visual_hierarchy_score ?? visualScore
+  const images = components.image_quality_score ?? visualScore
+  const polish = Math.round(
+    (components.layout_balance_score ?? visualScore) * 0.4 +
+      (components.trust_visual_score ?? visualScore) * 0.35 +
+      (components.navbar_score ?? visualScore) * 0.25,
+  )
+  return Math.round(
+    visualScore * 0.3 +
+      layout * 0.25 +
+      readability * 0.2 +
+      polish * 0.15 +
+      hierarchy * 0.05 +
+      images * 0.05,
+  )
+}
+
+function extractUxFeatures({
+  visualAudit = null,
+  pages = [],
+  aggregated = {},
+  businessModel = 'ecommerce_store',
+  signals = {},
+} = {}) {
   const crawlerStats = crawlerParagraphStats(pages)
   const crawlerSignals = collectCrawlerSignals(pages, aggregated)
-  const visualSummary = visualAudit?.summary || {}
-  const desktopMetrics = visualAudit?.desktop?.metrics || {}
-  const mobileMetrics = visualAudit?.mobile?.metrics || {}
+  const visualAuditOk = Boolean(visualAudit?.ok)
 
-  const avgParagraphLength =
-    visualSummary.avg_text_block_length || crawlerStats.avg_paragraph_length || 0
-  const maxTextBlockLength =
-    visualSummary.max_text_block_length || crawlerStats.max_text_block_length || 0
-
-  const desktopTextDensity =
-    visualSummary.desktop_text_density ?? desktopMetrics.text_density ?? 0
-  const mobileTextDensity =
-    visualSummary.mobile_text_density ?? mobileMetrics.text_density ?? 0
-
-  const ctaAboveFold = Boolean(
-    visualSummary.cta_above_fold ??
-      desktopMetrics.cta_above_fold ??
-      mobileMetrics.cta_above_fold ??
-      false,
-  )
-
-  const navAboveFold = Boolean(
-    visualSummary.nav_above_fold ??
-      desktopMetrics.nav_above_fold ??
-      mobileMetrics.nav_above_fold ??
-      crawlerSignals.navCount >= 2,
-  )
-
-  const desktopOverflow = Boolean(
-    visualSummary.horizontal_overflow_desktop ?? desktopMetrics.horizontal_overflow ?? false,
-  )
-  const mobileOverflow = Boolean(
-    visualSummary.horizontal_overflow_mobile ?? mobileMetrics.horizontal_overflow ?? false,
-  )
-
-  const imageCount = Math.max(
-    visualSummary.image_count || 0,
-    desktopMetrics.image_count || 0,
-    mobileMetrics.image_count || 0,
-    crawlerSignals.imageCount,
-  )
-
-  const h1AboveFold = (desktopMetrics.headings || []).some(
-    (heading) => heading.tag === 'h1' && heading.above_fold,
-  )
-
-  const headingLevels = new Set(
-    [...(desktopMetrics.headings || []), ...(mobileMetrics.headings || [])].map((h) => h.tag),
-  ).size
-
-  const contrast = visualAudit?.desktop?.contrast || visualAudit?.mobile?.contrast || null
-
-  const readability_score = scoreReadability({ avgParagraphLength, maxTextBlockLength })
-  const cta_visibility_score = scoreCtaVisibility({
-    ctaAboveFold,
-    ctaCount: Math.max(
-      crawlerSignals.ctaCount,
-      (desktopMetrics.cta_elements || []).length,
-      (mobileMetrics.cta_elements || []).length,
-    ),
+  const visualResult = buildVisualUxScore({
+    businessModel,
+    visualAuditOk,
+    visualAuditFailed: Boolean(visualAudit?.enabled && !visualAudit?.ok && !visualAudit?.skipped),
+    desktop: visualAudit?.desktop || {},
+    mobile: visualAudit?.mobile || {},
+    summary: visualAudit?.summary || {},
+    crawler: {
+      ...crawlerStats,
+      ...crawlerSignals,
+      avgParagraphLength: crawlerStats.avg_paragraph_length,
+      maxTextBlockLength: crawlerStats.max_text_block_length,
+      blockCount: crawlerStats.block_count,
+    },
+    aggregated,
+    signals,
+    pages,
+    visualAudit,
   })
-  const nav_visibility_score = scoreNavVisibility({
-    navAboveFold,
-    navCount: Math.max(crawlerSignals.navCount, (desktopMetrics.nav_elements || []).length),
-  })
-  const visual_hierarchy_score = scoreVisualHierarchy({
-    hasH1: crawlerSignals.hasH1 || (desktopMetrics.headings || []).some((h) => h.tag === 'h1'),
-    h1AboveFold,
-    headingLevels,
-  })
-  const mobile_usability_score = scoreMobileUsability({
-    hasMobileViewport: crawlerSignals.hasMobileViewport,
-    mobileOverflow,
-    mobileTextDensity,
-    desktopTextDensity,
-  })
-  const image_support_score = scoreImageSupport(imageCount)
-  const layout_overflow_score = scoreLayoutOverflow({ desktopOverflow, mobileOverflow })
-  const contrast_score = scoreContrast(contrast)
-  const desktop_text_density_score = scoreTextDensity(desktopTextDensity)
-  const mobile_text_density_score = scoreTextDensity(mobileTextDensity)
 
-  const overall_static_ux_score = clampScore(
-    readability_score * 0.16 +
-      cta_visibility_score * 0.14 +
-      nav_visibility_score * 0.1 +
-      visual_hierarchy_score * 0.12 +
-      mobile_usability_score * 0.16 +
-      image_support_score * 0.08 +
-      layout_overflow_score * 0.12 +
-      contrast_score * 0.06 +
-      desktop_text_density_score * 0.03 +
-      mobile_text_density_score * 0.03,
-  )
-
-  let adjustedOverall = overall_static_ux_score
-  if (!visualAudit?.ok) {
-    adjustedOverall = clampScore(adjustedOverall * 0.88)
-    if (!ctaAboveFold) adjustedOverall = clampScore(adjustedOverall - 6)
-    if (!navAboveFold && crawlerSignals.navCount < 3) {
-      adjustedOverall = clampScore(adjustedOverall - 5)
-    }
-    if (!crawlerSignals.hasMobileViewport) {
-      adjustedOverall = clampScore(adjustedOverall - 8)
-    }
-    adjustedOverall = Math.min(adjustedOverall, 78)
-  }
+  const components = visualResult.ux_score_components
+  const visualScore = visualResult.visual_score
 
   return {
-    source: visualAudit?.ok ? 'visual_audit+crawler' : 'crawler_static',
-    desktop_text_density: Number(desktopTextDensity.toFixed(6)),
-    mobile_text_density: Number(mobileTextDensity.toFixed(6)),
-    desktop_text_density_score,
-    mobile_text_density_score,
-    avg_paragraph_length: avgParagraphLength,
-    average_paragraph_length: avgParagraphLength,
-    max_text_block_length: maxTextBlockLength,
-    cta_above_fold: ctaAboveFold,
-    cta_visibility_score,
-    nav_visibility_score,
-    navbar_visibility_score: nav_visibility_score,
-    visual_hierarchy_score,
-    readability_score,
-    mobile_usability_score,
-    image_support_score,
-    layout_overflow_score,
-    contrast_score,
-    ui_score: adjustedOverall,
-    overall_static_ux_score: adjustedOverall,
+    source: visualAuditOk ? 'visual_audit+crawler' : 'crawler_static',
+    scoring_model: 'ux_visual_v2',
+    visual_score: visualScore,
+    overall_static_ux_score: visualScore,
+    ui_score: visualScore,
+    ux_score_components: components,
+    ux_confidence: visualResult.ux_confidence,
+    visual_strengths: visualResult.visual_strengths,
+    visual_problems: visualResult.visual_problems,
+    visual_recommended_fixes: visualResult.visual_recommended_fixes,
+    ux_scoring_inputs: visualResult.scoring_inputs,
+    component_weights: visualResult.component_weights,
+    component_notes: visualResult.component_notes,
+    navbar_score: components.navbar_score,
+    hero_score: components.hero_score,
+    readability_score: components.readability_score,
+    visual_hierarchy_score: components.visual_hierarchy_score,
+    image_quality_score: components.image_quality_score,
+    layout_balance_score: components.layout_balance_score,
+    conversion_path_score: components.conversion_path_score,
+    trust_visual_score: components.trust_visual_score,
+    legacy_ux_score_on_20_scale: mapVisualScoreToLegacy20(visualScore),
+    visual_score_100: visualScore,
+    ux_ui_score: visualResult.ux_ui_score,
+    ux_component_scores: visualResult.ux_component_scores,
+    ux_component_explanations: visualResult.ux_component_explanations,
+    ux_evidence: visualResult.ux_evidence,
+    hero_heading: visualResult.hero_heading,
+    readability_factors: visualResult.readability_factors,
+    readability_strengths: visualResult.readability_strengths,
+    readability_problems: visualResult.readability_problems,
+    readability_confidence: visualResult.readability_confidence,
+    layout_strengths: visualResult.layout_strengths,
+    layout_problems: visualResult.layout_problems,
+    layout_evidence: visualResult.layout_evidence,
+    avg_paragraph_length: visualResult.scoring_inputs.avg_paragraph_length,
+    average_paragraph_length: visualResult.scoring_inputs.avg_paragraph_length,
+    max_text_block_length: visualResult.scoring_inputs.max_text_block_length,
+    cta_above_fold: Boolean(visualResult.scoring_inputs.cta_above_fold_count > 0),
+    nav_link_count: visualResult.scoring_inputs.nav_link_count,
+    primary_nav_link_count: visualResult.scoring_inputs.primary_nav_link_count,
+    nav_visibility_score: components.navbar_score,
+    navbar_visibility_score: components.navbar_score,
+    cta_visibility_score: components.conversion_path_score,
+    mobile_usability_score: components.layout_balance_score,
+    layout_overflow_score: components.layout_balance_score,
+    contrast_score: components.trust_visual_score,
+    image_support_score: components.image_quality_score,
+    visual_richness_score: components.image_quality_score,
+    display_polish_score: Math.round(
+      components.layout_balance_score * 0.4 +
+        components.trust_visual_score * 0.35 +
+        components.navbar_score * 0.25,
+    ),
+    layout_fitted_image_count: visualResult.scoring_inputs?.layout_fitted_image_count ?? 0,
+    misaligned_image_count: visualResult.scoring_inputs?.misaligned_image_count ?? 0,
+    visitor_appeal_index: computeVisitorAppealIndex(components, visualScore),
+    desktop_text_density: visualAudit?.summary?.desktop_text_density ?? 0,
+    mobile_text_density: visualAudit?.summary?.mobile_text_density ?? 0,
     signals: {
-      has_mobile_viewport: crawlerSignals.hasMobileViewport,
-      horizontal_overflow_desktop: desktopOverflow,
-      horizontal_overflow_mobile: mobileOverflow,
-      image_count: imageCount,
-      nav_above_fold: navAboveFold,
-      cta_count: crawlerSignals.ctaCount,
+      has_h1: visualResult.hero_heading?.has_h1 || crawlerSignals.hasH1,
+      has_hero_heading: visualResult.hero_heading?.has_hero_heading,
+      hero_heading_text: visualResult.hero_heading?.hero_heading_text,
+      hero_heading_source: visualResult.hero_heading?.hero_heading_source,
+      hero_heading_confidence: visualResult.hero_heading?.hero_heading_confidence,
+      h1_above_fold: visualResult.hero_heading?.h1_above_fold,
+      hero_heading_above_fold: visualResult.hero_heading?.hero_heading_above_fold,
+      has_mobile_viewport: crawlerSignals.hasMobileViewport || visualAuditOk,
+      horizontal_overflow_desktop: visualAudit?.summary?.horizontal_overflow_desktop,
+      horizontal_overflow_mobile: visualAudit?.summary?.horizontal_overflow_mobile,
+      overflow_severity_mobile: visualAudit?.summary?.overflow_severity_mobile,
+      image_count: visualResult.scoring_inputs.image_count,
+      nav_above_fold: visualResult.scoring_inputs.nav_link_count >= 2,
+      cta_count: visualResult.scoring_inputs.cta_above_fold_count,
+      nav_link_count: visualResult.scoring_inputs.nav_link_count,
     },
+    visual_audit_evidence: visualAudit?.evidence_snippets || null,
   }
 }
 
 function buildUxFeatureExplanations(features) {
+  if (!features) return []
   const explanations = []
-  if (!features) return explanations
 
-  if (features.max_text_block_length > READABILITY_BLOCK_SOFT) {
-    explanations.push('Large text blocks reduce readability.')
+  for (const problem of features.visual_problems || []) {
+    explanations.push(problem)
   }
-  if (features.avg_paragraph_length > DENSE_PARAGRAPH_THRESHOLD) {
-    explanations.push('Paragraphs are dense and may be hard to scan.')
-  }
-  if (!features.cta_above_fold) {
-    explanations.push('CTA is not visible above the fold.')
-  }
-  if (features.signals?.nav_above_fold) {
-    explanations.push('Navigation is visible.')
-  }
-  if (features.image_support_score >= 55) {
-    explanations.push('Images support service proof.')
-  }
-  if (features.signals?.horizontal_overflow_mobile) {
-    explanations.push('Mobile layout has horizontal overflow.')
-  }
-  if (!features.signals?.has_mobile_viewport) {
-    explanations.push('No mobile viewport meta tag detected.')
+  for (const strength of (features.visual_strengths || []).slice(0, 4)) {
+    explanations.push(strength)
   }
 
-  return explanations
+  if (!explanations.length && features.max_text_block_length > READABILITY_BLOCK_SOFT) {
+    explanations.push(`Large text blocks reduce readability (${features.max_text_block_length} chars).`)
+  }
+
+  return [...new Set(explanations)].slice(0, 12)
+}
+
+function buildUxFeatureSnapshot(features) {
+  if (!features) return null
+  return {
+    visual_score: features.visual_score,
+    ux_confidence: features.ux_confidence,
+    scoring_model: features.scoring_model,
+    components: features.ux_score_components,
+    inputs: features.ux_scoring_inputs,
+    source: features.source,
+  }
 }
 
 module.exports = {
   extractUxFeatures,
   buildUxFeatureExplanations,
+  buildUxFeatureSnapshot,
   crawlerParagraphStats,
-  scoreReadability,
-  scoreCtaVisibility,
-  scoreMobileUsability,
-  scoreLayoutOverflow,
+  mapVisualScoreToCategoryPoints,
   READABILITY_BLOCK_SOFT,
   DENSE_PARAGRAPH_THRESHOLD,
   CTA_PATTERN,

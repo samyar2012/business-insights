@@ -648,6 +648,7 @@ function calculatePriorityScores(aggregated, business, pages, options = {}) {
 
 module.exports = {
   calculatePriorityScores,
+  legacyScoresFromCategories,
   validateWeightedScore,
   filterWeightedExplanations,
   WEIGHTED_EXPLANATION_CATEGORIES,

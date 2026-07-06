@@ -373,6 +373,8 @@ async function crawlBusinessWebsite({
       startUrl: canonicalStart,
       crawlMeta: {
         homepage_fetch_ok: Boolean(homeFetch.ok && homeFetch.html),
+        bot_protection_bypassed: Boolean(homeFetch.fetched_via_browser && homeFetch.bot_blocked),
+        fetched_via_browser: Boolean(homeFetch.fetched_via_browser),
         pages_discovered: pagesDiscovered,
         pages_crawled: pages.length,
         pages_failed: pagesFailed,

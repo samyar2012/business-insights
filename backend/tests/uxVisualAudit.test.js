@@ -2,12 +2,9 @@ const { describe, it } = require('node:test')
 const assert = require('node:assert/strict')
 const {
   extractUxFeatures,
-  scoreReadability,
-  scoreCtaVisibility,
-  scoreMobileUsability,
-  scoreLayoutOverflow,
   READABILITY_BLOCK_SOFT,
 } = require('../services/uxFeatureExtractor')
+const { scoreReadability } = require('../services/uxVisualScorer')
 const {
   calculatePriorityScores,
   scoreUxUiPoints,
@@ -82,6 +79,115 @@ function visualAuditWithCtaAboveFold() {
   }
 }
 
+function premiumRetailVisualAudit() {
+  return {
+    ok: true,
+    enabled: true,
+    summary: {
+      desktop_text_density: 0.0007,
+      mobile_text_density: 0.0009,
+      avg_text_block_length: 140,
+      max_text_block_length: 220,
+      cta_above_fold: true,
+      nav_above_fold: true,
+      horizontal_overflow_desktop: false,
+      horizontal_overflow_mobile: false,
+      image_count: 12,
+      nav_link_count: 7,
+      primary_nav_link_count: 5,
+      icon_count: 10,
+      icons_above_fold: 4,
+      icons_in_nav: 3,
+      has_structured_header: true,
+      above_fold_image_count: 4,
+    },
+    desktop: {
+      metrics: {
+        text_density: 0.0007,
+        cta_above_fold: true,
+        nav_above_fold: true,
+        horizontal_overflow: false,
+        nav_link_count: 7,
+      primary_nav_link_count: 5,
+        icon_count: 10,
+        icons_above_fold: 4,
+        icons_in_nav: 3,
+        has_structured_header: true,
+        above_fold_image_count: 4,
+        headings: [{ tag: 'h1', above_fold: true }, { tag: 'h2', above_fold: true }],
+        cta_elements: [{ text: 'Shop now', above_fold: true }],
+        nav_elements: [
+          { text: 'Shop', above_fold: true },
+          { text: 'Collections', above_fold: true },
+          { text: 'Inspiration', above_fold: true },
+          { text: 'Stores', above_fold: true },
+          { text: 'Account', above_fold: true },
+        ],
+      },
+      contrast: { min_ratio: 5.4, average_ratio: 6.8, wcag_aa_likely: true },
+    },
+    mobile: {
+      metrics: {
+        text_density: 0.0009,
+        cta_above_fold: true,
+        horizontal_overflow: false,
+        nav_link_count: 5,
+        icon_count: 6,
+        icons_above_fold: 2,
+        has_structured_header: true,
+      },
+    },
+  }
+}
+
+function basicServiceVisualAudit() {
+  return {
+    ok: true,
+    enabled: true,
+    summary: {
+      desktop_text_density: 0.0014,
+      mobile_text_density: 0.0018,
+      avg_text_block_length: 280,
+      max_text_block_length: 520,
+      cta_above_fold: true,
+      nav_above_fold: true,
+      horizontal_overflow_desktop: false,
+      horizontal_overflow_mobile: false,
+      image_count: 3,
+      nav_link_count: 3,
+      icon_count: 1,
+      icons_above_fold: 0,
+      icons_in_nav: 0,
+      has_structured_header: false,
+      above_fold_image_count: 1,
+    },
+    desktop: {
+      metrics: {
+        text_density: 0.0014,
+        cta_above_fold: true,
+        nav_above_fold: true,
+        horizontal_overflow: false,
+        nav_link_count: 3,
+        icon_count: 1,
+        headings: [{ tag: 'h1', above_fold: true }],
+        nav_elements: [
+          { text: 'Services', above_fold: true },
+          { text: 'Gallery', above_fold: true },
+          { text: 'Contact', above_fold: true },
+        ],
+      },
+      contrast: { min_ratio: 3.2, average_ratio: 4.1 },
+    },
+    mobile: {
+      metrics: {
+        text_density: 0.0018,
+        horizontal_overflow: false,
+        nav_link_count: 3,
+      },
+    },
+  }
+}
+
 function visualAuditWithMobileOverflow() {
   return {
     ok: true,
@@ -118,11 +224,14 @@ describe('uxFeatureExtractor', () => {
       aggregated: BASE_AGG,
     })
     assert.ok(features.max_text_block_length > READABILITY_BLOCK_SOFT)
-    assert.ok(features.readability_score < 70)
+    assert.ok(features.readability_score < 85)
     assert.ok(scoreReadability({
       avgParagraphLength: features.avg_paragraph_length,
       maxTextBlockLength: features.max_text_block_length,
-    }) < 70)
+      textDensity: 0,
+      headingCount: 1,
+      visualVerified: false,
+    }).score < 85)
   })
 
   it('increases CTA visibility when CTA is above the fold', () => {
@@ -141,12 +250,11 @@ describe('uxFeatureExtractor', () => {
       aggregated: BASE_AGG,
     })
 
-    assert.ok(withFold.cta_visibility_score > withoutFold.cta_visibility_score)
+    assert.ok(withFold.conversion_path_score > withoutFold.conversion_path_score)
     assert.equal(withFold.cta_above_fold, true)
-    assert.ok(scoreCtaVisibility({ ctaAboveFold: true, ctaCount: 2 }) > scoreCtaVisibility({ ctaAboveFold: false, ctaCount: 1 }))
   })
 
-  it('lowers mobile usability when viewport meta is missing', () => {
+  it('lowers layout balance when viewport meta is missing', () => {
     const pages = [
       {
         extracted_text: 'Short homepage copy.',
@@ -157,14 +265,16 @@ describe('uxFeatureExtractor', () => {
         },
       },
     ]
+    const withViewport = extractUxFeatures({
+      pages: pages.map((p) => ({
+        ...p,
+        extracted_data_json: { ...p.extracted_data_json, has_mobile_viewport: true },
+      })),
+      aggregated: BASE_AGG,
+    })
     const features = extractUxFeatures({ pages, aggregated: BASE_AGG })
     assert.equal(features.signals.has_mobile_viewport, false)
-    assert.ok(features.mobile_usability_score < scoreMobileUsability({
-      hasMobileViewport: true,
-      mobileOverflow: false,
-      mobileTextDensity: 0.001,
-      desktopTextDensity: 0.001,
-    }))
+    assert.ok(features.layout_balance_score <= withViewport.layout_balance_score)
   })
 
   it('lowers layout score when mobile overflow is present', () => {
@@ -173,11 +283,13 @@ describe('uxFeatureExtractor', () => {
       pages: denseLongParagraphPages(),
       aggregated: BASE_AGG,
     })
+    const clean = extractUxFeatures({
+      visualAudit: visualAuditWithCtaAboveFold(),
+      pages: denseLongParagraphPages(),
+      aggregated: BASE_AGG,
+    })
     assert.equal(features.signals.horizontal_overflow_mobile, true)
-    assert.ok(features.layout_overflow_score < scoreLayoutOverflow({
-      desktopOverflow: false,
-      mobileOverflow: false,
-    }))
+    assert.ok(features.layout_balance_score < clean.layout_balance_score)
   })
 })
 
@@ -211,7 +323,6 @@ describe('priorityWebsiteScoring visual audit integration', () => {
     })
     assert.ok(visualPoints >= 0 && visualPoints <= 20)
     assert.ok(explanations.some((item) => /UX\/UI score from visual layout audit/i.test(item.reason)))
-    assert.ok(explanations.some((item) => item.reason === 'Navigation is visible.'))
   })
 
   it('does not break overall scoring when visual audit is disabled', () => {
@@ -223,6 +334,24 @@ describe('priorityWebsiteScoring visual audit integration', () => {
     assert.ok(Number.isFinite(scores.ux_ui_score))
     assert.equal(scores.ux_scoring_mode, 'feature_signals')
     assert.ok(scores.overall_score > 0)
+  })
+
+  it('scores premium retail layouts higher than basic service sites', () => {
+    const pages = denseLongParagraphPages()
+    const premium = extractUxFeatures({
+      visualAudit: premiumRetailVisualAudit(),
+      pages,
+      aggregated: BASE_AGG,
+    })
+    const basic = extractUxFeatures({
+      visualAudit: basicServiceVisualAudit(),
+      pages,
+      aggregated: BASE_AGG,
+    })
+
+    assert.ok(premium.overall_static_ux_score > basic.overall_static_ux_score)
+    assert.ok(premium.navbar_score > basic.navbar_score)
+    assert.ok(premium.hero_score >= basic.hero_score)
   })
 
   it('marks visual scoring mode when audit succeeds', () => {

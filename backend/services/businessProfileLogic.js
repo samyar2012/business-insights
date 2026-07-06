@@ -254,19 +254,22 @@ function buildValueProposition(pages, business) {
   return business?.product_sold || null
 }
 
-const { calculatePriorityScores } = require('./priorityWebsiteScoring')
+const { calculateAnalyzerV2Scores } = require('./analyzerV2')
 
 function calculateScores(aggregated, business, pages, options = {}) {
-  return calculatePriorityScores(aggregated, business, pages, options)
+  return calculateAnalyzerV2Scores(aggregated, business, pages, options)
 }
 
 function buildProfileScoresPayload(aggregated, business, pages, options = {}) {
   const scores = calculateScores(aggregated, business, pages, options)
-  const priorityFixes = buildPriorityFixes(aggregated, pages, scores)
+  const priorityFixes =
+    scores.priority_fixes?.length > 0
+      ? scores.priority_fixes
+      : buildPriorityFixes(aggregated, pages, scores)
   return {
     ...scores,
-    strengths: buildStrengths(aggregated, scores),
-    risks: buildRisks(aggregated, pages, scores),
+    strengths: scores.strengths?.length ? scores.strengths : buildStrengths(aggregated, scores),
+    risks: scores.risks?.length ? scores.risks : buildRisks(aggregated, pages, scores),
     recommended_actions: priorityFixes.map((fix) => fix.action),
     priority_fixes: priorityFixes,
   }
@@ -448,7 +451,7 @@ function buildPriorityFixes(aggregated, pages, scores) {
       impact: 'Return policies build trust for first-time buyers.',
     })
   }
-  if (aggregated.social_channels.length === 0 && rubric === 'content_social_business') {
+  if (aggregated.social_channels.length === 0 && rubric === 'content_business') {
     addPriorityFix(fixes, seen, {
       priority: 'medium',
       category: 'customer_attraction',
@@ -534,6 +537,7 @@ function buildRisks(aggregated, pages, scores = {}) {
   const siteClass = aggregated.site_classification?.classification
   const rubric = scores.scoring_rubric || 'ecommerce_store'
   const ecommerceRubric = isEcommerceRubric(rubric)
+  const categoryMax = require('./businessScoringRubrics').resolveCategoryMax(scores)
 
   if (scores.safety_status === 'unsafe') {
     risks.push(
@@ -552,7 +556,10 @@ function buildRisks(aggregated, pages, scores = {}) {
   if (scores.score_caps_applied?.includes('key_pages_failure_cap_60')) {
     risks.push('Many key pages failed to crawl; contact, services, or gallery pages may be missing or unreachable.')
   }
-  if (scores.functionality_score != null && scores.functionality_score < 10) {
+  if (
+    scores.functionality_score != null &&
+    scores.functionality_score < Math.round(categoryMax.functionality_score * 0.55)
+  ) {
     risks.push('Website functionality score is low — HTTPS, crawl success, or readable content may be failing.')
   }
 
@@ -562,7 +569,7 @@ function buildRisks(aggregated, pages, scores = {}) {
   if (ecommerceRubric && meta.prices_without_products_pages > 0) {
     risks.push('Crawler found prices but no reliable product cards.')
   }
-  if (isStrongMarketplaceSite(aggregated) && rubric !== 'marketplace_listing') {
+  if (isStrongMarketplaceSite(aggregated) && rubric !== 'listing') {
     risks.push('Marketplace page detected; this does not look like a single SMB storefront.')
   }
   if (ecommerceRubric && meta.low_confidence_extraction) {
@@ -598,7 +605,7 @@ function buildRisks(aggregated, pages, scores = {}) {
   ) {
     risks.push('No review or testimonial signals detected — social proof may be limiting conversions.')
   }
-  if (aggregated.social_channels.length === 0 && rubric === 'content_social_business') {
+  if (aggregated.social_channels.length === 0 && rubric === 'content_business') {
     risks.push('No social profile links found.')
   }
   for (const warning of scores.mismatch_warnings || []) {
@@ -615,7 +622,7 @@ function buildRecommendedActions(aggregated, pages, scores) {
 }
 
 function siteClassMismatch(aggregated, rubric) {
-  if (rubric === 'marketplace_listing') return false
+  if (rubric === 'listing') return false
   return isStrongMarketplaceSite(aggregated)
 }
 

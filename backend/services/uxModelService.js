@@ -1,8 +1,11 @@
 const { spawn } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
+const { mapVisualScoreToCategoryPoints } = require('./uxFeatureExtractor')
+const { SCORING_VERSION } = require('./analyzerV2/scoringWeights')
 
 const UX_UI_MAX = 20
+const UX_UI_MAX_V2 = 25
 const DETERMINISTIC_WEIGHT = 0.35
 const ML_WEIGHT = 0.65
 const MODEL_VERSION = 'ux_score_model_v1'
@@ -52,9 +55,40 @@ function scoreTextDensity(density) {
   return 35
 }
 
+function isAnalyzerV2(scorePayload = {}) {
+  return scorePayload.scoring_version === SCORING_VERSION
+}
+
+function resolveUxUiMax(scorePayload = {}) {
+  return isAnalyzerV2(scorePayload) ? UX_UI_MAX_V2 : UX_UI_MAX
+}
+
+function featureUxScoreFromVisual(uxFeatures, maxPoints = UX_UI_MAX) {
+  const visual = uxFeatures?.visual_score ?? uxFeatures?.overall_static_ux_score
+  if (visual == null) return null
+  return Math.max(0, Math.min(maxPoints, Math.round((visual / 100) * maxPoints)))
+}
+
+function syncV2UxCategoryScore(scorePayload, uxScore) {
+  if (!isAnalyzerV2(scorePayload)) return
+  if (scorePayload.category_details?.ux_ui_visual) {
+    scorePayload.category_details.ux_ui_visual.score = uxScore
+  }
+  if (scorePayload.category_scores) {
+    scorePayload.category_scores.ux_ui_visual = uxScore
+  }
+  scorePayload.visual_score_100 =
+    scorePayload.visual_score_100 ?? scorePayload.ux_features?.visual_score ?? null
+  scorePayload.ux_score_mapping = {
+    visual_score_100: scorePayload.visual_score_100,
+    ux_category_score: uxScore,
+    ux_category_max: UX_UI_MAX_V2,
+    formula: 'visual_score / 4 rounded (equivalent to visual% × 25)',
+  }
+}
+
 function featureUxScoreOn20(uxFeatures) {
-  if (uxFeatures?.overall_static_ux_score == null) return null
-  return clamp((uxFeatures.overall_static_ux_score / 100) * UX_UI_MAX)
+  return featureUxScoreFromVisual(uxFeatures, UX_UI_MAX)
 }
 
 function buildModelInput({ scores = {}, uxFeatures = {}, business = {} } = {}) {
@@ -89,7 +123,21 @@ function buildModelInput({ scores = {}, uxFeatures = {}, business = {} } = {}) {
   }
 }
 
-function mergeUxUiScore(deterministicUxUiScore, mlPrediction) {
+function resolveBlendWeights(uxFeatures = {}) {
+  const visualVerified = uxFeatures.source === 'visual_audit+crawler'
+  const strongLayout = (uxFeatures.overall_static_ux_score ?? 0) >= 82
+  const polished = (uxFeatures.display_polish_score ?? 0) >= 78
+
+  if (visualVerified && (strongLayout || polished)) {
+    return { deterministic: 0.62, ml: 0.38 }
+  }
+  if (visualVerified) {
+    return { deterministic: 0.52, ml: 0.48 }
+  }
+  return { deterministic: DETERMINISTIC_WEIGHT, ml: ML_WEIGHT }
+}
+
+function mergeUxUiScore(deterministicUxUiScore, mlPrediction, options = {}) {
   const deterministic = clamp(deterministicUxUiScore, 0, UX_UI_MAX)
   if (!mlPrediction || mlPrediction.predicted_ux_score == null) {
     return {
@@ -98,12 +146,17 @@ function mergeUxUiScore(deterministicUxUiScore, mlPrediction) {
       mlScoreOn20Scale: null,
       usedMl: false,
       confidence: 0,
+      blendWeights: resolveBlendWeights(options.uxFeatures),
     }
   }
 
   const mlScoreOn20Scale = clamp(mlPrediction.predicted_ux_score / 5, 0, UX_UI_MAX)
-  const blended =
-    deterministic * DETERMINISTIC_WEIGHT + mlScoreOn20Scale * ML_WEIGHT
+  const weights = resolveBlendWeights(options.uxFeatures)
+  let blended = deterministic * weights.deterministic + mlScoreOn20Scale * weights.ml
+
+  if (options.uxFeatures?.source === 'visual_audit+crawler' && deterministic >= 15) {
+    blended = Math.max(blended, deterministic - 1)
+  }
 
   return {
     finalScore: clamp(blended, 0, UX_UI_MAX),
@@ -111,6 +164,7 @@ function mergeUxUiScore(deterministicUxUiScore, mlPrediction) {
     mlScoreOn20Scale,
     usedMl: true,
     confidence: Number(mlPrediction.confidence || 0),
+    blendWeights: weights,
   }
 }
 
@@ -123,15 +177,19 @@ function appendUxExplanation(scorePayload, reason, delta = 0) {
   scorePayload.score_explanation = explanations.slice(0, 24)
 }
 
-function recalculateOverallScore(scorePayload) {
-  scorePayload.overall_score = clamp(
-    (scorePayload.safety_score || 0) +
-      (scorePayload.functionality_score || 0) +
-      (scorePayload.ux_ui_score || 0) +
-      (scorePayload.business_fit_score || 0) +
-      (scorePayload.customer_attraction_score || 0),
+function recalculateOverallScore(scorePayload, uxMax = resolveUxUiMax(scorePayload)) {
+  scorePayload.overall_score = Math.max(
     0,
-    100,
+    Math.min(
+      100,
+      Math.round(
+        (scorePayload.safety_score || 0) +
+          (scorePayload.functionality_score || 0) +
+          (scorePayload.ux_ui_score || 0) +
+          (scorePayload.business_fit_score || 0) +
+          (scorePayload.customer_attraction_score || 0),
+      ),
+    ),
   )
 }
 
@@ -211,8 +269,69 @@ async function predictUxScore(input, options = {}) {
 }
 
 async function applyUxModelLayer(scorePayload, { uxFeatures = {}, business = {} } = {}, options = {}) {
-  const deterministicUxUiScore =
-    featureUxScoreOn20(uxFeatures) ?? scorePayload.ux_ui_score
+  const uxMax = resolveUxUiMax(scorePayload)
+  const visualBased = featureUxScoreFromVisual(uxFeatures, uxMax)
+  const categoryUx = scorePayload.category_details?.ux_ui_visual?.score
+
+  if (isAnalyzerV2(scorePayload)) {
+    const finalUx =
+      categoryUx ??
+      visualBased ??
+      mapVisualScoreToCategoryPoints(uxFeatures?.visual_score ?? uxFeatures?.overall_static_ux_score ?? 0, UX_UI_MAX_V2)
+
+    scorePayload.crawl_ux_ui_score = finalUx
+    scorePayload.deterministic_ux_ui_score = finalUx
+    scorePayload.ux_ui_score = finalUx
+    scorePayload.ux_scoring_mode = isUxModelEnabled() ? 'visual_audit_v2_ml_advisory' : 'visual_audit_v2'
+    syncV2UxCategoryScore(scorePayload, finalUx)
+
+    if (!isUxModelEnabled()) {
+      scorePayload.ux_model = { enabled: false, used: false }
+      appendUxExplanation(
+        scorePayload,
+        `UX/UI category score follows visual audit (${scorePayload.visual_score_100 ?? visualBased}/100 → ${finalUx}/${UX_UI_MAX_V2}).`,
+        0,
+      )
+      recalculateOverallScore(scorePayload, uxMax)
+      return scorePayload
+    }
+
+    const modelInput = buildModelInput({ scores: scorePayload, uxFeatures, business })
+    const prediction = await predictUxScore(modelInput, options)
+
+    if (!prediction.ok) {
+      scorePayload.ux_model = { enabled: true, used: false, error: prediction.error }
+      appendUxExplanation(
+        scorePayload,
+        `UX/UI category score follows visual audit (${finalUx}/${UX_UI_MAX_V2}). ML advisory unavailable.`,
+        0,
+      )
+      recalculateOverallScore(scorePayload, uxMax)
+      return scorePayload
+    }
+
+    const mlOn25 = clamp((prediction.predicted_ux_score / 100) * UX_UI_MAX_V2, 0, UX_UI_MAX_V2)
+    scorePayload.ux_model = {
+      enabled: true,
+      used: true,
+      advisory_only: true,
+      predicted_ux_score: prediction.predicted_ux_score,
+      predicted_ux_score_on_25_scale: mlOn25,
+      predicted_ux_score_on_20_scale: clamp(prediction.predicted_ux_score / 5, 0, UX_UI_MAX),
+      confidence: prediction.confidence,
+      model_version: prediction.model_version,
+      notes: prediction.notes || [],
+    }
+    appendUxExplanation(
+      scorePayload,
+      `UX/UI category ${finalUx}/${UX_UI_MAX_V2} from visual audit (${scorePayload.visual_score_100}/100). ML advisory: ${mlOn25}/${UX_UI_MAX_V2} — not blended into category score.`,
+      0,
+    )
+    recalculateOverallScore(scorePayload, uxMax)
+    return scorePayload
+  }
+
+  const deterministicUxUiScore = featureUxScoreOn20(uxFeatures) ?? scorePayload.ux_ui_score
 
   if (!isUxModelEnabled()) {
     scorePayload.ux_scoring_mode = scorePayload.ux_scoring_mode || 'deterministic'
@@ -226,7 +345,9 @@ async function applyUxModelLayer(scorePayload, { uxFeatures = {}, business = {} 
   }
 
   if (options.mockPrediction) {
-    const merged = mergeUxUiScore(deterministicUxUiScore, options.mockPrediction)
+    const merged = mergeUxUiScore(deterministicUxUiScore, options.mockPrediction, {
+      uxFeatures,
+    })
     scorePayload.deterministic_ux_ui_score = merged.deterministicScore
     scorePayload.ux_ui_score = merged.finalScore
     scorePayload.ux_scoring_mode = 'deterministic_plus_ml'
@@ -237,8 +358,8 @@ async function applyUxModelLayer(scorePayload, { uxFeatures = {}, business = {} 
       predicted_ux_score_on_20_scale: merged.mlScoreOn20Scale,
       confidence: merged.confidence,
       model_version: options.mockPrediction.model_version || MODEL_VERSION,
-      deterministic_weight: DETERMINISTIC_WEIGHT,
-      ml_weight: ML_WEIGHT,
+      deterministic_weight: merged.blendWeights.deterministic,
+      ml_weight: merged.blendWeights.ml,
       notes: options.mockPrediction.notes || [],
     }
     recalculateOverallScore(scorePayload)
@@ -268,7 +389,7 @@ async function applyUxModelLayer(scorePayload, { uxFeatures = {}, business = {} 
     return scorePayload
   }
 
-  const merged = mergeUxUiScore(deterministicUxUiScore, prediction)
+  const merged = mergeUxUiScore(deterministicUxUiScore, prediction, { uxFeatures })
   scorePayload.deterministic_ux_ui_score = merged.deterministicScore
   scorePayload.ux_ui_score = merged.finalScore
   scorePayload.ux_scoring_mode = 'deterministic_plus_ml'
@@ -301,6 +422,7 @@ module.exports = {
   resolveModelPath,
   resolvePredictScriptPath,
   featureUxScoreOn20,
+  resolveBlendWeights,
   buildModelInput,
   mergeUxUiScore,
   predictUxScore,

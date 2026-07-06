@@ -31,11 +31,12 @@ describe('normalizeBusinessModel', () => {
     )
   })
 
-  it('accepts a known business model', () => {
-    assert.equal(
-      normalizeBusinessModel('online_plus_physical_service', { required: true }),
-      'online_plus_physical_service',
-    )
+  it('normalizes legacy business model aliases', () => {
+    assert.equal(normalizeBusinessModel('content_social_business', { required: true }), 'content_business')
+    assert.equal(normalizeBusinessModel('marketplace_listing', { required: true }), 'listing')
+    assert.equal(normalizeBusinessModel('shopify', { required: true }), 'ecommerce_store')
+    assert.equal(normalizeBusinessModel('online_gallery_physical_service', { required: true }), 'online_gallery_physical_service')
+    assert.equal(normalizeBusinessModel('blog', { required: true }), 'blog')
   })
 })
 
