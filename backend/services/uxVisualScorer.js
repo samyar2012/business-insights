@@ -46,7 +46,9 @@ function scoreNavbar(ctx) {
   const topLevelCount =
     primaryNavLinkCount > 0
       ? primaryNavLinkCount
-      : Math.min(navLinkCount, PRIMARY_NAV_OVERCROWD_THRESHOLD)
+      : navLinkCount <= PRIMARY_NAV_OVERCROWD_THRESHOLD
+        ? navLinkCount
+        : 0
   let score = visualVerified ? 42 : 32
   const notes = []
   const problems = []
@@ -83,6 +85,11 @@ function scoreNavbar(ctx) {
     problems.push('Mobile navigation area shows layout overflow.')
   }
 
+  if (navLinkCount > PRIMARY_NAV_OVERCROWD_THRESHOLD && primaryNavLinkCount === 0) {
+    score -= 6
+    problems.push('Navigation appears complex with many nested links — clarity may suffer.')
+  }
+
   return { score: clamp(score), notes: [...notes, ...strengths, ...problems], strengths, problems }
 }
 
@@ -94,6 +101,9 @@ function scoreHero(ctx) {
     ctaSpamCount,
     maxAboveFoldBlock,
     aboveFoldTextLength,
+    duplicateCopyCount,
+    templateDebtSignals,
+    businessModel,
   } = ctx
   let score = 42
   const notes = []
@@ -125,10 +135,13 @@ function scoreHero(ctx) {
     problems.push('Hero heading is visually clear, but semantic H1 markup may be missing.')
   }
 
-  if (heroText.length >= 20 && heroText.length <= 90) score += 8
-  else if (heroText.length > 150) {
-    score -= 10
-    problems.push(`Hero heading is very long (${heroText.length} characters).`)
+  if (heroText.length >= 20 && heroText.length <= 72) score += 8
+  else if (heroText.length > 95) {
+    score -= 18
+    problems.push(`Hero headline is too long (${heroText.length} characters) and hurts first impression.`)
+  } else if (heroText.length > 72) {
+    score -= 8
+    problems.push(`Hero headline is longer than ideal (${heroText.length} characters).`)
   }
 
   if (heroImagePresent) {
@@ -152,8 +165,25 @@ function scoreHero(ctx) {
   if (maxAboveFoldBlock > 520) {
     score -= 12
     problems.push(`Hero text is dense: largest above-fold block is ${maxAboveFoldBlock} characters.`)
+  } else if (aboveFoldTextLength > 900) {
+    score -= 10
+    problems.push('Above-fold area contains too much text before visitors can scan the page.')
   } else if (aboveFoldTextLength > 0 && aboveFoldTextLength < 600) {
     score += 4
+  }
+
+  if (
+    (duplicateCopyCount || 0) >= 2 ||
+    ((duplicateCopyCount || 0) >= 1 &&
+      !ECOMMERCE_MODELS.has(resolveCanonicalBusinessModel(businessModel) || businessModel))
+  ) {
+    score -= 14
+    problems.push('Repeated marketing copy appears multiple times on the page.')
+  }
+
+  if ((templateDebtSignals || []).length >= 1) {
+    score -= 16
+    problems.push('Template/demo residue is still visible (unfinished footer or placeholder content).')
   }
 
   return { score: clamp(score), notes: [...notes, ...strengths, ...problems], strengths, problems }
@@ -193,7 +223,7 @@ function scoreReadability(ctx) {
     visualVerified,
   } = ctx
   const tolerance = readabilityTolerance(businessModel)
-  let score = visualVerified ? 74 : 60
+  let score = visualVerified ? 58 : 48
   const notes = []
   const strengths = []
   const problems = []
@@ -292,37 +322,47 @@ function scoreReadability(ctx) {
 }
 
 function scoreVisualHierarchy(ctx) {
-  const { heroHeading, h2Count, sectionCount, headingLevels } = ctx
-  let score = 38
+  const { heroHeading, h2Count, sectionCount, headingLevels, contentH2Count } = ctx
+  let score = 34
   const notes = []
+  const problems = []
 
   const hasHero = Boolean(heroHeading?.has_hero_heading)
   const hasH1 = Boolean(heroHeading?.has_h1)
   const heroAboveFold = Boolean(heroHeading?.hero_heading_above_fold)
+  const meaningfulH2 = contentH2Count ?? h2Count
 
-  if (hasHero || hasH1) score += 22
-  else notes.push('Missing clear hero heading — page purpose is harder to grasp.')
-
-  if (heroAboveFold) score += 14
-  if (h2Count >= 2) {
-    score += 14
-    notes.push('Section headings (H2) create a clear content structure.')
-  } else if (h2Count === 1) {
-    score += 6
+  if (hasHero && heroAboveFold) score += 24
+  else if (hasHero || hasH1) score += 14
+  else {
+    score -= 12
+    problems.push('Missing clear hero heading — page purpose is harder to grasp.')
   }
 
-  if (sectionCount >= 4) score += 12
-  else if (sectionCount >= 2) score += 6
-  else if (sectionCount === 0) score -= 6
+  if (heroAboveFold) score += 10
+  if (meaningfulH2 >= 2) {
+    score += 12
+    notes.push('Section headings (H2) create a clear content structure.')
+  } else if (meaningfulH2 === 1) {
+    score += 4
+  } else if (!hasHero) {
+    score -= 6
+    problems.push('Few section headings — content is hard to scan.')
+  }
 
-  if (headingLevels >= 3) score += 8
+  const effectiveSections = Math.min(sectionCount || 0, 5)
+  if (effectiveSections >= 4) score += 10
+  else if (effectiveSections >= 2) score += 5
+  else if (effectiveSections === 0 && !hasHero) score -= 8
+
+  if (headingLevels >= 3 && meaningfulH2 >= 1) score += 6
 
   if (heroHeading?.semantic_h1_missing) {
     score -= 3
     notes.push('Visual hierarchy is clear, but semantic H1 markup may be missing.')
   }
 
-  return { score: clamp(score), notes }
+  return { score: clamp(score), notes: [...notes, ...problems], problems }
 }
 
 function scoreImageQuality(ctx) {
@@ -334,6 +374,7 @@ function scoreImageQuality(ctx) {
     imagesWithAlt,
     layoutFittedImageCount,
     misalignedImageCount,
+    productGridImageCount,
     portfolioSignals,
   } = ctx
   const model = resolveCanonicalBusinessModel(businessModel) || businessModel
@@ -350,27 +391,62 @@ function scoreImageQuality(ctx) {
     score = isContent ? 28 : isService ? 35 : 22
     problems.push('Very few images detected — page may feel text-only.')
   } else if (imageCount >= 3) {
-    score += 12
-    strengths.push(`${imageCount} images support the visual presentation.`)
+    score += 6
+    strengths.push(`${imageCount} images detected on the page.`)
   }
 
-  if (aboveFoldImageCount >= 2) score += 10
-  if (heroImagePresent) score += 8
+  const layoutFitRatio =
+    imageCount > 0 ? layoutFittedImageCount / imageCount : layoutFittedImageCount > 0 ? 1 : 0
+  const misalignRatio = imageCount > 0 ? misalignedImageCount / imageCount : 0
+  const catalogImages = Math.max(productGridImageCount || 0, layoutFittedImageCount)
 
-  if (layoutFittedImageCount >= 2) {
-    score += 12
-    strengths.push(`${layoutFittedImageCount} images fit the page layout cleanly.`)
-  } else if (imageCount >= 3 && layoutFittedImageCount === 0) {
-    score -= 8
-    problems.push('Images are present but few appear well-fitted to the layout.')
+  if (isEcommerce && imageCount >= 20) {
+    if (catalogImages >= 10) {
+      score += 20
+      strengths.push('Rich product/catalog imagery supports shopping and discovery.')
+    } else if (catalogImages >= 6) {
+      score += 14
+      strengths.push('Product imagery is present across the catalog.')
+    }
+    if (misalignedImageCount <= 4 && catalogImages >= 8) {
+      score += 8
+    }
+    if (misalignRatio >= 0.35 && catalogImages < 6) {
+      score -= 12
+      problems.push('Catalog images look inconsistently cropped or placed.')
+    } else if (misalignedImageCount >= 6 && catalogImages < 8) {
+      score -= 8
+      problems.push(`${misalignedImageCount} product images look awkwardly placed.`)
+    }
+  } else {
+    if (layoutFittedImageCount >= 2 && layoutFitRatio >= 0.45) {
+      score += 14
+      strengths.push(`${layoutFittedImageCount} images fit the page layout cleanly.`)
+    } else if (imageCount >= 3 && layoutFittedImageCount === 0) {
+      score -= 18
+      problems.push('Images are present but none appear well-fitted to the layout.')
+    } else if (imageCount >= 2 && layoutFitRatio < 0.3) {
+      score -= 14
+      problems.push('Most images do not appear aligned with the page layout.')
+    }
+
+    if (misalignedImageCount >= 3 || misalignRatio >= 0.4) {
+      score -= 18
+      problems.push(
+        `${misalignedImageCount} images look misaligned, awkwardly cropped, or poorly placed for their containers.`,
+      )
+    } else if (misalignedImageCount >= 1) {
+      score -= 8
+      problems.push(`${misalignedImageCount} image(s) look misaligned or poorly sized.`)
+    }
   }
 
-  if (misalignedImageCount >= 3) {
-    score -= 12
-    problems.push(`${misalignedImageCount} images look misaligned or poorly sized for their containers.`)
-  } else if (misalignedImageCount === 1 || misalignedImageCount === 2) {
-    score -= 4
+  if (aboveFoldImageCount >= 2 && layoutFitRatio >= 0.4) score += 8
+  else if (aboveFoldImageCount >= 2 && layoutFitRatio < 0.25) {
+    score -= 6
+    problems.push('Above-fold images look poorly integrated into the layout.')
   }
+  if (heroImagePresent && layoutFitRatio >= 0.35) score += 6
 
   if (imagesWithAlt >= 2) score += 6
 
@@ -394,6 +470,7 @@ function scoreImageQuality(ctx) {
 
 function scoreLayoutBalance(ctx) {
   const {
+    businessModel,
     desktopOverflow,
     mobileOverflow,
     mobileOverflowSeverity,
@@ -404,63 +481,125 @@ function scoreLayoutBalance(ctx) {
     heroImagePresent,
     avgParagraphLength,
     aboveFoldElementCount,
+    layoutFittedImageCount,
+    misalignedImageCount,
+    imageCount,
+    productGridImageCount,
+    conversionPathScore,
   } = ctx
-  let score = 72
+  const model = resolveCanonicalBusinessModel(businessModel) || businessModel
+  const isEcommerce = ECOMMERCE_MODELS.has(model)
+  let score = 48
   const notes = []
   const strengths = []
   const problems = []
   const evidence = []
 
+  const effectiveSections = Math.min(sectionCount || 0, 6)
+  const layoutFitRatio =
+    imageCount > 0 ? layoutFittedImageCount / imageCount : layoutFittedImageCount > 0 ? 1 : 0
+
   if (mobileOverflowSeverity === 'major' || mobileOverflow) {
-    score -= 30
+    score -= 32
     problems.push('Mobile layout overflow detected: content width exceeds viewport.')
     evidence.push({ type: 'overflow', viewport: 'mobile', severity: mobileOverflowSeverity || 'major' })
   } else if (mobileOverflowSeverity === 'minor') {
-    score -= 10
+    score -= 12
     problems.push('Minor mobile horizontal overflow detected.')
     evidence.push({ type: 'overflow', viewport: 'mobile', severity: 'minor' })
   }
 
   if (desktopOverflowSeverity === 'major' || desktopOverflow) {
-    score -= 16
+    score -= 18
     problems.push('Desktop layout overflow detected.')
     evidence.push({ type: 'overflow', viewport: 'desktop', severity: desktopOverflowSeverity || 'major' })
   } else if (desktopOverflowSeverity === 'minor') {
-    score -= 5
+    score -= 6
   }
 
-  if (ctaSpamCount >= 5) {
-    score -= 14
+  if (ctaSpamCount >= 4) {
+    score -= 16
     problems.push('Too many competing CTAs crowd the above-fold layout.')
     evidence.push({ type: 'cta_crowding', count: ctaSpamCount })
+  } else if (ctaSpamCount >= 3) {
+    score -= 8
+    problems.push('Multiple competing CTAs above the fold may confuse visitors.')
   }
 
-  if (textDensity > 0.0035 && sectionCount < 2) {
-    score -= 12
+  if (textDensity > 0.0035 && effectiveSections < 2) {
+    score -= 14
     problems.push('Above-fold area feels crowded without clear section separation.')
   }
 
-  if (sectionCount >= 3) {
-    score += 14
-    strengths.push('Clear sections organize the page layout.')
-    evidence.push({ type: 'sections', count: sectionCount })
-  } else if (sectionCount >= 2) {
-    score += 8
-    strengths.push('Page content is grouped into distinct sections.')
+  if (imageCount >= 3 && layoutFitRatio < 0.3 && !isEcommerce) {
+    score -= 16
+    problems.push('Images look scattered or poorly placed relative to the layout grid.')
+    evidence.push({ type: 'image_layout_fit', ratio: layoutFitRatio })
+  } else if (!isEcommerce && imageCount >= 2 && misalignedImageCount >= 2) {
+    score -= 12
+    problems.push('Multiple images appear misaligned with surrounding content blocks.')
+  } else if (isEcommerce && misalignedImageCount >= 8 && productGridImageCount < 4) {
+    score -= 10
+    problems.push('Catalog layout looks inconsistent across product tiles.')
   }
 
-  if (heroImagePresent && sectionCount >= 2) {
+  if (conversionPathScore != null && conversionPathScore < 42 && !isEcommerce) {
+    score -= 10
+    problems.push('Layout does not guide visitors toward a clear next step.')
+  }
+
+  if ((ctx.templateDebtSignals || []).length >= 1) {
+    score -= 24
+    problems.push('Unfinished template-builder layout (demo footer/placeholder content) hurts polish.')
+    evidence.push({ type: 'template_debt', signals: ctx.templateDebtSignals })
+  }
+
+  if ((ctx.duplicateCopyCount || 0) >= 1 && !isEcommerce) {
+    score -= 14
+    problems.push('Repeated copy blocks make the layout feel low-effort and hard to scan.')
+  }
+
+  if (isEcommerce && productGridImageCount >= 8) {
+    score += 18
+    strengths.push('Structured product grid gives shoppers a clear, scannable layout.')
+    evidence.push({ type: 'product_grid', count: productGridImageCount })
+  } else if (isEcommerce && productGridImageCount >= 4) {
+    score += 10
+    strengths.push('Product tiles organize the page into a browsable catalog layout.')
+  }
+
+  if (isEcommerce && ctx.hasStructuredHeader && (ctx.primaryNavLinkCount || 0) >= 2) {
+    score += 8
+    strengths.push('Store header and navigation establish a clear shopping structure.')
+  }
+
+  if (effectiveSections >= 4) {
+    score += 12
+    strengths.push('Clear sections organize the page layout.')
+    evidence.push({ type: 'sections', count: effectiveSections })
+  } else if (effectiveSections >= 2) {
+    score += 6
+    strengths.push('Page content is grouped into distinct sections.')
+  } else if (!isEcommerce) {
+    score -= 6
+    problems.push('Page lacks clear section structure.')
+  }
+
+  if (heroImagePresent && effectiveSections >= 2 && layoutFitRatio >= 0.35) {
     score += 6
     strengths.push('Balanced image and text composition in the layout.')
   }
 
-  if (avgParagraphLength > 0 && avgParagraphLength < 280 && sectionCount >= 2) {
-    score += 6
+  if (avgParagraphLength > 0 && avgParagraphLength < 280 && effectiveSections >= 2) {
+    score += 4
     strengths.push('Spacing and block length keep the layout readable.')
   }
 
-  if (aboveFoldElementCount >= 8 && aboveFoldElementCount <= 28) {
-    score += 4
+  if (aboveFoldElementCount > 32) {
+    score -= 8
+    problems.push('Above-fold area looks visually crowded.')
+  } else if (aboveFoldElementCount >= 8 && aboveFoldElementCount <= 24 && effectiveSections >= 2) {
+    score += 3
     strengths.push('Above-fold structure looks organized without feeling empty.')
   }
 
@@ -557,11 +696,28 @@ function scoreConversionPath(ctx) {
     notes.push('No clear contact, booking, or purchase path was found.')
   }
 
+  if ((ctx.templateDebtSignals || []).length >= 1) {
+    score = Math.min(score, 68)
+  }
+  if ((ctx.duplicateCopyCount || 0) >= 1) {
+    score = Math.min(score, 64)
+  }
+
   return { score: clamp(score), notes }
 }
 
 function scoreTrustVisual(ctx) {
-  const { reviewIndicators, contactVisible, policySignals, socialCount, contrastScore, hasStructuredHeader, outdatedSignals } = ctx
+  const {
+    reviewIndicators,
+    contactVisible,
+    policySignals,
+    socialCount,
+    contrastScore,
+    hasStructuredHeader,
+    outdatedSignals,
+    templateDebtSignals,
+    duplicateCopyCount,
+  } = ctx
   let score = 42
   const notes = []
 
@@ -581,6 +737,14 @@ function scoreTrustVisual(ctx) {
   if (outdatedSignals) {
     score -= 12
     notes.push('Layout signals suggest an outdated or unpolished design.')
+  }
+  if ((templateDebtSignals || []).length >= 1) {
+    score -= 20
+    notes.push('Placeholder or template-builder residue reduces perceived polish.')
+  }
+  if ((duplicateCopyCount || 0) >= 2) {
+    score -= 10
+    notes.push('Duplicate copy makes the site feel unfinished or low-effort.')
   }
 
   return { score: clamp(score), notes }
@@ -617,6 +781,57 @@ function classifyCtaQuality(text, businessModel) {
   return 'medium'
 }
 
+function calibrateFinalVisualScore(visualScore, components, ctx) {
+  let score = visualScore
+  const layout = components.layout_balance_score?.score ?? 50
+  const images = components.image_quality_score?.score ?? 50
+  const conversion = components.conversion_path_score?.score ?? 50
+  const hierarchy = components.visual_hierarchy_score?.score ?? 50
+  const imageCount = ctx.imageCount || 0
+  const fit = ctx.layoutFittedImageCount || 0
+  const misaligned = ctx.misalignedImageCount || 0
+  const fitRatio = imageCount > 0 ? fit / imageCount : 1
+  const misalignRatio = imageCount > 0 ? misaligned / imageCount : 0
+  const model = resolveCanonicalBusinessModel(ctx.businessModel) || ctx.businessModel
+  const isEcommerce = ECOMMERCE_MODELS.has(model)
+  const hasClearCatalogLayout = isEcommerce && (ctx.productGridImageCount || 0) >= 8 && !ctx.mobileOverflow
+  const hasTemplateDebt = (ctx.templateDebtSignals || []).length >= 1
+
+  if (ctx.visualVerified) {
+    score += 10
+  }
+
+  if (hasClearCatalogLayout) {
+    score += 6
+    score = Math.max(score, 78)
+  } else if (isEcommerce && (ctx.productGridImageCount || 0) >= 4) {
+    score = Math.max(score, 72)
+  }
+
+  if (hasTemplateDebt) {
+    score = Math.min(score, 54)
+  } else if ((ctx.duplicateCopyCount || 0) >= 2 && !isEcommerce) {
+    score = Math.min(score, 58)
+  }
+
+  if (!isEcommerce) {
+    if (misalignRatio >= 0.35 && imageCount >= 3) score = Math.min(score, 68)
+    if (fitRatio < 0.25 && imageCount >= 4) score = Math.min(score, 62)
+    if (hasTemplateDebt) score = Math.min(score, 52)
+  }
+
+  if (layout < 45 && !hasClearCatalogLayout) {
+    score = Math.min(score, Math.max(55, layout + 18))
+  }
+  if (conversion < 40 && !isEcommerce) score = Math.min(score, 72)
+  if (hierarchy < 45 && !hasClearCatalogLayout) score = Math.min(score, 74)
+
+  const weakComponents = [layout, images, conversion, hierarchy].filter((value) => value < 50).length
+  if (weakComponents >= 3 && !isEcommerce) score = Math.min(score, 56)
+
+  return clamp(score)
+}
+
 function buildVisualUxScore(input = {}) {
   const {
     businessModel: rawBusinessModel = 'ecommerce_store',
@@ -650,8 +865,10 @@ function buildVisualUxScore(input = {}) {
   const h1 = headings.find((h) => h.tag === 'h1')
   const h1AboveFold = headings.some((h) => h.tag === 'h1' && h.above_fold)
   const h1Text = h1?.text || crawler.h1Text || ''
-  const h2Count = headings.filter((h) => h.tag === 'h2').length
-  const headingLevels = new Set(headings.map((h) => h.tag)).size
+  const contentHeadings = headings.filter((h) => !h.in_chrome)
+  const h2Count = contentHeadings.filter((h) => h.tag === 'h2').length
+  const contentH2Count = h2Count
+  const headingLevels = new Set(contentHeadings.map((h) => h.tag)).size
 
   const heroHeading = mergeHeroHeadingSignals({
     visualAudit,
@@ -678,7 +895,7 @@ function buildVisualUxScore(input = {}) {
   )
 
   const ctaRaw = [...(dm.cta_elements || []), ...(mm.cta_elements || [])]
-  const ctaAboveFold = ctaRaw.filter((c) => c.above_fold)
+  const ctaAboveFold = ctaRaw.filter((c) => c.above_fold && !c.is_promo)
   const ctaSpamCount = ctaAboveFold.length
   const ctaElements = ctaRaw.map((c) => ({
     text: c.text || '',
@@ -705,7 +922,9 @@ function buildVisualUxScore(input = {}) {
   const aboveFoldTextLength = dm.above_fold_text_length || mm.above_fold_text_length || crawler.aboveFoldTextLength || 0
   const maxAboveFoldBlock = dm.max_above_fold_text_block || mm.max_above_fold_text_block || maxTextBlockLength
 
-  const sectionCount = Math.max(dm.section_count || 0, mm.section_count || 0, crawler.sectionCount || 0)
+  const sectionCount = visualAuditOk
+    ? Math.max(dm.section_count || 0, mm.section_count || 0)
+    : Math.min(crawler.homepageSectionEstimate || 0, 3)
   const imageCount = Math.max(summary.image_count || 0, dm.image_count || 0, crawler.imageCount || 0)
   const aboveFoldImageCount = Math.max(summary.above_fold_image_count || 0, dm.above_fold_image_count || 0)
   const heroImagePresent = Boolean(summary.hero_image_present || dm.hero_image_present)
@@ -715,6 +934,19 @@ function buildVisualUxScore(input = {}) {
     (dm.layout_images || mm.layout_images || []).length,
   )
   const misalignedImageCount = Math.max(dm.misaligned_image_count || 0, mm.misaligned_image_count || 0)
+  const productGridImageCount = Math.max(
+    summary.product_grid_image_count || 0,
+    dm.product_grid_image_count || 0,
+    mm.product_grid_image_count || 0,
+  )
+  const templateDebtSignals = [
+    ...new Set([...(summary.template_debt_signals || []), ...(dm.template_debt_signals || []), ...(mm.template_debt_signals || [])]),
+  ]
+  const duplicateCopyCount = Math.max(
+    summary.duplicate_copy_count || 0,
+    dm.duplicate_copy_count || 0,
+    mm.duplicate_copy_count || 0,
+  )
   const imagesWithAlt = dm.images_with_alt_count || mm.images_with_alt_count || 0
   const bulletCount = Math.max(dm.bullet_count || 0, mm.bullet_count || 0)
   const headingToBodyRatio = dm.heading_to_body_ratio || mm.heading_to_body_ratio || 0
@@ -747,8 +979,9 @@ function buildVisualUxScore(input = {}) {
     maxTextBlockLength,
     textDensity,
     mobileTextDensity,
-    headingCount: headings.length,
+    headingCount: contentHeadings.length,
     h2Count,
+    contentH2Count,
     sectionCount,
     headingLevels,
     bulletCount,
@@ -761,6 +994,9 @@ function buildVisualUxScore(input = {}) {
     imagesWithAlt,
     layoutFittedImageCount,
     misalignedImageCount,
+    productGridImageCount,
+    templateDebtSignals,
+    duplicateCopyCount,
     portfolioSignals: signals.has_gallery || /portfolio|gallery|project/i.test(String(crawler.pageText || '')),
     desktopOverflow: Boolean(summary.horizontal_overflow_desktop || dm.horizontal_overflow),
     mobileOverflow: Boolean(summary.horizontal_overflow_mobile || mm.horizontal_overflow),
@@ -781,14 +1017,18 @@ function buildVisualUxScore(input = {}) {
     outdatedSignals: !hasStructuredHeader && navLinkCount < 2 && !heroImagePresent && avgParagraphLength > 300,
   }
 
+  const conversionPathScore = scoreConversionPath(ctx)
   const components = {
     navbar_score: scoreNavbar(ctx),
     hero_score: scoreHero(ctx),
     readability_score: scoreReadability(ctx),
     visual_hierarchy_score: scoreVisualHierarchy(ctx),
     image_quality_score: scoreImageQuality(ctx),
-    layout_balance_score: scoreLayoutBalance(ctx),
-    conversion_path_score: scoreConversionPath(ctx),
+    conversion_path_score: conversionPathScore,
+    layout_balance_score: scoreLayoutBalance({
+      ...ctx,
+      conversionPathScore: conversionPathScore.score,
+    }),
     trust_visual_score: scoreTrustVisual(ctx),
   }
 
@@ -796,7 +1036,7 @@ function buildVisualUxScore(input = {}) {
   for (const [key, weight] of Object.entries(COMPONENT_WEIGHTS)) {
     visualScore += (components[key]?.score ?? missingDefault(avgConfidence)) * weight
   }
-  visualScore = clamp(visualScore)
+  visualScore = calibrateFinalVisualScore(visualScore, components, ctx)
 
   const componentScores = {}
   const componentNotes = {}
@@ -904,4 +1144,5 @@ module.exports = {
   scoreReadability,
   scoreConversionPath,
   scoreLayoutBalance,
+  calibrateFinalVisualScore,
 }

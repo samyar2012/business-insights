@@ -1,8 +1,9 @@
 const { validatePublicUrl } = require('./crawler/urlSecurity')
-const { DEFAULT_UA } = require('./crawler/crawlerConfig')
+const { DEFAULT_UA, BROWSER_UA } = require('./crawler/crawlerConfig')
 
 const DESKTOP_VIEWPORT = { width: 1280, height: 800 }
 const MOBILE_VIEWPORT = { width: 390, height: 844 }
+const DEFAULT_MOBILE_DEVICE = process.env.VISUAL_AUDIT_MOBILE_DEVICE || 'iPhone 13'
 const AUDIT_TIMEOUT_MS = Number(process.env.VISUAL_AUDIT_TIMEOUT_MS || 25000)
 const AUDIT_SETTLE_MS = Number(process.env.VISUAL_AUDIT_SETTLE_MS || 1500)
 const CTA_PATTERN =
@@ -51,12 +52,32 @@ function parseRgb(color) {
   return { r: Number(match[1]), g: Number(match[2]), b: Number(match[3]) }
 }
 
-async function collectViewportMetrics(page, viewport) {
-  await page.setViewportSize(viewport)
-  await new Promise((resolve) => setTimeout(resolve, 400))
+function resolveMobileDeviceConfig(deviceName = DEFAULT_MOBILE_DEVICE) {
+  const { devices } = require('playwright')
+  const device = devices[deviceName]
+  if (!device) {
+    const err = new Error(`Unknown Playwright mobile device: ${deviceName}`)
+    err.code = 'UNKNOWN_MOBILE_DEVICE'
+    throw err
+  }
+  return { name: deviceName, device }
+}
 
-  return page.evaluate(
-    ({ viewportHeight, ctaPatternSource }) => {
+async function navigateAuditPage(page, url) {
+  await page.goto(url, {
+    timeout: AUDIT_TIMEOUT_MS,
+    waitUntil: 'domcontentloaded',
+  })
+  await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {})
+  await new Promise((resolve) => setTimeout(resolve, AUDIT_SETTLE_MS))
+}
+
+async function collectViewportMetrics(page, meta = {}) {
+  const viewportSize = page.viewportSize() || DESKTOP_VIEWPORT
+  await new Promise((resolve) => setTimeout(resolve, meta.settleMs ?? 400))
+
+  const metrics = await page.evaluate(
+    ({ ctaPatternSource }) => {
       const ctaPattern = new RegExp(ctaPatternSource, 'i')
       const doc = document.documentElement
       const body = document.body
@@ -172,12 +193,18 @@ async function collectViewportMetrics(page, viewport) {
       ;['h1', 'h2', 'h3', 'h4'].forEach((tag) => {
         document.querySelectorAll(tag).forEach((el) => {
           if (!isVisible(el)) return
+          const inChrome = Boolean(
+            el.closest(
+              'nav, footer, [role="navigation"], header [class*="menu" i], [class*="drawer" i], [class*="mega" i], [class*="dropdown" i]',
+            ),
+          )
           const rect = el.getBoundingClientRect()
           headings.push({
             tag,
             text: (el.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 120),
             top: Math.round(rect.top),
             above_fold: rect.top < viewportH && rect.bottom > 0,
+            in_chrome: inChrome,
           })
         })
       })
@@ -191,16 +218,37 @@ async function collectViewportMetrics(page, viewport) {
           .trim()
           .slice(0, 120)
         const aria = el.getAttribute('aria-label') || ''
+        const inPromoBar = Boolean(
+          el.closest('[class*="announcement" i], [class*="promo" i], [class*="marquee" i], [class*="slideshow" i]'),
+        )
         clickable.push({
           tag: el.tagName.toLowerCase(),
           text,
           top: Math.round(rect.top),
           above_fold: rect.top < viewportH && rect.bottom > 0,
           is_cta: ctaPattern.test(text) || ctaPattern.test(aria),
+          is_promo: inPromoBar,
         })
       })
 
       const ctaElements = clickable.filter((item) => item.is_cta && item.text.length > 1)
+
+      const bodyText = (body?.innerText || '').replace(/\s+/g, ' ').trim()
+      const templateDebtSignals = []
+      if (/made with squarespace/i.test(bodyText)) templateDebtSignals.push('squarespace_template_footer')
+      if (/123 demo st|\(555\)555-5555|555-555-5555/i.test(bodyText)) {
+        templateDebtSignals.push('placeholder_demo_contact')
+      }
+      if (/lorem ipsum/i.test(bodyText)) templateDebtSignals.push('lorem_ipsum')
+      const sentences = bodyText
+        .split(/[.!?]+/)
+        .map((part) => part.trim().toLowerCase())
+        .filter((part) => part.length > 42)
+      const sentenceCounts = {}
+      for (const sentence of sentences) {
+        sentenceCounts[sentence] = (sentenceCounts[sentence] || 0) + 1
+      }
+      const duplicateCopyCount = Object.values(sentenceCounts).filter((count) => count >= 2).length
 
       const iconElements = []
       document
@@ -292,9 +340,9 @@ async function collectViewportMetrics(page, viewport) {
         if (text.length > maxAboveFoldTextBlock) maxAboveFoldTextBlock = text.length
       })
 
-      const sectionCount = [...document.querySelectorAll('section, article, main > div, [class*="section"]')].filter(
-        (el) => isVisible(el) && (el.innerText || '').trim().length > 60,
-      ).length
+      const sectionCount = [
+        ...document.querySelectorAll('main section, main article, [role="main"] section, [role="main"] article'),
+      ].filter((el) => isVisible(el) && (el.innerText || '').trim().length > 60).length
 
       const qualityImages = []
       const layoutImages = []
@@ -317,8 +365,15 @@ async function collectViewportMetrics(page, viewport) {
           parent &&
           (rect.width > parentRect.width * 1.15 || rect.height > parentRect.height * 1.25)
         const extremeAspect = aspect > 0 && (aspect < 0.2 || aspect > 5)
+        const inProductGrid = Boolean(
+          el.closest(
+            '[class*="product" i], [class*="card" i], [data-product-id], [data-product], .product-card, .grid__item, [class*="collection-grid" i], [class*="product-grid" i], [class*="product-item" i], .card__media, .product-media, li[class*="grid" i]',
+          ),
+        )
+        const isCatalogImage = inProductGrid && rect.width >= 48 && rect.height >= 48
         const layoutFits =
           isDecorativeIcon ||
+          (isCatalogImage && !extremeAspect && !overflowsParent) ||
           (inMain &&
             rect.width >= 80 &&
             rect.height >= 60 &&
@@ -333,8 +388,15 @@ async function collectViewportMetrics(page, viewport) {
             above_fold: rect.top < viewportH && rect.bottom > 0,
             has_alt: alt.length > 2,
             decorative: isDecorativeIcon,
+            in_product_grid: isCatalogImage,
           })
-        } else if (!isDecorativeIcon && inMain && rect.width >= 40 && rect.height >= 40) {
+        } else if (
+          !isDecorativeIcon &&
+          !isCatalogImage &&
+          inMain &&
+          rect.width >= 40 &&
+          rect.height >= 40
+        ) {
           misalignedImageCount += 1
         }
 
@@ -467,7 +529,6 @@ async function collectViewportMetrics(page, viewport) {
         foldArea > 0 ? Number((mobileFoldText / foldArea).toFixed(6)) : 0
 
       return {
-        viewport,
         page_height: pageHeight,
         scroll_depth_ratio: viewportH > 0 ? pageHeight / viewportH : 0,
         horizontal_overflow: horizontalOverflow,
@@ -506,6 +567,7 @@ async function collectViewportMetrics(page, viewport) {
         quality_images: qualityImages.slice(0, 20),
         layout_images: layoutImages.slice(0, 20),
         layout_fitted_image_count: layoutImages.length,
+        product_grid_image_count: layoutImages.filter((img) => img.in_product_grid).length,
         misaligned_image_count: misalignedImageCount,
         images_with_alt_count: imagesWithAltCount,
         font_size_stats: fontSizeStats,
@@ -518,10 +580,19 @@ async function collectViewportMetrics(page, viewport) {
         bullet_count: bulletCount,
         heading_to_body_ratio:
           visibleTextLength > 0 ? Number((headings.length / Math.max(1, visibleTextLength / 200)).toFixed(3)) : 0,
+        template_debt_signals: templateDebtSignals,
+        duplicate_copy_count: duplicateCopyCount,
       }
     },
-    { viewportHeight: viewport.height, ctaPatternSource: CTA_PATTERN.source },
+    { ctaPatternSource: CTA_PATTERN.source },
   )
+
+  return {
+    ...metrics,
+    viewport: viewportSize,
+    emulation_mode: meta.emulationMode || 'unknown',
+    device_name: meta.deviceName || null,
+  }
 }
 
 function scoreContrastSamples(samples = []) {
@@ -596,23 +667,53 @@ async function runVisualAudit(url, options = {}) {
 
   try {
     browser = await chromium.launch({ headless: true })
-    const context = await browser.newContext({
-      userAgent: options.userAgent || DEFAULT_UA,
+
+    const desktopContext = await browser.newContext({
+      userAgent: options.userAgent || options.browserUserAgent || BROWSER_UA,
       viewport: DESKTOP_VIEWPORT,
+      deviceScaleFactor: 1,
+      isMobile: false,
+      hasTouch: false,
+      locale: 'en-US',
     })
-    const page = await context.newPage()
+    const desktopPage = await desktopContext.newPage()
+    await navigateAuditPage(desktopPage, parsed.href)
 
-    await page.goto(parsed.href, {
-      timeout: AUDIT_TIMEOUT_MS,
-      waitUntil: 'domcontentloaded',
+    const desktopMetrics = await collectViewportMetrics(desktopPage, {
+      emulationMode: 'desktop',
     })
-    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {})
-    await new Promise((resolve) => setTimeout(resolve, AUDIT_SETTLE_MS))
+    const desktopScreenshot = await captureScreenshot(desktopPage)
+    const finalUrl = desktopPage.url()
 
-    const desktopMetrics = await collectViewportMetrics(page, DESKTOP_VIEWPORT)
-    const desktopScreenshot = await captureScreenshot(page)
-    const mobileMetrics = await collectViewportMetrics(page, MOBILE_VIEWPORT)
-    const mobileScreenshot = await captureScreenshot(page)
+    const mobileDeviceName = options.mobileDevice || DEFAULT_MOBILE_DEVICE
+    let mobileMetrics
+    let mobileScreenshot
+    let mobileDeviceLabel = mobileDeviceName
+
+    try {
+      const { name, device } = resolveMobileDeviceConfig(mobileDeviceName)
+      mobileDeviceLabel = name
+      const mobileContext = await browser.newContext({
+        ...device,
+        locale: 'en-US',
+      })
+      try {
+        const mobilePage = await mobileContext.newPage()
+        await navigateAuditPage(mobilePage, finalUrl)
+        mobileMetrics = await collectViewportMetrics(mobilePage, {
+          emulationMode: 'mobile_device',
+          deviceName: name,
+        })
+        mobileScreenshot = await captureScreenshot(mobilePage)
+      } finally {
+        await mobileContext.close()
+      }
+    } catch (mobileErr) {
+      await desktopContext.close()
+      throw mobileErr
+    }
+
+    await desktopContext.close()
 
     const desktopContrast = scoreContrastSamples(desktopMetrics.contrast_samples)
     const mobileContrast = scoreContrastSamples(mobileMetrics.contrast_samples)
@@ -621,7 +722,7 @@ async function runVisualAudit(url, options = {}) {
       enabled: true,
       ok: true,
       url: parsed.href,
-      final_url: page.url(),
+      final_url: finalUrl,
       captured_at: new Date().toISOString(),
       desktop: {
         screenshot: desktopScreenshot,
@@ -634,6 +735,15 @@ async function runVisualAudit(url, options = {}) {
         contrast: mobileContrast,
       },
       summary: {
+        desktop_emulation: {
+          mode: desktopMetrics.emulation_mode,
+          viewport: desktopMetrics.viewport,
+        },
+        mobile_emulation: {
+          mode: mobileMetrics.emulation_mode,
+          device: mobileMetrics.device_name,
+          viewport: mobileMetrics.viewport,
+        },
         page_height: desktopMetrics.page_height,
         scroll_depth_ratio: desktopMetrics.scroll_depth_ratio,
         desktop_text_density: desktopMetrics.text_density,
@@ -673,6 +783,28 @@ async function runVisualAudit(url, options = {}) {
         above_fold_text_length: Math.max(
           desktopMetrics.above_fold_text_length || 0,
           mobileMetrics.above_fold_text_length || 0,
+        ),
+        layout_fitted_image_count: Math.max(
+          desktopMetrics.layout_fitted_image_count || 0,
+          mobileMetrics.layout_fitted_image_count || 0,
+        ),
+        product_grid_image_count: Math.max(
+          desktopMetrics.product_grid_image_count || 0,
+          mobileMetrics.product_grid_image_count || 0,
+        ),
+        misaligned_image_count: Math.max(
+          desktopMetrics.misaligned_image_count || 0,
+          mobileMetrics.misaligned_image_count || 0,
+        ),
+        template_debt_signals: [
+          ...new Set([
+            ...(desktopMetrics.template_debt_signals || []),
+            ...(mobileMetrics.template_debt_signals || []),
+          ]),
+        ],
+        duplicate_copy_count: Math.max(
+          desktopMetrics.duplicate_copy_count || 0,
+          mobileMetrics.duplicate_copy_count || 0,
         ),
       },
       evidence_snippets: {
@@ -719,8 +851,12 @@ module.exports = {
   isVisualAuditEnabled,
   isPlaywrightAvailable,
   runVisualAudit,
+  collectViewportMetrics,
+  navigateAuditPage,
+  resolveMobileDeviceConfig,
   stripScreenshotsForStorage,
   DESKTOP_VIEWPORT,
   MOBILE_VIEWPORT,
+  DEFAULT_MOBILE_DEVICE,
   CTA_PATTERN,
 }

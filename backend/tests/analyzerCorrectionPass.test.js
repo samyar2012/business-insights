@@ -7,6 +7,7 @@ const {
   scoreReadability,
   scoreLayoutBalance,
   scoreConversionPath,
+  mapVisualScoreToCategoryPoints,
 } = require('../services/uxVisualScorer')
 const { interpretBenchmarkLevel, humanEquivalentFromOverall } = require('../services/analyzerV2/benchmarkInterpreter')
 const { getBenchmarkLevel, buildGaps } = require('../services/websiteBenchmarkService')
@@ -213,9 +214,85 @@ describe('business model scoring expectations', () => {
       heroImagePresent: true,
       avgParagraphLength: 180,
       aboveFoldElementCount: 14,
+      layoutFittedImageCount: 4,
+      misalignedImageCount: 0,
+      imageCount: 6,
+      conversionPathScore: 72,
     })
-    assert.ok(result.score >= 80)
+    assert.ok(result.score >= 68)
     assert.ok((result.strengths || []).length >= 2)
+  })
+
+  it('messy layout with misaligned images scores lower than a polished site', () => {
+    const { buildVisualUxScore } = require('../services/uxVisualScorer')
+    const messy = buildVisualUxScore({
+      businessModel: 'ecommerce_store',
+      visualAuditOk: true,
+      summary: {
+        nav_link_count: 18,
+        primary_nav_link_count: 8,
+        image_count: 12,
+        hero_image_present: true,
+        desktop_text_density: 0.003,
+      },
+      desktop: {
+        metrics: {
+          nav_link_count: 18,
+          primary_nav_link_count: 8,
+          section_count: 2,
+          image_count: 12,
+          layout_fitted_image_count: 1,
+          misaligned_image_count: 7,
+          headings: [{ tag: 'h2', text: 'Sale', above_fold: true, in_chrome: true }],
+          cta_elements: Array.from({ length: 5 }, () => ({ text: 'Shop Now', above_fold: true })),
+        },
+      },
+      mobile: { metrics: { horizontal_overflow: true, overflow_severity: 'major', section_count: 1 } },
+      signals: { has_add_to_cart: false },
+      aggregated: {},
+      crawler: { homepageSectionEstimate: 0, sectionCount: 0 },
+      pages: Array.from({ length: 6 }, (_, i) => ({
+        page_type: i === 0 ? 'homepage' : 'other',
+        extracted_text: 'x'.repeat(400),
+      })),
+    })
+    const polished = buildVisualUxScore({
+      businessModel: 'ecommerce_store',
+      visualAuditOk: true,
+      summary: {
+        nav_link_count: 5,
+        primary_nav_link_count: 5,
+        image_count: 10,
+        hero_image_present: true,
+        desktop_text_density: 0.0012,
+      },
+      desktop: {
+        metrics: {
+          nav_link_count: 5,
+          primary_nav_link_count: 5,
+          section_count: 4,
+          image_count: 10,
+          layout_fitted_image_count: 8,
+          misaligned_image_count: 0,
+          headings: [
+            { tag: 'h1', text: 'Premium Curtains', above_fold: true, in_chrome: false },
+            { tag: 'h2', text: 'Best Sellers', above_fold: false, in_chrome: false },
+          ],
+          cta_elements: [{ text: 'Shop collection', above_fold: true }],
+        },
+        contrast: { median_ratio: 4.6 },
+      },
+      mobile: { metrics: { horizontal_overflow: false, overflow_severity: 'none', section_count: 4 } },
+      signals: { has_add_to_cart: true },
+      aggregated: { trust_signals: { review_indicators: true } },
+      crawler: { homepageSectionEstimate: 3, sectionCount: 0 },
+      pages: [{ page_type: 'homepage', extracted_text: 'Shop curtains. Add to cart.' }],
+    })
+
+    assert.ok(messy.visual_score < polished.visual_score)
+    assert.ok(messy.visual_score <= 72)
+    assert.ok(polished.visual_score >= messy.visual_score + 10)
+    assert.ok(mapVisualScoreToCategoryPoints(polished.visual_score, 25) > mapVisualScoreToCategoryPoints(messy.visual_score, 25))
   })
 })
 
@@ -270,6 +347,8 @@ describe('customer attraction visual downside factors', () => {
       signals: strongSignals,
       rubric: 'local_service_business',
       uxFeatures: {
+        source: 'visual_audit+crawler',
+        ux_confidence: 88,
         visual_score: 48,
         layout_balance_score: 38,
         readability_score: 40,
@@ -300,6 +379,8 @@ describe('customer attraction visual downside factors', () => {
       signals: strongSignals,
       rubric: 'local_service_business',
       uxFeatures: {
+        source: 'visual_audit+crawler',
+        ux_confidence: 85,
         visual_score: 66,
         layout_balance_score: 58,
         readability_score: 62,

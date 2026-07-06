@@ -15,7 +15,7 @@ const {
   buildUxDatasetCsv,
   CSV_COLUMNS,
 } = require('../services/uxDatasetExportService')
-const { isVisualAuditEnabled } = require('../services/visualAuditService')
+const { isVisualAuditEnabled, resolveMobileDeviceConfig } = require('../services/visualAuditService')
 
 const BASE_AGG = {
   content_signals: {
@@ -409,5 +409,22 @@ describe('visualAuditService config gate', () => {
     process.env.VISUAL_AUDIT_ENABLED = 'false'
     assert.equal(isVisualAuditEnabled(), false)
     process.env.VISUAL_AUDIT_ENABLED = original
+  })
+})
+
+describe('visualAuditService mobile emulation', () => {
+  it('resolves a Playwright mobile device profile', () => {
+    if (!require('../services/visualAuditService').isPlaywrightAvailable()) return
+    const { name, device } = resolveMobileDeviceConfig('iPhone 13')
+    assert.equal(name, 'iPhone 13')
+    assert.equal(device.isMobile, true)
+    assert.ok(device.userAgent.includes('iPhone'))
+    assert.ok(device.viewport.width > 0)
+    assert.ok(device.hasTouch)
+  })
+
+  it('throws for unknown mobile device names', () => {
+    if (!require('../services/visualAuditService').isPlaywrightAvailable()) return
+    assert.throws(() => resolveMobileDeviceConfig('Not A Real Phone'), /Unknown Playwright mobile device/)
   })
 })

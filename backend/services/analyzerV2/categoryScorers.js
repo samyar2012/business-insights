@@ -20,6 +20,12 @@ function numOrNull(value) {
 function computeVisitorAppealDownsides(uxFeatures) {
   if (!uxFeatures) return { total: 0, items: [] }
 
+  const visualVerified =
+    uxFeatures.source === 'visual_audit+crawler' || (uxFeatures.ux_confidence ?? 0) >= 70
+  if (!visualVerified) {
+    return { total: 0, items: [] }
+  }
+
   const items = []
   let total = 0
 

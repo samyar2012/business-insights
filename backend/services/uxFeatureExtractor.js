@@ -81,8 +81,21 @@ function collectCrawlerSignals(pages = [], aggregated = {}) {
     navCount: navLabels.length,
     navAboveFold: navLabels.length >= 2,
     pageText,
-    sectionCount: pages.filter((p) => (p.extracted_text || '').length > 200).length,
+    // Never treat crawled page count as on-page section structure (was inflating scores).
+    sectionCount: 0,
+    homepageSectionEstimate: estimateHomepageSections(pages),
   }
+}
+
+function estimateHomepageSections(pages = []) {
+  const home = pages.find((p) => p.page_type === 'homepage') || pages[0]
+  if (!home) return 0
+  const data = pageData(home)
+  const h2 = (data.headings?.h2 || []).length
+  if (h2 >= 2) return Math.min(h2, 4)
+  const text = String(home.extracted_text || '')
+  const blocks = text.split(/\n{2,}/).filter((part) => part.trim().length > 80)
+  return Math.min(blocks.length, 3)
 }
 
 function computeVisitorAppealIndex(components, visualScore) {
