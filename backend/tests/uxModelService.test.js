@@ -93,7 +93,7 @@ describe('uxModelService', () => {
     )
   })
 
-  it('blends deterministic and ML scores using 70/30 weighting', () => {
+  it('blends layout signals and ML scores using 35/65 weighting', () => {
     const merged = mergeUxUiScore(14, {
       predicted_ux_score: 85,
       confidence: 0.42,
@@ -126,9 +126,7 @@ describe('uxModelService', () => {
     assert.equal(result.ux_model.used, true)
     assert.ok(
       result.score_explanation.some((item) =>
-        item.reason.includes(
-          'UX model adjusted the UX/UI score using trained visual-layout patterns.',
-        ),
+        item.reason.includes('UX model blended layout signals'),
       ),
     )
   })
@@ -143,6 +141,7 @@ describe('uxModelService', () => {
     assert.equal(input.navbar_visibility_score, 80)
     assert.equal(input.average_paragraph_length, 180)
     assert.equal(input.ui_score, 74)
+    assert.equal(input.ux_ui_score, 15)
     assert.equal(input.business_model, 'local_service_business')
   })
 

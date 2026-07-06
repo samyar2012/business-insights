@@ -543,7 +543,7 @@ function buildRisks(aggregated, pages, scores = {}) {
   }
   if (scores.safety_status === 'unknown') {
     risks.push(
-      'Live Google Safe Browsing verification is not configured — safety could not be fully verified.',
+      'Some safety signals were missing or inconclusive — HTTPS, homepage reachability, or crawl health may need attention.',
     )
   }
   if (scores.score_caps_applied?.includes('homepage_failure_cap_40')) {

@@ -631,8 +631,32 @@ describe('priorityWebsiteScoring', () => {
           page_classification_hint: 'service',
         },
       },
+      {
+        page_type: 'contact',
+        status_code: 200,
+        final_url: 'https://hvacpro.com/contact',
+        extracted_text: 'Contact HVAC Pro for service in Dallas.',
+        extracted_data_json: {
+          phones: ['(214) 555-0100'],
+          headings: { h1: ['Contact'] },
+          has_mobile_viewport: true,
+          navigation_labels: ['Home', 'Services', 'Contact'],
+        },
+      },
+      {
+        page_type: 'services',
+        status_code: 200,
+        final_url: 'https://hvacpro.com/services',
+        extracted_text: 'AC repair, heating installation, and maintenance plans.',
+        extracted_data_json: {
+          headings: { h1: ['Services'] },
+          has_mobile_viewport: true,
+          navigation_labels: ['Home', 'Services', 'Contact'],
+        },
+      },
     ]
     const aggregated = require('../services/businessProfileLogic').aggregatePages(pages)
+    aggregated.trust_signals = { ...aggregated.trust_signals, https: true }
     const risks = buildRisks(
       aggregated,
       pages,
@@ -642,7 +666,7 @@ describe('priorityWebsiteScoring', () => {
         pages,
         {
           safetyResult: { status: 'safe', configured: true, threats: [], message: 'Safe.' },
-          crawlMeta: { homepage_fetch_ok: true, pages_discovered: 1, pages_crawled: 1, pages_failed: 0 },
+          crawlMeta: { homepage_fetch_ok: true, pages_discovered: 3, pages_crawled: 3, pages_failed: 0 },
         },
       ),
     )

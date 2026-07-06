@@ -250,6 +250,19 @@ function extractUxFeatures({ visualAudit = null, pages = [], aggregated = {} } =
       mobile_text_density_score * 0.03,
   )
 
+  let adjustedOverall = overall_static_ux_score
+  if (!visualAudit?.ok) {
+    adjustedOverall = clampScore(adjustedOverall * 0.88)
+    if (!ctaAboveFold) adjustedOverall = clampScore(adjustedOverall - 6)
+    if (!navAboveFold && crawlerSignals.navCount < 3) {
+      adjustedOverall = clampScore(adjustedOverall - 5)
+    }
+    if (!crawlerSignals.hasMobileViewport) {
+      adjustedOverall = clampScore(adjustedOverall - 8)
+    }
+    adjustedOverall = Math.min(adjustedOverall, 78)
+  }
+
   return {
     source: visualAudit?.ok ? 'visual_audit+crawler' : 'crawler_static',
     desktop_text_density: Number(desktopTextDensity.toFixed(6)),
@@ -269,8 +282,8 @@ function extractUxFeatures({ visualAudit = null, pages = [], aggregated = {} } =
     image_support_score,
     layout_overflow_score,
     contrast_score,
-    ui_score: overall_static_ux_score,
-    overall_static_ux_score,
+    ui_score: adjustedOverall,
+    overall_static_ux_score: adjustedOverall,
     signals: {
       has_mobile_viewport: crawlerSignals.hasMobileViewport,
       horizontal_overflow_desktop: desktopOverflow,

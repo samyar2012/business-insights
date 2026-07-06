@@ -3,8 +3,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const UX_UI_MAX = 20
-const DETERMINISTIC_WEIGHT = 0.7
-const ML_WEIGHT = 0.3
+const DETERMINISTIC_WEIGHT = 0.35
+const ML_WEIGHT = 0.65
 const MODEL_VERSION = 'ux_score_model_v1'
 const DEFAULT_TIMEOUT_MS = Number(process.env.UX_MODEL_TIMEOUT_MS || 8000)
 
@@ -52,15 +52,21 @@ function scoreTextDensity(density) {
   return 35
 }
 
+function featureUxScoreOn20(uxFeatures) {
+  if (uxFeatures?.overall_static_ux_score == null) return null
+  return clamp((uxFeatures.overall_static_ux_score / 100) * UX_UI_MAX)
+}
+
 function buildModelInput({ scores = {}, uxFeatures = {}, business = {} } = {}) {
   const desktopDensity = uxFeatures.desktop_text_density ?? 0
   const mobileDensity = uxFeatures.mobile_text_density ?? 0
+  const layoutUxScore = featureUxScoreOn20(uxFeatures) ?? scores.ux_ui_score ?? 0
 
   return {
     safety_score: scores.safety_score ?? 0,
     functionality_score: scores.functionality_score ?? 0,
-    ux_ui_score: scores.ux_ui_score ?? 0,
-    ui_score: uxFeatures.ui_score ?? uxFeatures.overall_static_ux_score ?? scores.ux_ui_score ?? 0,
+    ux_ui_score: layoutUxScore,
+    ui_score: uxFeatures.ui_score ?? uxFeatures.overall_static_ux_score ?? layoutUxScore,
     business_fit_score: scores.business_fit_score ?? 0,
     customer_attraction_score: scores.customer_attraction_score ?? 0,
     desktop_text_density_score:
@@ -205,7 +211,8 @@ async function predictUxScore(input, options = {}) {
 }
 
 async function applyUxModelLayer(scorePayload, { uxFeatures = {}, business = {} } = {}, options = {}) {
-  const deterministicUxUiScore = scorePayload.ux_ui_score
+  const deterministicUxUiScore =
+    featureUxScoreOn20(uxFeatures) ?? scorePayload.ux_ui_score
 
   if (!isUxModelEnabled()) {
     scorePayload.ux_scoring_mode = scorePayload.ux_scoring_mode || 'deterministic'
@@ -237,7 +244,7 @@ async function applyUxModelLayer(scorePayload, { uxFeatures = {}, business = {} 
     recalculateOverallScore(scorePayload)
     appendUxExplanation(
       scorePayload,
-      'UX model adjusted the UX/UI score using trained visual-layout patterns.',
+      `UX model blended layout signals (${merged.deterministicScore}/${UX_UI_MAX}) with trained predictions (${merged.mlScoreOn20Scale}/${UX_UI_MAX}).`,
       merged.finalScore - merged.deterministicScore,
     )
     return scorePayload
@@ -279,7 +286,7 @@ async function applyUxModelLayer(scorePayload, { uxFeatures = {}, business = {} 
   recalculateOverallScore(scorePayload)
   appendUxExplanation(
     scorePayload,
-    'UX model adjusted the UX/UI score using trained visual-layout patterns.',
+    `UX model blended layout signals (${merged.deterministicScore}/${UX_UI_MAX}) with trained predictions (${merged.mlScoreOn20Scale}/${UX_UI_MAX}).`,
     merged.finalScore - merged.deterministicScore,
   )
   return scorePayload
@@ -293,6 +300,7 @@ module.exports = {
   isUxModelEnabled,
   resolveModelPath,
   resolvePredictScriptPath,
+  featureUxScoreOn20,
   buildModelInput,
   mergeUxUiScore,
   predictUxScore,

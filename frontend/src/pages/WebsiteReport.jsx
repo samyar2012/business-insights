@@ -92,6 +92,20 @@ const PRIORITY_LABELS = {
   low: 'Polish',
 }
 
+function uxUiScoreDetail(scores) {
+  const uxModel = scores.ux_model
+  if (uxModel?.used) {
+    return `Layout analysis ${scores.deterministic_ux_ui_score ?? scores.crawl_ux_ui_score ?? '-'}/20 blended with ML prediction ${uxModel.predicted_ux_score_on_20_scale}/20.`
+  }
+  if (scores.ux_scoring_mode === 'feature_signals') {
+    return 'Scored from page layout, readability, navigation, and mobile signals.'
+  }
+  if (scores.ux_scoring_mode === 'visual_audit') {
+    return 'Scored from visual layout audit plus page signals.'
+  }
+  return 'Headings, navigation, CTAs, and mobile layout.'
+}
+
 const WebsiteReport = () => {
   const { businessId } = useParams()
   const [business, setBusiness] = useState(null)
@@ -271,6 +285,7 @@ const WebsiteReport = () => {
                 {ANALYZER_LENSES.map(({ question, key, max, detail }) => {
                   const value = readWeightedScore(scores, key)
                   const status = lensStatus(value, max)
+                  const lensDetail = key === 'ux_ui_score' ? uxUiScoreDetail(scores) : detail
                   return (
                     <li
                       key={key}
@@ -278,7 +293,7 @@ const WebsiteReport = () => {
                     >
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-[var(--app-text)]">{question}</p>
-                        <p className="mt-0.5 text-xs text-[var(--app-text-muted)]">{detail}</p>
+                        <p className="mt-0.5 text-xs text-[var(--app-text-muted)]">{lensDetail}</p>
                       </div>
                       <div className="text-right text-sm shrink-0">
                         <span
@@ -348,7 +363,14 @@ const WebsiteReport = () => {
                     </div>
                   )
                 }
-                return <ScoreBar key={label} label={label} value={value} max={max} />
+                return (
+                  <div key={label}>
+                    <ScoreBar label={label} value={value} max={max} />
+                    {key === 'ux_ui_score' && scores.ux_model?.used ? (
+                      <p className="mt-1 text-xs text-[var(--app-text-muted)]">{uxUiScoreDetail(scores)}</p>
+                    ) : null}
+                  </div>
+                )
               })}
             </div>
             {missingWeightedScores ? (

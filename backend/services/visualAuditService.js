@@ -125,6 +125,36 @@ async function collectViewportMetrics(page, viewport) {
         })
       })
 
+      const iconElements = []
+      document
+        .querySelectorAll(
+          'svg, img[src*="icon" i], img[alt*="icon" i], i[class*="icon"], span[class*="icon"], [class*="fa-"], [class*="material-icons"]',
+        )
+        .forEach((el) => {
+          if (!isVisible(el)) return
+          const rect = el.getBoundingClientRect()
+          iconElements.push({
+            tag: el.tagName.toLowerCase(),
+            above_fold: rect.top < viewportH && rect.bottom > 0,
+            in_nav: Boolean(el.closest('nav, header, [role="navigation"]')),
+          })
+        })
+
+      const hasStructuredHeader = Boolean(
+        document.querySelector('header') && document.querySelector('nav, [role="navigation"]'),
+      )
+
+      const aboveFoldImages = []
+      document.querySelectorAll('img, picture source').forEach((el) => {
+        if (!isVisible(el)) return
+        const rect = el.getBoundingClientRect()
+        if (rect.top >= viewportH || rect.bottom <= 0) return
+        aboveFoldImages.push({
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        })
+      })
+
       const aboveFoldElements = []
       document.querySelectorAll('h1, h2, a, button, img, nav').forEach((el) => {
         if (!isVisible(el)) return

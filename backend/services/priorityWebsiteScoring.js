@@ -7,7 +7,7 @@ const {
   scoreBusinessFitWeighted,
   validateWeightedScore,
 } = require('./businessScoringRubrics')
-const { buildUxFeatureExplanations } = require('./uxFeatureExtractor')
+const { buildUxFeatureExplanations, extractUxFeatures } = require('./uxFeatureExtractor')
 
 const SAFETY_MAX = 30
 const UNKNOWN_SAFETY_SCORE = 15
@@ -123,8 +123,12 @@ function collectUxSignals(pages, aggregated) {
   }
 }
 
-function scoreSafetyPoints(safetyResult, explanations) {
+function scoreSafetyPoints(safetyResult, explanations, crawlContext = {}) {
   const result = safetyResult || unknownResult()
+  const { aggregated = {}, crawlHealth = {} } = crawlContext
+  const https = Boolean(aggregated.trust_signals?.https)
+  const homepageOk = crawlHealth.homepageOk !== false
+  const fetchHealthy = (crawlHealth.pagesFailed ?? 0) === 0
 
   if (result.status === 'unsafe') {
     addExplanation(
@@ -146,57 +150,84 @@ function scoreSafetyPoints(safetyResult, explanations) {
     return { points: SAFETY_MAX, status: 'safe' }
   }
 
-  const partial = clamp(UNKNOWN_SAFETY_SCORE, SAFETY_MAX)
+  const crawlTrustScore = scoreCrawlTrustSafety({ https, homepageOk, fetchHealthy, crawlHealth })
+  const points = clamp(crawlTrustScore, SAFETY_MAX)
+
+  if (points >= SAFETY_MAX) {
+    addExplanation(
+      explanations,
+      'safety',
+      SAFETY_MAX,
+      result.configured
+        ? 'Safe Browsing could not verify this URL, but HTTPS and crawl checks passed with no security red flags.'
+        : 'Site is served over HTTPS, loads successfully, and passed crawl security checks.',
+    )
+    return { points: SAFETY_MAX, status: 'verified' }
+  }
+
   addExplanation(
     explanations,
     'safety',
-    partial,
-    result.message || 'Live safety verification is not configured.',
+    points,
+    buildPartialSafetyReason({ https, homepageOk, fetchHealthy, configured: result.configured }),
   )
-  return { points: partial, status: 'unknown' }
+  return { points, status: 'unknown' }
+}
+
+function scoreCrawlTrustSafety({ https, homepageOk, fetchHealthy, crawlHealth = {} }) {
+  if (!https) return 8
+  if (!homepageOk) return 10
+  if (!fetchHealthy) return 12
+
+  let score = SAFETY_MAX
+  if ((crawlHealth.pagesFailed ?? 0) >= 2) score -= 6
+  else if ((crawlHealth.fetchFailureRate ?? 0) >= 0.25) score -= 4
+
+  return score
+}
+
+function buildPartialSafetyReason({ https, homepageOk, fetchHealthy, configured }) {
+  if (!https) return 'HTTPS was not detected — safety score is reduced until the site uses a secure connection.'
+  if (!homepageOk) return 'Homepage did not load reliably — safety score is reduced until the site is reachable.'
+  if (!fetchHealthy) return 'Multiple page fetch failures during crawl reduced the safety score.'
+  if (configured) return 'Safe Browsing verification was inconclusive; partial safety credit applied.'
+  return 'Crawl security checks passed partially; some signals were missing.'
 }
 
 function scoreFunctionalityPoints(aggregated, pages, crawlHealth, explanations) {
   let points = 0
 
   if (crawlHealth.homepageOk) {
-    points += 5
-    addExplanation(explanations, 'functionality', 5, 'Homepage loaded successfully.')
+    points += 4
+    addExplanation(explanations, 'functionality', 4, 'Homepage loaded successfully.')
   } else {
     addExplanation(explanations, 'functionality', 0, 'Homepage failed to load or returned an error.')
   }
 
   if (aggregated.trust_signals?.https) {
-    points += 3
-    addExplanation(explanations, 'functionality', 3, 'Site is served over HTTPS.')
+    points += 2
+    addExplanation(explanations, 'functionality', 2, 'Site is served over HTTPS.')
   } else {
     addExplanation(explanations, 'functionality', 0, 'HTTPS was not detected on crawled pages.')
   }
 
   const pageCount = pages.length
-  if (pageCount >= 3) {
-    points += 4
-    addExplanation(explanations, 'functionality', 4, 'Multiple main pages crawled successfully.')
-  } else if (pageCount >= 1) {
+  if (pageCount >= 5) {
+    points += 3
+    addExplanation(explanations, 'functionality', 3, 'Several supporting pages were crawled successfully.')
+  } else if (pageCount >= 3) {
     points += 2
-    addExplanation(explanations, 'functionality', 2, 'At least one page crawled successfully.')
+    addExplanation(explanations, 'functionality', 2, 'Multiple main pages crawled successfully.')
+  } else if (pageCount >= 1) {
+    points += 1
+    addExplanation(explanations, 'functionality', 1, 'Only a limited set of pages was crawled.')
   } else {
     addExplanation(explanations, 'functionality', 0, 'No pages were crawled from the submitted URL.')
   }
 
-  if (crawlHealth.pagesFailed === 0) {
-    if (crawlHealth.skippedDueToLimit > 0) {
-      points += 2
-      addExplanation(
-        explanations,
-        'functionality',
-        2,
-        `Crawl page limit reached (${crawlHealth.crawled} pages analyzed); ${crawlHealth.skippedDueToLimit} additional URLs were discovered but not fetched.`,
-      )
-    } else {
-      points += 2
-      addExplanation(explanations, 'functionality', 2, 'No page fetch failures during crawl.')
-    }
+  if (crawlHealth.pagesFailed === 0 && pageCount >= 2) {
+    points += 1
+    addExplanation(explanations, 'functionality', 1, 'No page fetch failures during crawl.')
   } else if (crawlHealth.fetchFailureRate >= 0.5) {
     addExplanation(
       explanations,
@@ -204,13 +235,12 @@ function scoreFunctionalityPoints(aggregated, pages, crawlHealth, explanations) 
       0,
       `${crawlHealth.pagesFailed} page fetch failure(s) reported during crawl.`,
     )
-  } else {
-    points += 1
+  } else if (crawlHealth.pagesFailed > 0) {
     addExplanation(
       explanations,
       'functionality',
-      1,
-      `${crawlHealth.pagesFailed} page fetch failure(s), but most attempted pages loaded successfully.`,
+      0,
+      `${crawlHealth.pagesFailed} page fetch failure(s) reduced functionality confidence.`,
     )
   }
 
@@ -220,40 +250,60 @@ function scoreFunctionalityPoints(aggregated, pages, crawlHealth, explanations) 
     crawlHealth.hasGallery,
   ].filter(Boolean).length
   if (reachableKeyPages >= 2) {
-    points += 3
-    addExplanation(explanations, 'functionality', 3, 'Contact, services, or gallery pages are reachable.')
+    points += 2
+    addExplanation(explanations, 'functionality', 2, 'Contact, services, or gallery pages are reachable.')
   } else if (reachableKeyPages === 1) {
     points += 1
     addExplanation(explanations, 'functionality', 1, 'One supporting page (contact, services, or gallery) was crawled.')
+  } else {
+    addExplanation(explanations, 'functionality', 0, 'No contact, services, or gallery page was discovered.')
   }
 
   const ux = collectUxSignals(pages, aggregated)
   if (ux.hasMobileViewport) {
     points += 1
     addExplanation(explanations, 'functionality', 1, 'Mobile viewport meta tag detected.')
+  } else {
+    addExplanation(explanations, 'functionality', 0, 'No mobile viewport meta tag detected.')
   }
 
-  if (ux.textLength >= 800) {
+  if (ux.textLength >= 1500) {
     points += 2
     addExplanation(explanations, 'functionality', 2, 'Enough readable content extracted for analysis.')
-  } else if (ux.textLength >= 300) {
+  } else if (ux.textLength >= 700) {
     points += 1
-    addExplanation(explanations, 'functionality', 1, 'Limited readable content extracted.')
+    addExplanation(explanations, 'functionality', 1, 'Readable content depth is moderate.')
   } else {
     addExplanation(explanations, 'functionality', 0, 'Very little readable content on crawled pages.')
+  }
+
+  if (pageCount <= 1) {
+    points = Math.max(0, points - 2)
+    addExplanation(explanations, 'functionality', -2, 'Only one page was analyzed, so site depth is limited.')
+  }
+
+  if (crawlHealth.skippedDueToLimit > 0) {
+    addExplanation(
+      explanations,
+      'functionality',
+      0,
+      `Crawl page limit reached (${crawlHealth.crawled} pages analyzed); ${crawlHealth.skippedDueToLimit} additional URLs were discovered but not fetched.`,
+    )
   }
 
   return clamp(points, FUNCTIONALITY_MAX)
 }
 
-function scoreUxUiFromVisualFeatures(uxFeatures, explanations) {
+function scoreUxUiFromFeatureSignals(uxFeatures, explanations, usedVisualAudit = false) {
   const points = clamp(Math.round((uxFeatures.overall_static_ux_score / 100) * UX_UI_MAX), UX_UI_MAX)
 
   addExplanation(
     explanations,
     'ux_ui',
     points,
-    `Visual UX audit score: ${uxFeatures.overall_static_ux_score}/100 mapped to ${points}/${UX_UI_MAX}.`,
+    usedVisualAudit
+      ? `UX/UI score from visual layout audit and page signals (${uxFeatures.overall_static_ux_score}/100 → ${points}/${UX_UI_MAX}).`
+      : `UX/UI score from page layout and readability signals (${uxFeatures.overall_static_ux_score}/100 → ${points}/${UX_UI_MAX}).`,
   )
 
   for (const reason of buildUxFeatureExplanations(uxFeatures)) {
@@ -261,6 +311,10 @@ function scoreUxUiFromVisualFeatures(uxFeatures, explanations) {
   }
 
   return points
+}
+
+function scoreUxUiFromVisualFeatures(uxFeatures, explanations) {
+  return scoreUxUiFromFeatureSignals(uxFeatures, explanations, true)
 }
 
 function scoreUxUiPointsStatic(pages, aggregated, signals, explanations) {
@@ -321,8 +375,8 @@ function scoreUxUiPointsStatic(pages, aggregated, signals, explanations) {
 
 function scoreUxUiPoints(pages, aggregated, signals, explanations, options = {}) {
   const { uxFeatures, visualAudit } = options
-  if (uxFeatures && visualAudit?.ok) {
-    return scoreUxUiFromVisualFeatures(uxFeatures, explanations)
+  if (uxFeatures?.overall_static_ux_score != null) {
+    return scoreUxUiFromFeatureSignals(uxFeatures, explanations, Boolean(visualAudit?.ok))
   }
   return scoreUxUiPointsStatic(pages, aggregated, signals, explanations)
 }
@@ -342,6 +396,8 @@ function scoreCustomerAttractionPoints(aggregated, signals, explanations, option
         2,
         'Quote or booking CTA gives visitors a clear next step.',
       )
+    } else {
+      addExplanation(explanations, 'customer_attraction', 0, 'No strong quote or booking CTA detected.')
     }
     if (signals.has_consultation) {
       points += 1
@@ -353,17 +409,21 @@ function scoreCustomerAttractionPoints(aggregated, signals, explanations, option
       )
     }
     if (signals.has_phone || signals.has_contact_page) {
-      points += 2
+      points += 1
       addExplanation(
         explanations,
         'customer_attraction',
-        2,
-        'Phone number or contact page makes it easy to reach you.',
+        1,
+        'Phone number or contact page makes it easier to reach you.',
       )
+    } else {
+      addExplanation(explanations, 'customer_attraction', 0, 'No phone number or contact page detected.')
     }
     if (aggregated.trust_signals?.review_indicators) {
       points += 2
       addExplanation(explanations, 'customer_attraction', 2, 'Reviews or testimonials build trust.')
+    } else {
+      addExplanation(explanations, 'customer_attraction', 0, 'No review or testimonial proof detected.')
     }
     if (signals.has_gallery) {
       points += 1
@@ -512,10 +572,20 @@ function calculatePriorityScores(aggregated, business, pages, options = {}) {
   }
 
   const crawlHealth = inferCrawlHealth(pages, business?.store_url, options.crawlMeta || {})
-  const safety = scoreSafetyPoints(options.safetyResult, explanations)
+  const uxFeatures =
+    options.uxFeatures ??
+    extractUxFeatures({
+      visualAudit: options.visualAudit || null,
+      pages,
+      aggregated,
+    })
+  const safety = scoreSafetyPoints(options.safetyResult, explanations, {
+    aggregated,
+    crawlHealth,
+  })
   const functionality_score = scoreFunctionalityPoints(aggregated, pages, crawlHealth, explanations)
   const ux_ui_score = scoreUxUiPoints(pages, aggregated, signals, explanations, {
-    uxFeatures: options.uxFeatures,
+    uxFeatures,
     visualAudit: options.visualAudit,
   })
   const rubricCtx = { aggregated, business, pages, signals }
@@ -557,11 +627,15 @@ function calculatePriorityScores(aggregated, business, pages, options = {}) {
     scoring_rubric: rubric,
     score_explanation: filterWeightedExplanations(explanations).slice(0, 24),
     mismatch_warnings: mismatchWarnings,
-    ux_scoring_mode: options.visualAudit?.ok ? 'visual_audit' : 'static_html',
+    ux_scoring_mode: uxFeatures
+      ? options.visualAudit?.ok
+        ? 'visual_audit'
+        : 'feature_signals'
+      : 'static_html',
   }
 
-  if (options.uxFeatures) {
-    result.ux_features = options.uxFeatures
+  if (uxFeatures) {
+    result.ux_features = uxFeatures
   }
 
   const validation = validateWeightedScore(result)
@@ -585,9 +659,11 @@ module.exports = {
   CUSTOMER_ATTRACTION_MAX,
   inferCrawlHealth,
   scoreSafetyPoints,
+  scoreCrawlTrustSafety,
   scoreFunctionalityPoints,
   scoreUxUiPoints,
   scoreUxUiPointsStatic,
+  scoreUxUiFromFeatureSignals,
   scoreUxUiFromVisualFeatures,
   collectUxSignals,
 }

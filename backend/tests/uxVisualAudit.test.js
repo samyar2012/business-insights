@@ -184,15 +184,16 @@ describe('uxFeatureExtractor', () => {
 describe('priorityWebsiteScoring visual audit integration', () => {
   const business = { store_url: 'https://example.com', business_model: 'local_service_business' }
 
-  it('keeps static HTML scoring when visual audit is disabled', () => {
+  it('uses feature-based scoring instead of checkbox heuristics when layout signals exist', () => {
     const pages = denseLongParagraphPages()
     const aggregated = BASE_AGG
     const staticScore = scoreUxUiPointsStatic(pages, aggregated, {}, [])
-    const disabledScore = scoreUxUiPoints(pages, aggregated, {}, [], {
+    const featureScore = scoreUxUiPoints(pages, aggregated, {}, [], {
       visualAudit: { enabled: false, ok: false },
       uxFeatures: extractUxFeatures({ pages, aggregated }),
     })
-    assert.equal(disabledScore, staticScore)
+    assert.notEqual(featureScore, staticScore)
+    assert.ok(featureScore >= 0 && featureScore <= 20)
   })
 
   it('uses visual features when visual audit data exists', () => {
@@ -209,7 +210,7 @@ describe('priorityWebsiteScoring visual audit integration', () => {
       uxFeatures,
     })
     assert.ok(visualPoints >= 0 && visualPoints <= 20)
-    assert.ok(explanations.some((item) => /Visual UX audit score/i.test(item.reason)))
+    assert.ok(explanations.some((item) => /UX\/UI score from visual layout audit/i.test(item.reason)))
     assert.ok(explanations.some((item) => item.reason === 'Navigation is visible.'))
   })
 
@@ -220,7 +221,7 @@ describe('priorityWebsiteScoring visual audit integration', () => {
       crawlMeta: { homepage_fetch_ok: true, pages_crawled: 1 },
     })
     assert.ok(Number.isFinite(scores.ux_ui_score))
-    assert.equal(scores.ux_scoring_mode, 'static_html')
+    assert.equal(scores.ux_scoring_mode, 'feature_signals')
     assert.ok(scores.overall_score > 0)
   })
 
