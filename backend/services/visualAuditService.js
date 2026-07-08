@@ -1,5 +1,10 @@
 const { validatePublicUrl } = require('./crawler/urlSecurity')
 const { DEFAULT_UA, BROWSER_UA } = require('./crawler/crawlerConfig')
+const {
+  collectVisualEvidence,
+  summarizeVisualEvidence,
+  saveDebugVisualAuditArtifacts,
+} = require('./visualEvidenceService')
 
 const DESKTOP_VIEWPORT = { width: 1280, height: 800 }
 const MOBILE_VIEWPORT = { width: 390, height: 844 }
@@ -246,13 +251,15 @@ async function collectViewportMetrics(page, meta = {}) {
         const inPromoBar = Boolean(
           el.closest('[class*="announcement" i], [class*="promo" i], [class*="marquee" i], [class*="slideshow" i]'),
         )
+        const inNav = Boolean(el.closest('nav, header nav, [role="navigation"]'))
         clickable.push({
           tag: el.tagName.toLowerCase(),
           text,
           top: Math.round(rect.top),
           above_fold: rect.top < viewportH && rect.bottom > 0,
-          is_cta: ctaPattern.test(text) || ctaPattern.test(aria),
+          is_cta: (ctaPattern.test(text) || ctaPattern.test(aria)) && !(inNav && el.tagName === 'A'),
           is_promo: inPromoBar,
+          in_nav: inNav,
         })
       })
 
@@ -708,6 +715,7 @@ async function runVisualAudit(url, options = {}) {
     const desktopMetrics = await collectViewportMetrics(desktopPage, {
       emulationMode: 'desktop',
     })
+    const desktopEvidence = await collectVisualEvidence(desktopPage)
     const desktopScreenshot = await captureScreenshot(desktopPage)
     const finalUrl = desktopPage.url()
 
@@ -730,6 +738,8 @@ async function runVisualAudit(url, options = {}) {
           emulationMode: 'mobile_device',
           deviceName: name,
         })
+        const mobileEvidence = await collectVisualEvidence(mobilePage)
+        mobileMetrics.visual_evidence = mobileEvidence
         mobileScreenshot = await captureScreenshot(mobilePage)
       } finally {
         await mobileContext.close()
@@ -739,12 +749,15 @@ async function runVisualAudit(url, options = {}) {
       throw mobileErr
     }
 
+    desktopMetrics.visual_evidence = desktopEvidence
+
     await desktopContext.close()
 
     const desktopContrast = scoreContrastSamples(desktopMetrics.contrast_samples)
     const mobileContrast = scoreContrastSamples(mobileMetrics.contrast_samples)
+    const visualEvidence = summarizeVisualEvidence(desktopEvidence, mobileMetrics.visual_evidence || {})
 
-    return {
+    const auditResult = {
       enabled: true,
       ok: true,
       url: parsed.href,
@@ -772,8 +785,12 @@ async function runVisualAudit(url, options = {}) {
         },
         page_height: desktopMetrics.page_height,
         scroll_depth_ratio: desktopMetrics.scroll_depth_ratio,
-        desktop_text_density: desktopMetrics.text_density,
-        mobile_text_density: mobileMetrics.text_density,
+        desktop_text_density: visualEvidence.desktop_text_density || desktopMetrics.text_density,
+        mobile_text_density: visualEvidence.mobile_text_density || mobileMetrics.mobile_text_density || mobileMetrics.text_density,
+        mobile_text_density_score: visualEvidence.mobile_text_density_score,
+        desktop_text_density_score: visualEvidence.desktop_text_density_score,
+        density_confidence: visualEvidence.density_confidence,
+        high_mobile_text_density: visualEvidence.high_mobile_text_density,
         cta_above_fold: desktopMetrics.cta_above_fold || mobileMetrics.cta_above_fold,
         nav_above_fold: desktopMetrics.nav_above_fold || mobileMetrics.nav_above_fold,
         horizontal_overflow_desktop: desktopMetrics.horizontal_overflow,
@@ -818,10 +835,10 @@ async function runVisualAudit(url, options = {}) {
           desktopMetrics.product_grid_image_count || 0,
           mobileMetrics.product_grid_image_count || 0,
         ),
-        misaligned_image_count: Math.max(
-          desktopMetrics.misaligned_image_count || 0,
-          mobileMetrics.misaligned_image_count || 0,
-        ),
+        misaligned_image_count: visualEvidence.misaligned_image_count,
+        misalignment_confidence: visualEvidence.misalignment_confidence,
+        evidence_confidence: visualEvidence.evidence_confidence,
+        visual_issues: visualEvidence.high_confidence_issues,
         template_debt_signals: [
           ...new Set([
             ...(desktopMetrics.template_debt_signals || []),
@@ -843,7 +860,19 @@ async function runVisualAudit(url, options = {}) {
           .slice(0, 5)
           .map((c) => c.text),
       },
+      visual_evidence: visualEvidence,
     }
+
+    await saveDebugVisualAuditArtifacts({
+      hostname: new URL(finalUrl).hostname,
+      desktopScreenshot,
+      mobileScreenshot,
+      desktopEvidence,
+      mobileEvidence: mobileMetrics.visual_evidence || {},
+      summary: auditResult.summary,
+    }).catch(() => {})
+
+    return auditResult
   } catch (err) {
     return {
       enabled: true,
@@ -868,6 +897,22 @@ function stripScreenshotsForStorage(visualAudit) {
         stored: false,
         note: 'Screenshot omitted from persisted profile to reduce payload size.',
       }
+    }
+    if (clone[viewport]?.metrics?.visual_evidence) {
+      const evidence = clone[viewport].metrics.visual_evidence
+      clone[viewport].metrics.visual_evidence = {
+        viewport: evidence.viewport,
+        image_alignment: evidence.image_alignment,
+        text_density: evidence.text_density,
+        issues: evidence.issues,
+      }
+    }
+  }
+  if (clone.visual_evidence) {
+    clone.visual_evidence = {
+      ...clone.visual_evidence,
+      high_confidence_issues: clone.visual_evidence.high_confidence_issues,
+      medium_confidence_issues: clone.visual_evidence.medium_confidence_issues,
     }
   }
   return clone

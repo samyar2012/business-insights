@@ -96,7 +96,7 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     offer_business_fit: (() => {
       const fit = scoreOfferBusinessFit(
         rubric,
-        { aggregated, business, pages, signals },
+        { aggregated, business, pages, signals, visualAudit: options.visualAudit, uxFeatures },
         CATEGORY_WEIGHTS.offer_business_fit,
       )
       return {

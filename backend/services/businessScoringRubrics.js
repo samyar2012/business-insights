@@ -89,13 +89,43 @@ function pageData(page) {
 function detectOperationalSignals(pages, aggregated) {
   const text = pages.map((p) => String(p.extracted_text || '')).join(' ')
   const lower = text.toLowerCase()
+  const navLabels = aggregated.content_signals?.navigation_labels || []
+  const navText = navLabels.join(' ').toLowerCase()
   const ctaText = (aggregated.content_signals?.ctas || []).join(' ').toLowerCase()
-  const blob = `${lower} ${ctaText}`
+  const blob = `${lower} ${ctaText} ${navText}`
 
   const phones = new Set()
   for (const page of pages) {
     for (const phone of pageData(page).phones || []) phones.add(phone)
   }
+
+  const hasCategoryNav = navLabels.some((n) =>
+    /services?|installation|repair|consultation|design|custom|curtain|blind|shade|drape|roman|collection|shop|motoriz|treatment|swatch/i.test(
+      n,
+    ),
+  )
+  const hasCollectionUrls = pages.some((p) =>
+    /\/collections\/|\/products\/|\/shop\b/i.test(String(p.final_url || p.url || '')),
+  )
+  const headingHints = []
+  for (const page of pages) {
+    const data = pageData(page)
+    for (const h of [...(data.headings?.h1 || []), ...(data.headings?.h2 || [])]) {
+      if (
+        /curtain|blind|shade|drape|roman|motoriz|treatment|custom|installation|service|shop|collection/i.test(
+          h,
+        )
+      ) {
+        headingHints.push(h)
+      }
+    }
+  }
+  const hasProductLineLanguage =
+    /window treatments|custom curtains|custom blinds|shades|drapes|roman shades|plantation shutters|motorized shades/i.test(
+      lower,
+    )
+  const hasOfferCategories =
+    hasCategoryNav || hasCollectionUrls || headingHints.length > 0 || hasProductLineLanguage
 
   return {
     has_phone: phones.size > 0 || /\(\d{3}\)|\d{3}-\d{3}-\d{4}|call us|phone:/i.test(blob),
@@ -108,20 +138,46 @@ function detectOperationalSignals(pages, aggregated) {
     has_contact_page: pages.some((p) => p.page_type === 'contact'),
     has_service_area:
       /\bserving\b|service area|serving the|we serve|coverage area|areas we serve/i.test(lower),
-    has_quote_cta: /quote|free estimate|request a quote|get a quote|request estimate/i.test(blob),
-    has_booking_cta: /book now|schedule|appointment|book online|schedule service/i.test(blob),
-    has_consultation: /consultation|free consult|book a consult/i.test(lower),
+    has_quote_cta:
+      /(?:get|request) a quote|free estimate|request estimate|free swatch|order swatches|(?:free |request )?design consultation|(?:free )?in-home(?: consultation| measure| visit)?|(?:free )?measurement(?: service| visit)?/i.test(
+        blob,
+      ),
+    has_booking_cta:
+      /book now|book online|book (?:a |an |your )?(?:free )?(?:consultation|appointment)|schedule (?:a |an |your )?(?:free )?(?:consultation|appointment|visit|in-home|measurement)|make an appointment|request appointment/i.test(
+        blob,
+      ),
+    has_consultation:
+      /(?:free |request )?consultation|book a consult|design consult|speak with a specialist|design services|in-home consult/i.test(
+        blob,
+      ) || /consultation|design consult/i.test(ctaText),
+    has_showroom: /showroom|visit our showroom|visit a showroom|find a showroom/i.test(lower),
     has_gallery:
-      /gallery|portfolio|our work|before and after|project gallery/i.test(lower) ||
-      pages.some((p) => /gallery|portfolio/i.test(String(p.url || ''))),
+      /gallery|portfolio|our work|before and after|project gallery|inspiration|customer photos|room gallery|installations/i.test(
+        lower,
+      ) ||
+      pages.some((p) => /gallery|portfolio|inspiration/i.test(String(p.url || ''))) ||
+      (aggregated.content_signals?.navigation_labels || []).some((n) =>
+        /gallery|inspiration|portfolio/i.test(n),
+      ),
     has_local_city: /\b(serving|located in|proudly serving)\s+[A-Z][a-z]+/i.test(text),
-    has_add_to_cart: /add to cart|buy now|shop now|checkout/i.test(blob),
-    has_product_categories: (aggregated.content_signals?.navigation_labels || []).some((n) =>
-      /product|collection|shop|catalog/i.test(n),
-    ),
+    has_add_to_cart: /add to cart|buy now|shop now|checkout|browse collection|shop all/i.test(blob),
+    has_product_categories:
+      (aggregated.content_signals?.navigation_labels || []).some((n) =>
+        /product|collection|shop|catalog|curtain|blind|shade|drape|roman/i.test(n),
+      ) ||
+      pages.some((p) => /\/collections\/|\/products\/|\/shop\b/i.test(String(p.url || ''))) ||
+      hasOfferCategories,
+    has_service_pages:
+      (aggregated.services || []).length > 0 ||
+      pages.some((p) => p.page_type === 'services' || /services?/i.test(String(p.url || ''))) ||
+      hasCategoryNav ||
+      hasCollectionUrls ||
+      headingHints.length > 0,
     has_service_categories:
       (aggregated.services || []).length > 0 ||
-      pages.some((p) => p.page_type === 'services' || /services?/i.test(String(p.url || ''))),
+      pages.some((p) => p.page_type === 'services' || /services?/i.test(String(p.url || ''))) ||
+      hasCategoryNav ||
+      hasOfferCategories,
     has_niche_language: Boolean(aggregated.content_signals?.total_text_length > 800),
     has_creator_links: (aggregated.social_channels || []).length >= 2,
   }
@@ -566,7 +622,7 @@ function scoreBusinessFitWeighted(rubric, ctx, explanations) {
   const max = WEIGHTED_CATEGORY_MAX.business_fit_score
   let points = 0
 
-  if (['online_plus_physical_service', 'local_service_business'].includes(rubric)) {
+  if (['online_plus_physical_service', 'local_service_business', 'online_gallery_physical_service'].includes(rubric)) {
     points = 6
     addWeightedExplanation(
       explanations,
@@ -579,21 +635,23 @@ function scoreBusinessFitWeighted(rubric, ctx, explanations) {
       points += 2
       addWeightedExplanation(explanations, 'business_fit', 2, 'Phone contact detected for local service customers.')
     }
-    if (signals.has_quote_cta) {
+    if (signals.has_quote_cta || signals.has_booking_cta || signals.has_consultation) {
       points += 2
-      addWeightedExplanation(explanations, 'business_fit', 2, 'Quote or estimate CTA matches service sales flow.')
+      addWeightedExplanation(
+        explanations,
+        'business_fit',
+        2,
+        'Consultation, quote, or booking path matches how customers buy.',
+      )
     }
-    if (signals.has_booking_cta) {
+    if (signals.has_service_categories || signals.has_product_categories) {
       points += 2
-      addWeightedExplanation(explanations, 'business_fit', 2, 'Booking or scheduling CTA detected.')
-    }
-    if (signals.has_consultation) {
-      points += 2
-      addWeightedExplanation(explanations, 'business_fit', 2, 'Consultation offer language detected.')
-    }
-    if (signals.has_service_categories) {
-      points += 2
-      addWeightedExplanation(explanations, 'business_fit', 2, 'Dedicated service pages or categories are discoverable.')
+      addWeightedExplanation(
+        explanations,
+        'business_fit',
+        2,
+        'Product or service categories explain what you offer.',
+      )
     }
     if (signals.has_gallery) {
       points += 2

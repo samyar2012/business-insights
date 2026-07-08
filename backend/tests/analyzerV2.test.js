@@ -417,4 +417,145 @@ describe('analyzerV2', () => {
     const validation = validateWeightedScore(payload)
     assert.equal(validation.valid, true, validation.errors?.join('; '))
   })
+
+  it('gallery business model scores well when catalog and consultation signals exist', () => {
+    const scores = calculateAnalyzerV2Scores(
+      {
+        ...STRONG_ECOMMERCE_AGG,
+        services: ['Custom blinds', 'Motorized shades'],
+      },
+      { store_url: 'https://shades.com', business_model: 'online_gallery_physical_service' },
+      richEcommercePages(),
+      {
+        safetyResult: { status: 'safe', configured: true, threats: [], message: 'Safe.' },
+        crawlMeta: { homepage_fetch_ok: true, pages_crawled: 3, pages_discovered: 3 },
+        visualAudit: {
+          ok: true,
+          summary: {
+            product_grid_image_count: 8,
+            image_count: 40,
+            evidence_confidence: 0.8,
+          },
+        },
+      },
+    )
+
+    assert.ok(scores.business_fit_score >= 12)
+    assert.ok(
+      scores.category_details.offer_business_fit.strengths.some((item) =>
+        /catalog|gallery|consultation|contact|quote/i.test(item),
+      ),
+    )
+  })
+
+  it('ecommerce business fit uses catalog fallbacks when product extraction is incomplete', () => {
+    const scores = calculateAnalyzerV2Scores(
+      {
+        ...EMPTY_ECOMMERCE_AGG,
+        platform: 'Shopify',
+        content_signals: {
+          total_text_length: 1800,
+          page_count: 4,
+          ctas: ['Shop now', 'Browse collection'],
+          navigation_labels: ['Shop', 'Curtains', 'Blinds', 'Contact'],
+        },
+        site_classification: { classification: 'shopify_dtc', confidence: 70, indicators: [] },
+      },
+      { store_url: 'https://curtains.com', business_model: 'ecommerce_store' },
+      [
+        {
+          page_type: 'homepage',
+          status_code: 200,
+          final_url: 'https://curtains.com/',
+          extracted_text: 'Shop curtains and blinds. Browse collection. Free consultation.',
+          extracted_data_json: { headings: { h1: ['Custom Curtains'] }, ctas: ['Shop now'] },
+        },
+        {
+          page_type: 'collection',
+          status_code: 200,
+          final_url: 'https://curtains.com/collections/curtains',
+          extracted_text: 'Shop all curtains. Prices from $99.',
+        },
+      ],
+      {
+        safetyResult: { status: 'safe', configured: true, threats: [], message: 'Safe.' },
+        crawlMeta: { homepage_fetch_ok: true, pages_crawled: 2, pages_discovered: 2 },
+        visualAudit: {
+          ok: true,
+          summary: {
+            product_grid_image_count: 6,
+            image_count: 24,
+            evidence_confidence: 0.8,
+          },
+        },
+      },
+    )
+
+    assert.ok(scores.business_fit_score >= 8)
+    assert.ok(
+      !scores.category_details.offer_business_fit.problems.some((item) =>
+        /severely limited/i.test(item),
+      ),
+    )
+  })
+
+  it('does not claim missing service pages when consultation and shop categories exist', () => {
+    const scores = calculateAnalyzerV2Scores(
+      {
+        ...EMPTY_ECOMMERCE_AGG,
+        content_signals: {
+          total_text_length: 1600,
+          page_count: 2,
+          ctas: ['Free Consultation', 'Shop Curtains'],
+          navigation_labels: [],
+        },
+      },
+      { store_url: 'https://curtains.com', business_model: 'online_plus_physical_service' },
+      [
+        {
+          page_type: 'homepage',
+          status_code: 200,
+          final_url: 'https://curtains.com/',
+          extracted_text: 'Custom curtains and blinds. Free consultation available.',
+          extracted_data_json: {
+            headings: { h1: ['Custom Curtains'], h2: ['Blinds', 'Shades'] },
+            ctas: ['Free Consultation'],
+          },
+        },
+        {
+          page_type: 'collection',
+          status_code: 200,
+          final_url: 'https://curtains.com/collections/curtains',
+          extracted_text: 'Shop all curtains.',
+        },
+      ],
+      {
+        safetyResult: { status: 'safe', configured: true, threats: [], message: 'Safe.' },
+        crawlMeta: { homepage_fetch_ok: true, pages_crawled: 2, pages_discovered: 2 },
+        visualAudit: {
+          ok: true,
+          summary: {
+            product_grid_image_count: 6,
+            has_structured_header: true,
+            primary_nav_link_count: 4,
+          },
+          evidence_snippets: {
+            desktop_nav: ['Curtains', 'Blinds', 'Consultation', 'Contact'],
+          },
+        },
+      },
+    )
+
+    const fit = scores.category_details.offer_business_fit
+    assert.ok(
+      !fit.problems.some((item) =>
+        /service pages|shop categories|cannot quickly tell what products/i.test(item),
+      ),
+    )
+    assert.ok(
+      fit.strengths.some((item) =>
+        /quote|consultation|product lines|shop categories|matches how customers buy/i.test(item),
+      ),
+    )
+  })
 })

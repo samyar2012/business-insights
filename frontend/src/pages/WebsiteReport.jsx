@@ -671,6 +671,19 @@ const WebsiteReport = () => {
                   </ul>
                 </div>
               ) : null}
+              {scores.ux_features?.visual_issues?.length ? (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold text-[var(--app-danger-icon)]">Evidence-backed visual issues</p>
+                  <ul className="mt-1 list-inside list-disc text-sm text-[var(--app-text-secondary)]">
+                    {scores.ux_features.visual_issues.slice(0, 6).map((item) => (
+                      <li key={item.message || item.category}>
+                        {item.message}
+                        {item.confidence ? ` (confidence ${Math.round(item.confidence * 100)}%)` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
               {scores.ux_features?.visual_problems?.length ? (
                 <div className="mt-4">
                   <p className="text-xs font-semibold text-[var(--app-danger-icon)]">Visual problems</p>
@@ -680,6 +693,33 @@ const WebsiteReport = () => {
                     ))}
                   </ul>
                 </div>
+              ) : null}
+              {scores.ux_features?.visual_evidence_summary ? (
+                <details className="mt-3 rounded-lg border border-[var(--app-border)] px-3 py-2">
+                  <summary className="cursor-pointer text-xs font-semibold">Visual evidence summary</summary>
+                  <ul className="mt-2 list-inside list-disc text-sm text-[var(--app-text-secondary)]">
+                    <li>
+                      Misaligned images (high confidence):{' '}
+                      {scores.ux_features.visual_evidence_summary.misaligned_image_count || 0}
+                    </li>
+                    <li>
+                      Alignment confidence:{' '}
+                      {Math.round((scores.ux_features.visual_evidence_summary.misalignment_confidence || 0) * 100)}%
+                    </li>
+                    <li>
+                      Density confidence:{' '}
+                      {Math.round((scores.ux_features.visual_evidence_summary.density_confidence || 0) * 100)}%
+                    </li>
+                  </ul>
+                </details>
+              ) : null}
+              {scores.ux_features?.score_trace ? (
+                <details className="mt-3 rounded-lg border border-[var(--app-border)] px-3 py-2">
+                  <summary className="cursor-pointer text-xs font-semibold">Analyzer debug trace</summary>
+                  <pre className="mt-2 overflow-x-auto text-xs text-[var(--app-text-secondary)]">
+                    {JSON.stringify(scores.ux_features.score_trace, null, 2)}
+                  </pre>
+                </details>
               ) : null}
               {uxFeatures.hero_heading ? (
                 <details className="mt-4 rounded-lg border border-[var(--app-border)] px-3 py-2">

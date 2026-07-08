@@ -71,6 +71,8 @@ function detectNoConversionPath(signals, rubric) {
   const hasPath =
     signals.has_quote_cta ||
     signals.has_booking_cta ||
+    signals.has_consultation ||
+    signals.has_showroom ||
     signals.has_add_to_cart ||
     signals.has_phone ||
     signals.has_contact_page ||

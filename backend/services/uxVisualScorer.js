@@ -7,6 +7,11 @@ const {
   isListingModel,
 } = require('./businessModelConfig')
 const { mergeHeroHeadingSignals } = require('./heroHeadingDetection')
+const { HIGH_CONFIDENCE, MEDIUM_CONFIDENCE } = require('./visualEvidenceService')
+
+function isDebugAnalyzerEnabled() {
+  return process.env.DEBUG_ANALYZER === 'true'
+}
 
 const COMPONENT_WEIGHTS = {
   navbar_score: 0.1,
@@ -20,7 +25,7 @@ const COMPONENT_WEIGHTS = {
 }
 
 const GENERIC_CTA_PATTERN = /^learn more$|^read more$|^click here$|^more$/i
-const SPAM_CTA_THRESHOLD = 5
+const SPAM_CTA_THRESHOLD = 9
 
 function clamp(value, min = 0, max = 100) {
   return Math.max(min, Math.min(max, Math.round(value)))
@@ -32,6 +37,19 @@ function missingDefault(confidence) {
 
 const PRIMARY_NAV_OVERCROWD_THRESHOLD = 6
 
+function issueToProblem(issue) {
+  if (!issue) return null
+  if (issue.confidence < MEDIUM_CONFIDENCE) return null
+  return issue.message
+}
+
+function collectEvidenceProblems(issues = [], minConfidence = HIGH_CONFIDENCE) {
+  return (issues || [])
+    .filter((issue) => issue.confidence >= minConfidence)
+    .map((issue) => issue.message)
+    .filter(Boolean)
+}
+
 function scoreNavbar(ctx) {
   const {
     primaryNavLinkCount,
@@ -42,7 +60,10 @@ function scoreNavbar(ctx) {
     phoneInBannerOnly,
     brandInHeader,
     visualVerified,
+    businessModel,
   } = ctx
+  const model = resolveCanonicalBusinessModel(businessModel) || businessModel
+  const isServiceBusiness = SERVICE_MODELS.has(model) || GALLERY_SERVICE_MODELS.has(model)
   const topLevelCount =
     primaryNavLinkCount > 0
       ? primaryNavLinkCount
@@ -76,8 +97,13 @@ function scoreNavbar(ctx) {
   if (brandInHeader) score += 6
 
   if (phoneInBannerOnly) {
-    score -= 14
-    problems.push('Phone/banner CTA appears to replace real navigation.')
+    if (isServiceBusiness) {
+      strengths.push('Phone banner CTA is visible and valid for a local/service business.')
+      score += 4
+    } else {
+      score -= 14
+      problems.push('Phone/banner CTA appears to replace real navigation.')
+    }
   }
 
   if (mobileNavOverflow) {
@@ -88,6 +114,21 @@ function scoreNavbar(ctx) {
   if (navLinkCount > PRIMARY_NAV_OVERCROWD_THRESHOLD && primaryNavLinkCount === 0) {
     score -= 6
     problems.push('Navigation appears complex with many nested links — clarity may suffer.')
+  }
+
+  if (topLevelCount >= 2 && topLevelCount <= PRIMARY_NAV_OVERCROWD_THRESHOLD && navAboveFold && hasStructuredHeader && !mobileNavOverflow) {
+    score = Math.max(score, 92)
+    strengths.push('Header navigation is clear, visible, and well structured.')
+  }
+  if (
+    topLevelCount >= 2 &&
+    topLevelCount <= PRIMARY_NAV_OVERCROWD_THRESHOLD &&
+    navAboveFold &&
+    hasStructuredHeader &&
+    brandInHeader &&
+    !mobileNavOverflow
+  ) {
+    score = Math.max(score, 96)
   }
 
   return { score: clamp(score), notes: [...notes, ...strengths, ...problems], strengths, problems }
@@ -130,7 +171,9 @@ function scoreHero(ctx) {
     problems.push('No clear H1 or hero heading was detected above the fold.')
   }
 
-  if (semanticH1Missing) {
+  if (semanticH1Missing && hasHero) {
+    notes.push('Semantic H1 missing, but visual hero heading is clear (minor markup issue only).')
+  } else if (semanticH1Missing) {
     score -= 4
     problems.push('Hero heading is visually clear, but semantic H1 markup may be missing.')
   }
@@ -155,20 +198,24 @@ function scoreHero(ctx) {
   }
 
   if (ctaSpamCount >= SPAM_CTA_THRESHOLD) {
-    score -= 16
-    problems.push(`${ctaSpamCount} CTA-like elements above the fold feel spammy.`)
-  } else if (ctaSpamCount >= 4) {
-    score -= 6
-    problems.push('Multiple competing CTAs above the fold may confuse visitors.')
+    score -= 8
+    problems.push(`${ctaSpamCount} promotional CTA-like elements above the fold may compete for attention.`)
+  } else if (ctaSpamCount >= 7) {
+    score -= 3
+    notes.push(`${ctaSpamCount} CTA-like elements above the fold — acceptable for retail sites with promos.`)
+  } else if (ctaSpamCount >= 5) {
+    score -= 1
   }
 
-  if (maxAboveFoldBlock > 520) {
+  if (maxAboveFoldBlock > 720) {
     score -= 12
     problems.push(`Hero text is dense: largest above-fold block is ${maxAboveFoldBlock} characters.`)
-  } else if (aboveFoldTextLength > 900) {
-    score -= 10
-    problems.push('Above-fold area contains too much text before visitors can scan the page.')
-  } else if (aboveFoldTextLength > 0 && aboveFoldTextLength < 600) {
+  } else if (maxAboveFoldBlock > 560) {
+    score -= 5
+  } else if (aboveFoldTextLength > 1400) {
+    score -= 8
+    problems.push('Above-fold area contains a lot of text before visitors can scan the page.')
+  } else if (aboveFoldTextLength > 0 && aboveFoldTextLength < 700) {
     score += 4
   }
 
@@ -221,6 +268,8 @@ function scoreReadability(ctx) {
     contrastScore,
     fontSizeStats,
     visualVerified,
+    densityEvidence,
+    visualEvidenceIssues,
   } = ctx
   const tolerance = readabilityTolerance(businessModel)
   let score = visualVerified ? 58 : 48
@@ -259,13 +308,13 @@ function scoreReadability(ctx) {
     sectionCount >= 2 || h2Count >= 2 || bulletCount >= 4 || (headingCount >= 2 && sectionCount >= 1)
 
   if (maxTextBlockLength > tolerance.maxBlock && !wellStructured) {
-    score -= 22
+    score -= 14
     problems.push(`Largest text block is ${maxTextBlockLength} characters and lacks section breaks.`)
   } else if (maxTextBlockLength > tolerance.maxBlock && wellStructured) {
-    score -= 4
+    score -= 2
     factors.scan_density_note = 'Long copy is readable but dense — extra headings could help scanning.'
-  } else if (maxTextBlockLength > tolerance.maxBlock * 0.65 && !wellStructured) {
-    score -= 8
+  } else if (maxTextBlockLength > tolerance.maxBlock * 0.8 && !wellStructured) {
+    score -= 5
     problems.push(`Large text block (${maxTextBlockLength} characters) is harder to scan without more headings.`)
   } else if (maxTextBlockLength > 0 && maxTextBlockLength <= tolerance.maxAvg) {
     score += 6
@@ -280,16 +329,30 @@ function scoreReadability(ctx) {
     strengths.push('Paragraph length supports comfortable reading.')
   }
 
-  if (textDensity > tolerance.densityHard) {
+  if (textDensity > tolerance.densityHard && densityEvidence?.desktop?.high_density) {
     score -= 16
-    problems.push('Above-fold text density is high on desktop.')
-  } else if (textDensity > tolerance.densitySoft) {
+    const desktopIssue = visualEvidenceIssues?.find((issue) => issue.category === 'mobile_text_density')
+    if (desktopIssue?.confidence >= HIGH_CONFIDENCE) {
+      problems.push(desktopIssue.message)
+    } else {
+      problems.push('Above-fold desktop text area is crowded based on rendered text blocks.')
+    }
+  } else if (textDensity > tolerance.densitySoft && densityEvidence?.desktop?.high_density) {
     score -= 6
   }
 
-  if (mobileTextDensity > tolerance.densityHard) {
+  const mobileDensityIssue = (visualEvidenceIssues || []).find(
+    (issue) => issue.category === 'mobile_text_density' && issue.confidence >= MEDIUM_CONFIDENCE,
+  )
+  if (mobileDensityIssue?.confidence >= HIGH_CONFIDENCE) {
     score -= 12
-    problems.push('Mobile text density above the fold is high.')
+    problems.push(mobileDensityIssue.message)
+  } else if (mobileDensityIssue) {
+    problems.push(mobileDensityIssue.message)
+  } else if (mobileTextDensity > tolerance.densityHard) {
+    strengths.push('Mobile above-fold text layout appears normal from rendered text blocks.')
+  } else if (!mobileDensityIssue && densityEvidence?.mobile?.density_confidence >= HIGH_CONFIDENCE) {
+    strengths.push('Mobile above-fold text layout looks readable from rendered text blocks.')
   }
 
   if (headingCount === 0 && sectionCount < 2 && maxTextBlockLength > 500 && avgParagraphLength > tolerance.maxAvg * 0.8) {
@@ -376,6 +439,8 @@ function scoreImageQuality(ctx) {
     misalignedImageCount,
     productGridImageCount,
     portfolioSignals,
+    alignmentConfidence,
+    visualEvidenceIssues,
   } = ctx
   const model = resolveCanonicalBusinessModel(businessModel) || businessModel
   let score = 40
@@ -400,6 +465,11 @@ function scoreImageQuality(ctx) {
   const misalignRatio = imageCount > 0 ? misalignedImageCount / imageCount : 0
   const catalogImages = Math.max(productGridImageCount || 0, layoutFittedImageCount)
 
+  const alignmentIssues = (visualEvidenceIssues || []).filter(
+    (issue) => issue.category === 'image_alignment' && issue.confidence >= MEDIUM_CONFIDENCE,
+  )
+  const highConfidenceAlignment = alignmentIssues.filter((issue) => issue.confidence >= HIGH_CONFIDENCE)
+
   if (isEcommerce && imageCount >= 20) {
     if (catalogImages >= 10) {
       score += 20
@@ -408,36 +478,33 @@ function scoreImageQuality(ctx) {
       score += 14
       strengths.push('Product imagery is present across the catalog.')
     }
-    if (misalignedImageCount <= 4 && catalogImages >= 8) {
+    if (misalignedImageCount <= 4 && catalogImages >= 8 && highConfidenceAlignment.length === 0) {
       score += 8
+      strengths.push('Product grid images appear consistently aligned.')
     }
-    if (misalignRatio >= 0.35 && catalogImages < 6) {
+    if (highConfidenceAlignment.length > 0) {
       score -= 12
-      problems.push('Catalog images look inconsistently cropped or placed.')
-    } else if (misalignedImageCount >= 6 && catalogImages < 8) {
-      score -= 8
-      problems.push(`${misalignedImageCount} product images look awkwardly placed.`)
+      problems.push(highConfidenceAlignment[0].message)
     }
   } else {
     if (layoutFittedImageCount >= 2 && layoutFitRatio >= 0.45) {
       score += 14
       strengths.push(`${layoutFittedImageCount} images fit the page layout cleanly.`)
-    } else if (imageCount >= 3 && layoutFittedImageCount === 0) {
+    } else if (imageCount >= 3 && layoutFittedImageCount === 0 && highConfidenceAlignment.length > 0) {
       score -= 18
-      problems.push('Images are present but none appear well-fitted to the layout.')
-    } else if (imageCount >= 2 && layoutFitRatio < 0.3) {
-      score -= 14
-      problems.push('Most images do not appear aligned with the page layout.')
+      problems.push(highConfidenceAlignment[0].message)
     }
 
-    if (misalignedImageCount >= 3 || misalignRatio >= 0.4) {
+    if (highConfidenceAlignment.length > 0) {
       score -= 18
-      problems.push(
-        `${misalignedImageCount} images look misaligned, awkwardly cropped, or poorly placed for their containers.`,
-      )
-    } else if (misalignedImageCount >= 1) {
+      problems.push(highConfidenceAlignment[0].message)
+    } else if (alignmentIssues.length > 0) {
       score -= 8
-      problems.push(`${misalignedImageCount} image(s) look misaligned or poorly sized.`)
+      problems.push(alignmentIssues[0].message)
+    } else if (imageCount >= 2) {
+      strengths.push('No image alignment issue detected.')
+    } else if (alignmentConfidence > 0 && alignmentConfidence < HIGH_CONFIDENCE) {
+      strengths.push('Image alignment could not be reliably evaluated.')
     }
   }
 
@@ -486,6 +553,8 @@ function scoreLayoutBalance(ctx) {
     imageCount,
     productGridImageCount,
     conversionPathScore,
+    visualEvidenceIssues,
+    highMobileTextDensity,
   } = ctx
   const model = resolveCanonicalBusinessModel(businessModel) || businessModel
   const isEcommerce = ECOMMERCE_MODELS.has(model)
@@ -517,30 +586,38 @@ function scoreLayoutBalance(ctx) {
     score -= 6
   }
 
-  if (ctaSpamCount >= 4) {
-    score -= 16
-    problems.push('Too many competing CTAs crowd the above-fold layout.')
+  if (ctaSpamCount >= 7) {
+    score -= 4
+    problems.push('Several promotional CTAs above the fold compete for attention.')
     evidence.push({ type: 'cta_crowding', count: ctaSpamCount })
-  } else if (ctaSpamCount >= 3) {
-    score -= 8
-    problems.push('Multiple competing CTAs above the fold may confuse visitors.')
+  } else if (ctaSpamCount >= 5) {
+    score -= 2
   }
 
-  if (textDensity > 0.0035 && effectiveSections < 2) {
+  const highConfidenceAlignment = (visualEvidenceIssues || []).filter(
+    (issue) => issue.category === 'image_alignment' && issue.confidence >= HIGH_CONFIDENCE,
+  )
+
+  if (textDensity > 0.0035 && effectiveSections < 2 && highMobileTextDensity) {
     score -= 14
-    problems.push('Above-fold area feels crowded without clear section separation.')
+    const densityIssue = (visualEvidenceIssues || []).find((issue) => issue.category === 'mobile_text_density')
+    if (densityIssue?.confidence >= HIGH_CONFIDENCE) {
+      problems.push(densityIssue.message)
+    } else {
+      problems.push('Above-fold area feels crowded without clear section separation.')
+    }
   }
 
   if (imageCount >= 3 && layoutFitRatio < 0.3 && !isEcommerce) {
     score -= 16
     problems.push('Images look scattered or poorly placed relative to the layout grid.')
     evidence.push({ type: 'image_layout_fit', ratio: layoutFitRatio })
-  } else if (!isEcommerce && imageCount >= 2 && misalignedImageCount >= 2) {
+  } else if (!isEcommerce && imageCount >= 2 && highConfidenceAlignment.length > 0) {
     score -= 12
-    problems.push('Multiple images appear misaligned with surrounding content blocks.')
-  } else if (isEcommerce && misalignedImageCount >= 8 && productGridImageCount < 4) {
+    problems.push(highConfidenceAlignment[0].message)
+  } else if (isEcommerce && highConfidenceAlignment.length > 0 && productGridImageCount < 4) {
     score -= 10
-    problems.push('Catalog layout looks inconsistent across product tiles.')
+    problems.push(highConfidenceAlignment[0].message)
   }
 
   if (conversionPathScore != null && conversionPathScore < 42 && !isEcommerce) {
@@ -680,8 +757,10 @@ function scoreConversionPath(ctx) {
   }
 
   if (ctaSpamCount >= SPAM_CTA_THRESHOLD) {
-    score -= 16
-    notes.push('Repeated CTA buttons reduce clarity instead of helping conversion.')
+    score -= 6
+    notes.push('Several promotional CTA buttons above the fold may reduce clarity.')
+  } else if (ctaSpamCount >= 7) {
+    score -= 2
   }
 
   if (
@@ -788,17 +867,16 @@ function calibrateFinalVisualScore(visualScore, components, ctx) {
   const conversion = components.conversion_path_score?.score ?? 50
   const hierarchy = components.visual_hierarchy_score?.score ?? 50
   const imageCount = ctx.imageCount || 0
-  const fit = ctx.layoutFittedImageCount || 0
-  const misaligned = ctx.misalignedImageCount || 0
-  const fitRatio = imageCount > 0 ? fit / imageCount : 1
-  const misalignRatio = imageCount > 0 ? misaligned / imageCount : 0
   const model = resolveCanonicalBusinessModel(ctx.businessModel) || ctx.businessModel
   const isEcommerce = ECOMMERCE_MODELS.has(model)
   const hasClearCatalogLayout = isEcommerce && (ctx.productGridImageCount || 0) >= 8 && !ctx.mobileOverflow
   const hasTemplateDebt = (ctx.templateDebtSignals || []).length >= 1
+  const evidenceConfidence = ctx.evidenceConfidence || 0
 
-  if (ctx.visualVerified) {
-    score += 10
+  if (ctx.visualVerified && evidenceConfidence >= HIGH_CONFIDENCE) {
+    score += 3
+  } else if (ctx.visualVerified && evidenceConfidence >= MEDIUM_CONFIDENCE) {
+    score += 1
   }
 
   if (hasClearCatalogLayout) {
@@ -814,12 +892,6 @@ function calibrateFinalVisualScore(visualScore, components, ctx) {
     score = Math.min(score, 58)
   }
 
-  if (!isEcommerce) {
-    if (misalignRatio >= 0.35 && imageCount >= 3) score = Math.min(score, 68)
-    if (fitRatio < 0.25 && imageCount >= 4) score = Math.min(score, 62)
-    if (hasTemplateDebt) score = Math.min(score, 52)
-  }
-
   if (layout < 45 && !hasClearCatalogLayout) {
     score = Math.min(score, Math.max(55, layout + 18))
   }
@@ -827,7 +899,9 @@ function calibrateFinalVisualScore(visualScore, components, ctx) {
   if (hierarchy < 45 && !hasClearCatalogLayout) score = Math.min(score, 74)
 
   const weakComponents = [layout, images, conversion, hierarchy].filter((value) => value < 50).length
-  if (weakComponents >= 3 && !isEcommerce) score = Math.min(score, 56)
+  if (weakComponents >= 3 && !isEcommerce && evidenceConfidence >= HIGH_CONFIDENCE) {
+    score = Math.min(score, 56)
+  }
 
   return clamp(score)
 }
@@ -859,8 +933,27 @@ function buildVisualUxScore(input = {}) {
     ? Math.round((confidence.visual_audit + confidence.desktop_metrics + confidence.mobile_metrics) / 3)
     : Math.round((confidence.crawler_fallback + confidence.visual_audit) / 2)
 
+  const visualEvidence = visualAudit?.visual_evidence || {}
+  const visualEvidenceIssues = [
+    ...(visualEvidence.high_confidence_issues || []),
+    ...(visualEvidence.medium_confidence_issues || []),
+    ...(summary.visual_issues || []),
+  ]
+  const alignmentConfidence = visualEvidence.misalignment_confidence || summary.misalignment_confidence || 0
+  const evidenceConfidence = visualEvidence.evidence_confidence || summary.evidence_confidence || 0
+
   const dm = desktop.metrics || {}
   const mm = mobile.metrics || {}
+  const densityEvidence = {
+    desktop: {
+      high_density: Boolean(dm.visual_evidence?.text_density?.high_density),
+      density_confidence: dm.visual_evidence?.text_density?.density_confidence || visualEvidence.density_confidence || 0,
+    },
+    mobile: {
+      high_density: Boolean(summary.high_mobile_text_density || mm.visual_evidence?.text_density?.high_density),
+      density_confidence: mm.visual_evidence?.text_density?.density_confidence || visualEvidence.density_confidence || summary.density_confidence || 0,
+    },
+  }
   const headings = [...(dm.headings || []), ...(mm.headings || [])]
   const h1 = headings.find((h) => h.tag === 'h1')
   const h1AboveFold = headings.some((h) => h.tag === 'h1' && h.above_fold)
@@ -895,7 +988,7 @@ function buildVisualUxScore(input = {}) {
   )
 
   const ctaRaw = [...(dm.cta_elements || []), ...(mm.cta_elements || [])]
-  const ctaAboveFold = ctaRaw.filter((c) => c.above_fold && !c.is_promo)
+  const ctaAboveFold = ctaRaw.filter((c) => c.above_fold && !c.is_promo && !c.in_nav)
   const ctaSpamCount = ctaAboveFold.length
   const ctaElements = ctaRaw.map((c) => ({
     text: c.text || '',
@@ -920,7 +1013,18 @@ function buildVisualUxScore(input = {}) {
   const textDensity = Math.max(summary.desktop_text_density || 0, dm.text_density || 0)
   const mobileTextDensity = Math.max(summary.mobile_text_density || 0, mm.mobile_text_density || 0, mm.text_density || 0)
   const aboveFoldTextLength = dm.above_fold_text_length || mm.above_fold_text_length || crawler.aboveFoldTextLength || 0
-  const maxAboveFoldBlock = dm.max_above_fold_text_block || mm.max_above_fold_text_block || maxTextBlockLength
+  const evidenceLargestBlock = Math.max(
+    mm.visual_evidence?.text_density?.evidence?.largest_block_characters || 0,
+    dm.visual_evidence?.text_density?.evidence?.largest_block_characters || 0,
+  )
+  let maxAboveFoldBlock = dm.max_above_fold_text_block || mm.max_above_fold_text_block || maxTextBlockLength
+  if (evidenceLargestBlock > 0) {
+    maxAboveFoldBlock = evidenceLargestBlock
+  }
+  const effectiveMaxTextBlock =
+    evidenceLargestBlock > 0 && evidenceLargestBlock < maxTextBlockLength
+      ? Math.max(evidenceLargestBlock, avgParagraphLength)
+      : maxTextBlockLength
 
   const sectionCount = visualAuditOk
     ? Math.max(dm.section_count || 0, mm.section_count || 0)
@@ -933,7 +1037,12 @@ function buildVisualUxScore(input = {}) {
     mm.layout_fitted_image_count || 0,
     (dm.layout_images || mm.layout_images || []).length,
   )
-  const misalignedImageCount = Math.max(dm.misaligned_image_count || 0, mm.misaligned_image_count || 0)
+  const misalignedImageCount = Math.max(
+    visualEvidence.misaligned_image_count || 0,
+    summary.misaligned_image_count || 0,
+    dm.misaligned_image_count || 0,
+    mm.misaligned_image_count || 0,
+  )
   const productGridImageCount = Math.max(
     summary.product_grid_image_count || 0,
     dm.product_grid_image_count || 0,
@@ -976,7 +1085,7 @@ function buildVisualUxScore(input = {}) {
     ctaSpamCount,
     maxAboveFoldBlock,
     avgParagraphLength,
-    maxTextBlockLength,
+    maxTextBlockLength: effectiveMaxTextBlock,
     textDensity,
     mobileTextDensity,
     headingCount: contentHeadings.length,
@@ -997,6 +1106,11 @@ function buildVisualUxScore(input = {}) {
     productGridImageCount,
     templateDebtSignals,
     duplicateCopyCount,
+    alignmentConfidence,
+    visualEvidenceIssues,
+    densityEvidence,
+    evidenceConfidence,
+    highMobileTextDensity: Boolean(summary.high_mobile_text_density),
     portfolioSignals: signals.has_gallery || /portfolio|gallery|project/i.test(String(crawler.pageText || '')),
     desktopOverflow: Boolean(summary.horizontal_overflow_desktop || dm.horizontal_overflow),
     mobileOverflow: Boolean(summary.horizontal_overflow_mobile || mm.horizontal_overflow),
@@ -1036,7 +1150,9 @@ function buildVisualUxScore(input = {}) {
   for (const [key, weight] of Object.entries(COMPONENT_WEIGHTS)) {
     visualScore += (components[key]?.score ?? missingDefault(avgConfidence)) * weight
   }
+  const scoreBeforeCalibration = Math.round(visualScore)
   visualScore = calibrateFinalVisualScore(visualScore, components, ctx)
+  const scoreAfterCalibration = visualScore
 
   const componentScores = {}
   const componentNotes = {}
@@ -1075,6 +1191,28 @@ function buildVisualUxScore(input = {}) {
     return `Address visual UX issue: ${problem}`
   })
 
+  const evidenceProblems = collectEvidenceProblems(visualEvidenceIssues, HIGH_CONFIDENCE)
+  for (const problem of evidenceProblems) {
+    if (!problems.includes(problem)) problems.push(problem)
+  }
+
+  const scoreTrace = isDebugAnalyzerEnabled()
+    ? {
+        raw_visual_score_100: scoreBeforeCalibration,
+        score_before_calibration: scoreBeforeCalibration,
+        score_after_calibration: scoreAfterCalibration,
+        score_components: componentScores,
+        confidence: avgConfidence,
+        evidence_confidence: evidenceConfidence,
+        visual_evidence_summary: {
+          misaligned_image_count: misalignedImageCount,
+          misalignment_confidence: alignmentConfidence,
+          high_mobile_text_density: Boolean(summary.high_mobile_text_density),
+          issue_count: visualEvidenceIssues.length,
+        },
+      }
+    : null
+
   const readability = components.readability_score
   const layout = components.layout_balance_score
 
@@ -1105,6 +1243,14 @@ function buildVisualUxScore(input = {}) {
     layout_strengths: layout.strengths || [],
     layout_problems: layout.problems || [],
     layout_evidence: layout.evidence || [],
+    score_trace: scoreTrace,
+    visual_evidence_summary: {
+      misaligned_image_count: misalignedImageCount,
+      misalignment_confidence: alignmentConfidence,
+      density_confidence: visualEvidence.density_confidence || summary.density_confidence || 0,
+      high_confidence_issue_count: evidenceProblems.length,
+      issues: visualEvidenceIssues.slice(0, 8),
+    },
     component_weights: COMPONENT_WEIGHTS,
     scoring_inputs: {
       visual_audit_ok: visualAuditOk,
@@ -1114,7 +1260,7 @@ function buildVisualUxScore(input = {}) {
       image_count: imageCount,
       cta_above_fold_count: ctaSpamCount,
       avg_paragraph_length: avgParagraphLength,
-      max_text_block_length: maxTextBlockLength,
+      max_text_block_length: effectiveMaxTextBlock,
       section_count: sectionCount,
       h1_above_fold: heroHeading.h1_above_fold,
       hero_heading_above_fold: heroHeading.hero_heading_above_fold,

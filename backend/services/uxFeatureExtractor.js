@@ -210,8 +210,8 @@ function extractUxFeatures({
     layout_fitted_image_count: visualResult.scoring_inputs?.layout_fitted_image_count ?? 0,
     misaligned_image_count: visualResult.scoring_inputs?.misaligned_image_count ?? 0,
     visitor_appeal_index: computeVisitorAppealIndex(components, visualScore),
-    desktop_text_density: visualAudit?.summary?.desktop_text_density ?? 0,
-    mobile_text_density: visualAudit?.summary?.mobile_text_density ?? 0,
+    desktop_text_density: visualAudit?.summary?.desktop_text_density ?? visualResult.scoring_inputs?.desktop_text_density ?? 0,
+    mobile_text_density: visualAudit?.summary?.mobile_text_density ?? visualResult.scoring_inputs?.mobile_text_density ?? 0,
     signals: {
       has_h1: visualResult.hero_heading?.has_h1 || crawlerSignals.hasH1,
       has_hero_heading: visualResult.hero_heading?.has_hero_heading,
@@ -230,6 +230,9 @@ function extractUxFeatures({
       nav_link_count: visualResult.scoring_inputs.nav_link_count,
     },
     visual_audit_evidence: visualAudit?.evidence_snippets || null,
+    visual_evidence_summary: visualResult.visual_evidence_summary || null,
+    score_trace: visualResult.score_trace || null,
+    visual_issues: visualAudit?.visual_evidence?.high_confidence_issues || visualAudit?.summary?.visual_issues || [],
   }
 }
 

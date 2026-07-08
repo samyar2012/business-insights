@@ -45,7 +45,7 @@ describe('hero heading correction pass', () => {
 
   it('missing semantic H1 with visual hero is minor, not major', () => {
     const result = scoreHero(heroCtx())
-    const semanticIssue = result.problems.find((p) => /semantic H1/i.test(p))
+    const semanticIssue = [...(result.notes || []), ...(result.problems || [])].find((p) => /semantic H1/i.test(p))
     assert.ok(semanticIssue)
     assert.ok(result.score >= 65)
   })
@@ -228,12 +228,31 @@ describe('business model scoring expectations', () => {
     const messy = buildVisualUxScore({
       businessModel: 'ecommerce_store',
       visualAuditOk: true,
+      visualAudit: {
+        ok: true,
+        visual_evidence: {
+          misaligned_image_count: 6,
+          misalignment_confidence: 0.86,
+          evidence_confidence: 0.86,
+          high_confidence_issues: [
+            {
+              category: 'image_alignment',
+              confidence: 0.86,
+              message: 'Image alignment issue detected with 0.86 confidence: 6 images in the product grid have inconsistent rendered dimensions.',
+            },
+          ],
+          medium_confidence_issues: [],
+        },
+      },
       summary: {
         nav_link_count: 18,
         primary_nav_link_count: 8,
         image_count: 12,
         hero_image_present: true,
         desktop_text_density: 0.003,
+        misaligned_image_count: 6,
+        misalignment_confidence: 0.86,
+        evidence_confidence: 0.86,
       },
       desktop: {
         metrics: {
@@ -259,12 +278,24 @@ describe('business model scoring expectations', () => {
     const polished = buildVisualUxScore({
       businessModel: 'ecommerce_store',
       visualAuditOk: true,
+      visualAudit: {
+        ok: true,
+        visual_evidence: {
+          misaligned_image_count: 0,
+          misalignment_confidence: 0,
+          evidence_confidence: 0.84,
+          high_confidence_issues: [],
+          medium_confidence_issues: [],
+        },
+      },
       summary: {
         nav_link_count: 5,
         primary_nav_link_count: 5,
         image_count: 10,
         hero_image_present: true,
         desktop_text_density: 0.0012,
+        evidence_confidence: 0.84,
+        product_grid_image_count: 8,
       },
       desktop: {
         metrics: {

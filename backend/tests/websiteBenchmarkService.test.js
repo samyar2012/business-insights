@@ -132,9 +132,10 @@ describe('websiteBenchmarkService benchmark levels', () => {
     assert.equal(humanBenchmarkToUxUiScore(12.6), 11)
   })
 
-  it('blends crawl UX/UI with benchmark calibration at 70/30', () => {
+  it('adjusts crawl UX/UI by at most 2 points using benchmark context', () => {
     const merged = mergeUxUiWithBenchmark(18, 15)
-    assert.equal(merged.finalScore, Math.round(18 * CRAWL_UX_WEIGHT + 15 * BENCHMARK_UX_WEIGHT))
+    assert.equal(merged.finalScore, 16)
+    assert.equal(merged.adjustment, -2)
     assert.equal(merged.benchmarkScore, 15)
     assert.equal(merged.usedBenchmark, true)
   })
@@ -250,8 +251,9 @@ describe('websiteBenchmarkService comparisons', () => {
 
     applyBenchmarkUxLayer(payload, benchmark)
     assert.equal(payload.benchmark_ux_ui_score, humanBenchmarkToUxUiScore(16.8))
-    assert.equal(payload.ux_ui_score, mergeUxUiWithBenchmark(18, payload.benchmark_ux_ui_score).finalScore)
-    assert.equal(payload.ux_scoring_mode, 'crawl_plus_competitor_benchmark')
+    assert.equal(payload.ux_ui_score, 16)
+    assert.equal(payload.ux_scoring_mode, 'crawl_plus_light_benchmark_context')
+    assert.equal(payload.ux_blend.adjustment, -2)
   })
 
   it('lowers inflated crawl UX/UI when benchmark calibration is applied', () => {
@@ -279,9 +281,9 @@ describe('websiteBenchmarkService comparisons', () => {
     }
 
     applyBenchmarkUxLayer(payload, benchmark)
-    assert.ok(payload.ux_ui_score < 19)
+    assert.equal(payload.ux_ui_score, 17)
     assert.equal(payload.benchmark_ux_ui_score, 15)
-    assert.equal(payload.overall_score, 82)
+    assert.equal(payload.overall_score, 81)
   })
 
   it('returns disabled when no current website score exists', () => {

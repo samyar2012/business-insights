@@ -206,22 +206,27 @@ function humanBenchmarkToUxUiScore(humanScore) {
   return clampUxScore(band - 1)
 }
 
-function mergeUxUiWithBenchmark(crawlUxScore, benchmarkUxScore) {
+function mergeUxUiWithBenchmark(crawlUxScore, benchmarkUxScore, options = {}) {
   const crawlUx = clampUxScore(crawlUxScore)
-  if (benchmarkUxScore == null) {
+  if (benchmarkUxScore == null || options.benchmarkConfidenceLow) {
     return {
       finalScore: crawlUx,
       crawlScore: crawlUx,
-      benchmarkScore: null,
+      benchmarkScore: benchmarkUxScore ?? null,
       usedBenchmark: false,
+      adjustment: 0,
     }
   }
   const benchmarkUx = clampUxScore(benchmarkUxScore)
+  const rawDelta = benchmarkUx - crawlUx
+  const adjustment = Math.max(-2, Math.min(2, rawDelta))
   return {
-    finalScore: clampUxScore(crawlUx * CRAWL_UX_WEIGHT + benchmarkUx * BENCHMARK_UX_WEIGHT),
+    finalScore: clampUxScore(crawlUx + adjustment),
     crawlScore: crawlUx,
     benchmarkScore: benchmarkUx,
     usedBenchmark: true,
+    adjustment,
+    raw_delta: rawDelta,
   }
 }
 
@@ -519,6 +524,11 @@ function applyBenchmarkUxLayer(scorePayload, benchmark = {}) {
 
   scorePayload.crawl_ux_ui_score = crawlUx
 
+  const benchmarkConfidenceLow =
+    benchmark.insufficient_competitors ||
+    !benchmark.has_competitors ||
+    (benchmark.compared_count || 0) < 3
+
   if (!benchmark.enabled || benchmark.benchmark_ux_ui_score == null) {
     scorePayload.ux_scoring_mode = scorePayload.ux_scoring_mode || 'crawl_only'
     if (benchmark.competitor_data_needed) {
@@ -527,23 +537,30 @@ function applyBenchmarkUxLayer(scorePayload, benchmark = {}) {
     return scorePayload
   }
 
-  const merged = mergeUxUiWithBenchmark(crawlUx, benchmark.benchmark_ux_ui_score)
+  const merged = mergeUxUiWithBenchmark(crawlUx, benchmark.benchmark_ux_ui_score, {
+    benchmarkConfidenceLow,
+  })
   scorePayload.benchmark_ux_ui_score = merged.benchmarkScore
   scorePayload.ux_ui_score = merged.finalScore
-  scorePayload.ux_scoring_mode = 'crawl_plus_competitor_benchmark'
+  scorePayload.ux_scoring_mode = merged.usedBenchmark
+    ? 'crawl_plus_light_benchmark_context'
+    : 'crawl_only'
   scorePayload.ux_blend = {
-    crawl_weight: CRAWL_UX_WEIGHT,
-    benchmark_weight: BENCHMARK_UX_WEIGHT,
     crawl_ux_ui_score: merged.crawlScore,
     benchmark_ux_ui_score: merged.benchmarkScore,
     final_ux_ui_score: merged.finalScore,
+    adjustment: merged.adjustment,
+    max_adjustment: 2,
+    benchmark_confidence_low: benchmarkConfidenceLow,
   }
-  recalculateOverallScore(scorePayload)
-  appendUxExplanation(
-    scorePayload,
-    `UX/UI score blends crawl analysis (70%) with competitor benchmark calibration (30%). Benchmark target: ${merged.benchmarkScore}/20.`,
-    merged.finalScore - merged.crawlScore,
-  )
+  if (merged.usedBenchmark && merged.adjustment !== 0) {
+    recalculateOverallScore(scorePayload)
+    appendUxExplanation(
+      scorePayload,
+      `UX/UI score adjusted by ${merged.adjustment > 0 ? '+' : ''}${merged.adjustment} from competitor benchmark context (max ±2).`,
+      merged.adjustment,
+    )
+  }
   return scorePayload
 }
 
