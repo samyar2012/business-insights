@@ -191,19 +191,26 @@ const WebsiteReport = () => {
   const [profile, setProfile] = useState(null)
   const [latestCrawl, setLatestCrawl] = useState(null)
   const [pages, setPages] = useState([])
+  const [actions, setActions] = useState([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [planBusy, setPlanBusy] = useState(false)
+  const [planMessage, setPlanMessage] = useState('')
   const [polling, setPolling] = useState(false)
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
     setError('')
     try {
-      const data = await apiFetch(`/businesses/${businessId}/web-profile`)
+      const [data, actionsData] = await Promise.all([
+        apiFetch(`/businesses/${businessId}/web-profile`),
+        apiFetch('/actions').catch(() => ({ actions: [] })),
+      ])
       setBusiness(data.business)
       setProfile(data.profile)
       setLatestCrawl(data.latest_crawl)
       setPages(data.pages || [])
+      setActions((actionsData.actions || []).filter((a) => a.business_id === businessId))
       return data
     } catch (err) {
       setError(err.message)
@@ -251,6 +258,59 @@ const WebsiteReport = () => {
 
   const rescan = () => startCrawl(true)
 
+  const hasActionPlan = actions.length > 0
+
+  const createFixPlan = async () => {
+    const fixes = profile?.scores?.priority_fixes?.length
+      ? profile.scores.priority_fixes
+      : (profile?.scores?.recommended_actions || []).map((action, index) => ({
+          action,
+          priority: index === 0 ? 'high' : 'medium',
+        }))
+
+    if (!fixes.length) {
+      setPlanMessage('No recommended fixes to add. Review the report sections below.')
+      return
+    }
+
+    setPlanBusy(true)
+    setPlanMessage('')
+    setError('')
+    try {
+      const created = []
+      for (let i = 0; i < fixes.length; i++) {
+        const fix = fixes[i]
+        const title = String(fix.action || fix).trim()
+        if (!title) continue
+        const priority =
+          fix.priority === 'critical' || fix.priority === 'high'
+            ? 'high'
+            : fix.priority === 'low'
+              ? 'low'
+              : 'medium'
+        const data = await apiFetch('/actions', {
+          method: 'POST',
+          body: JSON.stringify({
+            business_id: businessId,
+            title,
+            description: fix.reason || fix.expected_impact || fix.impact || null,
+            priority,
+            source: 'website-report',
+          }),
+        })
+        created.push(data.action)
+      }
+      setActions((prev) => [...created, ...prev])
+      setPlanMessage(`Added ${created.length} tasks to your fix plan.`)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setPlanBusy(false)
+    }
+  }
+
+  const coachPath = `/app/tools/growth-coach?businessId=${businessId}&context=website-report`
+
   if (loading) {
     return (
       <div className="app-loading mt-8">
@@ -292,13 +352,13 @@ const WebsiteReport = () => {
       <Link to="/app" className="app-link text-sm font-medium">&lt;- Dashboard</Link>
 
       <header className="mt-4">
-        <p className="app-eyebrow">Website improvement workspace</p>
+        <p className="app-eyebrow">Website Analyzer</p>
         <h1 className="app-page-title mt-2">{business?.business_name || 'Website report'}</h1>
         <p className="app-page-subtitle">
           {business?.store_url ? (
             <span className="break-all">{business.store_url}</span>
           ) : (
-            'Add a store URL to analyze how well your site attracts and converts customers.'
+            'Add your website URL to see what stops visitors from buying or contacting you.'
           )}
         </p>
       </header>
@@ -307,10 +367,17 @@ const WebsiteReport = () => {
         <Alert variant="error" title="Error" className="mt-6">{error}</Alert>
       ) : null}
 
+      {planMessage ? (
+        <Alert variant="success" title="Fix plan updated" className="mt-6">
+          {planMessage}
+        </Alert>
+      ) : null}
+
       {!profile && !isRunning ? (
         <div className="app-card mt-8 p-6 text-center">
           <p className="text-sm text-[var(--app-text-secondary)]">
-            Run a customer-attraction analysis on your public pages — see what helps or hurts conversions.
+            Scan your public pages to score trust, UX, business fit, and conversion paths — then get
+            ranked fixes.
           </p>
           <button
             type="button"
@@ -363,200 +430,96 @@ const WebsiteReport = () => {
 
       {profile ? (
         <>
-          {!missingWeightedScores ? (
-            <section className="app-card mt-8 p-6">
-              <h2 className="text-sm font-semibold">What this analysis answers</h2>
-              <ul className="mt-4 space-y-3">
-                {lenses.map(({ question, key, max, detail, id }) => {
-                  const value = readWeightedScore(scores, key)
-                  const status = lensStatus(value, max)
-                  const lensDetail = key === 'ux_ui_score' ? uxUiScoreDetail(scores) : detail
-                  const detailBlock = id ? categoryDetails[id] : null
-                  return (
-                    <li
-                      key={key}
-                      className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-[var(--app-border)] px-4 py-3"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-[var(--app-text)]">{question}</p>
-                        <p className="mt-0.5 text-xs text-[var(--app-text-muted)]">{lensDetail}</p>
-                        {detailBlock?.problems?.[0] ? (
-                          <p className="mt-1 text-xs text-[var(--app-danger-icon)]">{detailBlock.problems[0]}</p>
-                        ) : null}
-                      </div>
-                      <div className="text-right text-sm shrink-0">
-                        <span
-                          className={
-                            status.tone === 'success'
-                              ? 'font-semibold text-[var(--app-success-icon)]'
-                              : status.tone === 'warning'
-                                ? 'font-semibold text-[var(--app-warning-icon)]'
-                                : status.tone === 'error'
-                                  ? 'font-semibold text-[var(--app-danger-icon)]'
-                                  : 'text-[var(--app-text-muted)]'
-                          }
-                        >
-                          {status.label}
-                        </span>
-                        {value != null ? (
-                          <p className="text-xs text-[var(--app-text-muted)]">
-                            {value}/{max}
-                            {detailBlock?.confidence != null ? ` · ${detailBlock.confidence}% confidence` : ''}
-                          </p>
-                        ) : null}
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
-            </section>
-          ) : null}
-
-          {scores.readable_summary ? (
-            <section className="app-card mt-6 p-5">
-              <h2 className="text-sm font-semibold">Executive summary</h2>
-              <p className="mt-3 text-sm leading-relaxed text-[var(--app-text-secondary)]">
-                {scores.readable_summary}
-              </p>
-            </section>
-          ) : null}
-
-          <section className="app-card mt-8 p-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
+          <section className="app-report-summary mt-8">
+            <div className="flex flex-wrap items-start justify-between gap-6">
               <div>
                 <p className="app-eyebrow">Overall score</p>
-                <p className={`app-stat-value text-5xl ${scoreTone(scores.overall_score)}`}>
+                <p className={`mt-1 text-5xl font-semibold tracking-tight ${scoreTone(scores.overall_score)}`}>
                   {scores.overall_score ?? '-'}
                   <span className="text-2xl text-[var(--app-text-muted)]">/100</span>
                 </p>
                 {v2Report && scores.human_equivalent_score != null ? (
-                  <p className="mt-1 text-sm font-medium text-[var(--app-text-secondary)]">
+                  <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
                     Benchmark equivalent: {scores.human_equivalent_score}/20
                   </p>
                 ) : null}
-                {typeof scores.confidence_score === 'number' ? (
-                  <p className="mt-1 text-sm text-[var(--app-text-muted)]">
-                    Confidence: {scores.confidence_score}/100
-                  </p>
-                ) : null}
-                <p className="mt-1 text-sm text-[var(--app-text-muted)]">
-                  {latestCrawl?.completed_at
-                    ? `Last analyzed ${formatScanDate(latestCrawl.completed_at)}`
-                    : profile.updated_at
-                      ? `Updated ${formatScanDate(profile.updated_at)}`
-                      : ''}
-                  {scores.scoring_rubric ? (
-                    <span className="block mt-1">
-                      Business model:{' '}
-                      <span className="font-medium">
-                        {getBusinessModelLabel(scores.scoring_rubric)}
-                      </span>
-                    </span>
-                  ) : null}
-                </p>
               </div>
-              <div className="text-sm">
-                <p className="text-[var(--app-text-muted)]">Platform</p>
-                <p className="font-semibold capitalize">{summary.platform || 'unknown'}</p>
-              </div>
+              <dl className="app-report-meta grid gap-3 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-[var(--app-text-muted)]">Business model</dt>
+                  <dd className="font-medium text-[var(--app-text)]">
+                    {scores.scoring_rubric ? getBusinessModelLabel(scores.scoring_rubric) : '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[var(--app-text-muted)]">Platform</dt>
+                  <dd className="font-medium capitalize text-[var(--app-text)]">
+                    {summary.platform || 'unknown'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[var(--app-text-muted)]">Confidence</dt>
+                  <dd className="font-medium text-[var(--app-text)]">
+                    {typeof scores.confidence_score === 'number'
+                      ? `${scores.confidence_score}/100`
+                      : '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[var(--app-text-muted)]">Last analyzed</dt>
+                  <dd className="font-medium text-[var(--app-text)]">
+                    {latestCrawl?.completed_at
+                      ? formatScanDate(latestCrawl.completed_at)
+                      : profile.updated_at
+                        ? formatScanDate(profile.updated_at)
+                        : '—'}
+                  </dd>
+                </div>
+              </dl>
             </div>
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              {categories.map(({ label, key, max, id }) => {
-                const value = readWeightedScore(scores, key)
-                const detail = id ? categoryDetails[id] : null
-                if (value === null) {
-                  return (
-                    <div key={label}>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-[var(--app-text-secondary)]">{label}</span>
-                        <span className="font-medium text-[var(--app-warning-icon)]">Missing score data</span>
-                      </div>
-                    </div>
-                  )
-                }
-                return (
-                  <div key={label} className="rounded-lg border border-[var(--app-border)] p-3">
-                    <ScoreBar label={label} value={value} max={max} />
-                    {detail?.confidence != null ? (
-                      <p className="mt-1 text-xs text-[var(--app-text-muted)]">
-                        {detail.confidence}% confidence
-                      </p>
-                    ) : null}
-                    {key === 'ux_ui_score' && typeof scores.visual_score_100 === 'number' ? (
-                      <p className="mt-1 text-xs text-[var(--app-text-muted)]">
-                        Visual {scores.visual_score_100}/100 → category {value}/{max}
-                        {scores.ux_model?.advisory_only ? ' (ML advisory only, not blended down)' : ''}
-                      </p>
-                    ) : null}
-                    {key === 'customer_attraction_score' && detail?.point_breakdown?.length ? (
-                      <details className="mt-2">
-                        <summary className="cursor-pointer text-xs text-[var(--app-text-muted)]">
-                          Why this score ({value}/{max})
-                        </summary>
-                        <ul className="mt-1 space-y-1 text-xs text-[var(--app-text-secondary)]">
-                          {detail.point_breakdown.map((row) => (
-                            <li key={row.key}>
-                              {row.label}:{' '}
-                              {row.type === 'penalty' || row.earned < 0
-                                ? `−${Math.abs(row.earned)} penalty`
-                                : `${row.earned}/${row.max}`}
-                              {row.note ? ` — ${row.note}` : ''}
-                            </li>
-                          ))}
-                        </ul>
-                      </details>
-                    ) : null}
-                    {detail?.strengths?.[0] ? (
-                      <p className="mt-2 text-xs text-[var(--app-success-icon)]">{detail.strengths[0]}</p>
-                    ) : null}
-                    {detail?.problems?.[0] ? (
-                      <p className="mt-1 text-xs text-[var(--app-danger-icon)]">{detail.problems[0]}</p>
-                    ) : null}
-                  </div>
-                )
-              })}
-            </div>
-            {scores.cap_reasons?.length ? (
-              <Alert variant="warning" title="Why your score was capped" className="mt-4">
-                <ul className="list-inside list-disc space-y-1 text-sm">
-                  {scores.cap_reasons.map((cap) => (
-                    <li key={cap.cap}>
-                      <span className="font-medium">{CAP_LABELS[cap.cap] || cap.cap}:</span> {cap.reason}
-                    </li>
-                  ))}
-                </ul>
-              </Alert>
-            ) : null}
-            {missingWeightedScores ? (
-              <Alert variant="warning" title="Outdated score data" className="mt-4">
-                This report uses an older score format. Rescan the website to refresh weighted category
-                scores.
-              </Alert>
-            ) : null}
-            {scoreSumMismatch ? (
-              <Alert variant="warning" title="Score mismatch" className="mt-4">
-                Overall score ({scores.overall_score}) does not equal the weighted category sum ({weightedSum}
-                ). Rescan the website if this persists.
-              </Alert>
-            ) : null}
-            {scores.safety_status ? (
-              <p className="mt-4 text-xs text-[var(--app-text-muted)]">
-                Safety status:{' '}
-                <span className="font-medium capitalize">
-                  {scores.safety_status === 'verified' ? 'Verified (HTTPS + crawl)' : scores.safety_status}
-                </span>
-                {scores.score_caps_applied?.length ? (
-                  <span className="block mt-1">
-                    Score caps applied: {scores.score_caps_applied.join(', ')}
-                  </span>
-                ) : null}
+
+            {scores.readable_summary ? (
+              <p className="mt-5 text-sm leading-relaxed text-[var(--app-text-secondary)]">
+                {scores.readable_summary}
               </p>
             ) : null}
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              {hasActionPlan ? (
+                <Link to="/app/action-plan" className="app-btn app-btn--primary">
+                  Open action plan
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  className="app-btn app-btn--primary"
+                  disabled={planBusy || !priorityFixes.length}
+                  onClick={createFixPlan}
+                >
+                  {planBusy ? 'Creating...' : 'Create fix plan'}
+                </button>
+              )}
+              <Link to={coachPath} className="app-btn app-btn--secondary">
+                Ask AI coach about this report
+              </Link>
+              <button
+                type="button"
+                className="app-btn app-btn--ghost"
+                disabled={busy || !business?.store_url}
+                onClick={rescan}
+              >
+                {busy ? 'Rescanning...' : 'Rescan'}
+              </button>
+            </div>
           </section>
 
           {scores.mismatch_warnings?.length ? (
-            <Alert variant="warning" title="Model mismatch" className="mt-6">
-              <ul className="list-inside list-disc space-y-1 text-sm">
+            <Alert variant="warning" title="Business model mismatch" className="mt-6">
+              <p className="text-sm text-[var(--app-text-secondary)]">
+                Your site may not match the selected business type. Scores could be capped until you
+                update your business profile or site content.
+              </p>
+              <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
                 {scores.mismatch_warnings.map((warning) => (
                   <li key={warning}>{warning}</li>
                 ))}
@@ -564,46 +527,44 @@ const WebsiteReport = () => {
             </Alert>
           ) : null}
 
-          {scoreExplanations.length ? (
-            <section className="app-card mt-6 p-5">
-              <h2 className="text-sm font-semibold">Score breakdown</h2>
-              <p className="mt-1 text-xs text-[var(--app-text-muted)]">
-                Weighted categories only — safety, functionality, UX, business fit, and customer attraction.
+          {scores.cap_reasons?.length ? (
+            <Alert variant="warning" title="Score capped for safety or critical issues" className="mt-6">
+              <p className="text-sm text-[var(--app-text-secondary)]">
+                Your overall score is limited until these blockers are resolved.
               </p>
-              <ul className="mt-3 space-y-2 text-sm">
-                {scoreExplanations.map((item) => (
-                  <li
-                    key={`${item.category}-${item.reason}`}
-                    className={
-                      item.delta > 0
-                        ? 'text-[var(--app-success-icon)]'
-                        : item.delta < 0
-                          ? 'text-[var(--app-danger-icon)]'
-                          : 'text-[var(--app-text-secondary)]'
-                    }
-                  >
-                    <span className="text-xs uppercase tracking-wide text-[var(--app-text-muted)]">
-                      {String(item.category).replace(/_/g, ' ')}
-                    </span>
-                    {' — '}
-                    {item.delta > 0 ? '+' : ''}
-                    {item.delta !== 0 ? `${item.delta} ` : ''}
-                    {item.reason}
+              <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
+                {scores.cap_reasons.map((cap) => (
+                  <li key={cap.cap}>
+                    <span className="font-medium">{CAP_LABELS[cap.cap] || cap.cap}:</span> {cap.reason}
                   </li>
                 ))}
               </ul>
-            </section>
+            </Alert>
+          ) : null}
+
+          {missingWeightedScores ? (
+            <Alert variant="warning" title="Outdated score data" className="mt-6">
+              This report uses an older score format. Rescan the website to refresh category scores.
+            </Alert>
+          ) : null}
+
+          {scoreSumMismatch ? (
+            <Alert variant="warning" title="Score mismatch" className="mt-6">
+              Overall score ({scores.overall_score}) does not equal the weighted category sum ({weightedSum}
+              ). Rescan if this persists.
+            </Alert>
           ) : null}
 
           {priorityFixes.length ? (
-            <section className="app-card mt-6 p-5">
-              <h2 className="text-sm font-semibold">Fix first — ranked by customer impact</h2>
-              <ol className="mt-4 space-y-4">
+            <section className="mt-8">
+              <h2 className="text-lg font-semibold text-[var(--app-text)]">Top problems to fix first</h2>
+              <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
+                Ranked by customer impact — start at the top for the fastest wins.
+              </p>
+              <ol className="mt-5 space-y-4">
                 {priorityFixes.map((fix) => (
-                  <li key={`${fix.rank}-${fix.action}`} className="flex gap-3">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--app-input-bg)] text-xs font-bold">
-                      {fix.rank}
-                    </span>
+                  <li key={`${fix.rank}-${fix.action}`} className="app-priority-fix flex gap-3">
+                    <span className="app-priority-fix__rank">{fix.rank}</span>
                     <div className="min-w-0">
                       <p className="text-xs font-medium uppercase tracking-wide text-[var(--app-warning-icon)]">
                         {PRIORITY_LABELS[fix.priority] || fix.priority}
@@ -630,8 +591,164 @@ const WebsiteReport = () => {
             </section>
           ) : null}
 
+          <section className="mt-8">
+            <h2 className="text-lg font-semibold text-[var(--app-text)]">Score by category</h2>
+            <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
+              Safety, functionality, UX, business fit, and customer attraction.
+            </p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {categories.map(({ label, key, max, id }) => {
+                const value = readWeightedScore(scores, key)
+                const detail = id ? categoryDetails[id] : null
+                const status = lensStatus(value, max)
+                if (value === null) {
+                  return (
+                    <div key={label} className="app-score-category app-score-category--missing">
+                      <p className="text-sm font-medium text-[var(--app-text)]">{label}</p>
+                      <p className="mt-2 text-xs text-[var(--app-warning-icon)]">Missing score data</p>
+                    </div>
+                  )
+                }
+                return (
+                  <div key={label} className="app-score-category">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium text-[var(--app-text)]">{label}</p>
+                      <span
+                        className={
+                          status.tone === 'success'
+                            ? 'text-xs font-semibold text-[var(--app-success-icon)]'
+                            : status.tone === 'warning'
+                              ? 'text-xs font-semibold text-[var(--app-warning-icon)]'
+                              : status.tone === 'error'
+                                ? 'text-xs font-semibold text-[var(--app-danger-icon)]'
+                                : 'text-xs text-[var(--app-text-muted)]'
+                        }
+                      >
+                        {status.label}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-2xl font-semibold text-[var(--app-text)]">
+                      {value}
+                      <span className="text-sm text-[var(--app-text-muted)]">/{max}</span>
+                    </p>
+                    <ScoreBar label="" value={value} max={max} />
+                    {detail?.confidence != null ? (
+                      <p className="mt-2 text-xs text-[var(--app-text-muted)]">
+                        {detail.confidence}% confidence
+                      </p>
+                    ) : null}
+                    {detail?.problems?.[0] ? (
+                      <p className="mt-2 text-xs text-[var(--app-danger-icon)]">{detail.problems[0]}</p>
+                    ) : detail?.strengths?.[0] ? (
+                      <p className="mt-2 text-xs text-[var(--app-success-icon)]">{detail.strengths[0]}</p>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+
+          {!missingWeightedScores ? (
+            <section className="mt-8">
+              <h2 className="text-sm font-semibold text-[var(--app-text)]">What this analysis answers</h2>
+              <ul className="mt-4 space-y-3">
+                {lenses.map(({ question, key, max, detail, id }) => {
+                  const value = readWeightedScore(scores, key)
+                  const status = lensStatus(value, max)
+                  const lensDetail = key === 'ux_ui_score' ? uxUiScoreDetail(scores) : detail
+                  const detailBlock = id ? categoryDetails[id] : null
+                  return (
+                    <li key={key} className="app-priority-fix">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-[var(--app-text)]">{question}</p>
+                          <p className="mt-0.5 text-xs text-[var(--app-text-muted)]">{lensDetail}</p>
+                          {detailBlock?.problems?.[0] ? (
+                            <p className="mt-1 text-xs text-[var(--app-danger-icon)]">
+                              {detailBlock.problems[0]}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="text-right text-sm shrink-0">
+                          <span
+                            className={
+                              status.tone === 'success'
+                                ? 'font-semibold text-[var(--app-success-icon)]'
+                                : status.tone === 'warning'
+                                  ? 'font-semibold text-[var(--app-warning-icon)]'
+                                  : status.tone === 'error'
+                                    ? 'font-semibold text-[var(--app-danger-icon)]'
+                                    : 'text-[var(--app-text-muted)]'
+                            }
+                          >
+                            {status.label}
+                          </span>
+                          {value != null ? (
+                            <p className="text-xs text-[var(--app-text-muted)]">
+                              {value}/{max}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
+          ) : null}
+
+          <section className="app-report-technical mt-10 pt-8">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
+              Technical breakdown
+            </h2>
+            <p className="mt-1 text-xs text-[var(--app-text-muted)]">
+              Detailed scoring evidence, benchmarks, and crawl data.
+            </p>
+
+          {scoreExplanations.length ? (
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold text-[var(--app-text)]">Score adjustments</h3>
+              <ul className="mt-3 space-y-2 text-sm">
+                {scoreExplanations.map((item) => (
+                  <li
+                    key={`${item.category}-${item.reason}`}
+                    className={
+                      item.delta > 0
+                        ? 'text-[var(--app-success-icon)]'
+                        : item.delta < 0
+                          ? 'text-[var(--app-danger-icon)]'
+                          : 'text-[var(--app-text-secondary)]'
+                    }
+                  >
+                    <span className="text-xs uppercase tracking-wide text-[var(--app-text-muted)]">
+                      {String(item.category).replace(/_/g, ' ')}
+                    </span>
+                    {' — '}
+                    {item.delta > 0 ? '+' : ''}
+                    {item.delta !== 0 ? `${item.delta} ` : ''}
+                    {item.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {scores.safety_status ? (
+            <p className="mt-6 text-xs text-[var(--app-text-muted)]">
+              Safety status:{' '}
+              <span className="font-medium capitalize text-[var(--app-text-secondary)]">
+                {scores.safety_status === 'verified' ? 'Verified (HTTPS + crawl)' : scores.safety_status}
+              </span>
+              {scores.score_caps_applied?.length ? (
+                <span className="block mt-1">
+                  Score caps applied: {scores.score_caps_applied.join(', ')}
+                </span>
+              ) : null}
+            </p>
+          ) : null}
+
           {scores.ux_score_components && Object.keys(scores.ux_score_components).length ? (
-            <section className="app-card mt-6 p-5">
+            <section className="mt-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="text-sm font-semibold">UX / UI visual breakdown</h2>
@@ -774,7 +891,7 @@ const WebsiteReport = () => {
           ) : null}
 
           {benchmark?.enabled ? (
-            <section className="app-card mt-6 p-5">
+            <section className="mt-6">
               <h2 className="text-sm font-semibold">Benchmark comparison</h2>
               <p className="mt-1 text-xs text-[var(--app-text-muted)]">
                 {benchmark.current_benchmark_level || benchmark.target_level}:{' '}
@@ -858,8 +975,8 @@ const WebsiteReport = () => {
           ) : null}
 
           {v2Report && Object.keys(categoryDetails).length ? (
-            <section className="app-card mt-6 p-5">
-              <h2 className="text-sm font-semibold">Evidence from the crawl</h2>
+            <section className="mt-6">
+              <h3 className="text-sm font-semibold text-[var(--app-text)]">Evidence from the crawl</h3>
               <div className="mt-4 space-y-4">
                 {Object.entries(categoryDetails).map(([category, detail]) => (
                   <div key={category}>
@@ -882,14 +999,14 @@ const WebsiteReport = () => {
             </section>
           ) : null}
 
-          <div className="mt-6 grid gap-4 sm:grid-cols-3">
+          <div className="mt-8 grid gap-6 sm:grid-cols-3">
             {[
               ['Strengths', scores.strengths],
               ['Risks', scores.risks],
               ['Next actions', scores.recommended_actions],
             ].map(([title, items]) => (
-              <section key={title} className="app-card p-5">
-                <h2 className="text-sm font-semibold">{title}</h2>
+              <div key={title}>
+                <h3 className="text-sm font-semibold text-[var(--app-text)]">{title}</h3>
                 <ul className="mt-3 list-inside list-disc space-y-1 text-sm text-[var(--app-text-secondary)]">
                   {(items || []).map((item) => (
                     <li key={item}>{item}</li>
@@ -898,12 +1015,12 @@ const WebsiteReport = () => {
                     <li className="text-[var(--app-text-muted)]">No items identified yet.</li>
                   ) : null}
                 </ul>
-              </section>
+              </div>
             ))}
           </div>
 
-          <section className="app-card mt-6 p-5">
-            <h2 className="text-sm font-semibold">Analyzed pages ({pages.length})</h2>
+          <section className="mt-8">
+            <h3 className="text-sm font-semibold text-[var(--app-text)]">Analyzed pages ({pages.length})</h3>
             <ul className="mt-3 divide-y divide-[var(--app-border)] text-sm">
               {pages.map((page) => (
                 <li key={page.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
@@ -918,19 +1035,34 @@ const WebsiteReport = () => {
               ))}
             </ul>
           </section>
+          </section>
 
-          <div className="mt-8 flex flex-wrap gap-3">
+          <div className="mt-10 flex flex-wrap gap-3 border-t border-[var(--app-border)] pt-8">
+            {hasActionPlan ? (
+              <Link to="/app/action-plan" className="app-btn app-btn--primary">
+                Open action plan
+              </Link>
+            ) : (
+              <button
+                type="button"
+                className="app-btn app-btn--primary"
+                disabled={planBusy || !priorityFixes.length}
+                onClick={createFixPlan}
+              >
+                {planBusy ? 'Creating...' : 'Create fix plan'}
+              </button>
+            )}
+            <Link to={coachPath} className="app-btn app-btn--secondary">
+              Ask AI coach about this report
+            </Link>
             <button
               type="button"
-              className="app-btn app-btn--primary"
+              className="app-btn app-btn--ghost"
               disabled={busy || !business?.store_url}
               onClick={rescan}
             >
               {busy ? 'Rescanning...' : 'Rescan website'}
             </button>
-            <Link to="/app/tools/growth-coach" className="app-btn app-btn--secondary">
-              Ask AI coach
-            </Link>
           </div>
         </>
       ) : null}

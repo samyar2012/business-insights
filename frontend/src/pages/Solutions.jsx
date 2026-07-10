@@ -10,11 +10,11 @@ const Solutions = () => {
           <Reveal>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/65">Solutions</p>
             <h1 className="section-heading-gradient mt-2 max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">
-              Vertical-specific growth systems for modern online businesses.
+              Website improvement for every type of online business.
             </h1>
             <p className="mt-4 max-w-3xl text-white/75">
-              Choose your business type and run proven playbooks with AI support and transparent trial
-              to paid conversion.
+              Stores, service providers, listings, and hybrid models — analyze your site, fix what
+              blocks customers, and grow with AI tools.
             </p>
           </Reveal>
         </div>

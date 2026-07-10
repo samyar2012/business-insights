@@ -1,0 +1,290 @@
+[
+  {
+    "id": "eco-01",
+    "url": "https://www.honeylove.com",
+    "category": "ecommerce_store",
+    "business_model": "ecommerce_store",
+    "ui_tier": "medium-high",
+    "notes": "Small DTC shapewear brand"
+  },
+  {
+    "id": "eco-02",
+    "url": "https://pura.com",
+    "category": "ecommerce_store",
+    "business_model": "ecommerce_store",
+    "ui_tier": "medium-high",
+    "notes": "Small smart-home fragrance brand"
+  },
+  {
+    "id": "eco-03",
+    "url": "https://www.trueclassictees.com",
+    "category": "ecommerce_store",
+    "business_model": "ecommerce_store",
+    "ui_tier": "medium",
+    "notes": "Small apparel DTC"
+  },
+  {
+    "id": "eco-04",
+    "url": "https://www.nativecos.com",
+    "category": "ecommerce_store",
+    "business_model": "ecommerce_store",
+    "ui_tier": "medium",
+    "notes": "Small personal care DTC"
+  },
+  {
+    "id": "eco-05",
+    "url": "https://drinkolipop.com",
+    "category": "ecommerce_store",
+    "business_model": "ecommerce_store",
+    "ui_tier": "medium-high",
+    "notes": "Small beverage DTC"
+  },
+  {
+    "id": "eco-06",
+    "url": "https://www.chubbiesshorts.com",
+    "category": "ecommerce_store",
+    "business_model": "ecommerce_store",
+    "ui_tier": "medium",
+    "notes": "Small lifestyle apparel DTC"
+  },
+  {
+    "id": "gal-01",
+    "url": "https://neutralcurtains.com",
+    "category": "gallery_physical_service",
+    "business_model": "online_gallery_physical_service",
+    "ui_tier": "medium",
+    "notes": "Independent curtain retailer"
+  },
+  {
+    "id": "gal-02",
+    "url": "https://www.la-shades.com",
+    "category": "gallery_physical_service",
+    "business_model": "online_gallery_physical_service",
+    "ui_tier": "low",
+    "notes": "Local shades installer"
+  },
+  {
+    "id": "gal-03",
+    "url": "https://lacustomblinds.com",
+    "category": "gallery_physical_service",
+    "business_model": "online_gallery_physical_service",
+    "ui_tier": "medium",
+    "notes": "Local custom blinds shop"
+  },
+  {
+    "id": "gal-04",
+    "url": "https://www.drapestyle.com",
+    "category": "gallery_physical_service",
+    "business_model": "online_gallery_physical_service",
+    "ui_tier": "medium",
+    "notes": "Custom drapes small business"
+  },
+  {
+    "id": "gal-05",
+    "url": "https://www.justblinds.com",
+    "category": "gallery_physical_service",
+    "business_model": "online_gallery_physical_service",
+    "ui_tier": "medium-high",
+    "notes": "Online blinds retailer"
+  },
+  {
+    "id": "gal-06",
+    "url": "https://www.blindsmax.com",
+    "category": "gallery_physical_service",
+    "business_model": "online_gallery_physical_service",
+    "ui_tier": "medium",
+    "notes": "Independent blinds ecommerce"
+  },
+  {
+    "id": "ops-01",
+    "url": "https://www.dunnlumber.com",
+    "category": "online_physical_service",
+    "business_model": "online_plus_physical_service",
+    "ui_tier": "medium",
+    "notes": "Regional lumber + services"
+  },
+  {
+    "id": "ops-02",
+    "url": "https://www.floorcity.com",
+    "category": "online_physical_service",
+    "business_model": "online_plus_physical_service",
+    "ui_tier": "medium",
+    "notes": "Flooring supplier + install"
+  },
+  {
+    "id": "ops-03",
+    "url": "https://www.tileshop.com",
+    "category": "online_physical_service",
+    "business_model": "online_plus_physical_service",
+    "ui_tier": "medium",
+    "notes": "Tile retail + design help"
+  },
+  {
+    "id": "ops-04",
+    "url": "https://www.flooringamerica.com",
+    "category": "online_physical_service",
+    "business_model": "online_plus_physical_service",
+    "ui_tier": "medium",
+    "notes": "Local flooring dealer network"
+  },
+  {
+    "id": "ops-05",
+    "url": "https://www.llflooring.com",
+    "category": "online_physical_service",
+    "business_model": "online_plus_physical_service",
+    "ui_tier": "medium",
+    "notes": "Regional flooring retail"
+  },
+  {
+    "id": "ops-06",
+    "url": "https://www.flooranddecor.com",
+    "category": "online_physical_service",
+    "business_model": "online_plus_physical_service",
+    "ui_tier": "medium",
+    "notes": "Flooring retail + design"
+  },
+  {
+    "id": "loc-01",
+    "url": "https://www.mikesplumbing.com",
+    "category": "local_service",
+    "business_model": "local_service_business",
+    "ui_tier": "medium",
+    "notes": "Local plumbing company"
+  },
+  {
+    "id": "loc-02",
+    "url": "https://www.plumbingbyjake.com",
+    "category": "local_service",
+    "business_model": "local_service_business",
+    "ui_tier": "medium",
+    "notes": "Independent plumber"
+  },
+  {
+    "id": "loc-03",
+    "url": "https://www.rooterhero.com",
+    "category": "local_service",
+    "business_model": "local_service_business",
+    "ui_tier": "medium",
+    "notes": "Regional plumbing service"
+  },
+  {
+    "id": "loc-04",
+    "url": "https://www.horizonplumbing.com",
+    "category": "local_service",
+    "business_model": "local_service_business",
+    "ui_tier": "medium",
+    "notes": "Local plumbing contractor"
+  },
+  {
+    "id": "loc-05",
+    "url": "https://www.benjaminfranklinplumbing.com",
+    "category": "local_service",
+    "business_model": "local_service_business",
+    "ui_tier": "medium",
+    "notes": "Plumbing service business"
+  },
+  {
+    "id": "loc-06",
+    "url": "https://www.ars.com",
+    "category": "local_service",
+    "business_model": "local_service_business",
+    "ui_tier": "medium",
+    "notes": "HVAC and appliance repair"
+  },
+  {
+    "id": "cnt-01",
+    "url": "https://www.budgetbytes.com",
+    "category": "content_business",
+    "business_model": "blog",
+    "ui_tier": "medium",
+    "notes": "Small food blog"
+  },
+  {
+    "id": "cnt-02",
+    "url": "https://www.sallysbakingaddiction.com",
+    "category": "content_business",
+    "business_model": "blog",
+    "ui_tier": "medium-high",
+    "notes": "Baking blog + shop"
+  },
+  {
+    "id": "cnt-03",
+    "url": "https://www.smittenkitchen.com",
+    "category": "content_business",
+    "business_model": "blog",
+    "ui_tier": "high",
+    "notes": "Independent food blog"
+  },
+  {
+    "id": "cnt-04",
+    "url": "https://www.waitbutwhy.com",
+    "category": "content_business",
+    "business_model": "blog",
+    "ui_tier": "medium",
+    "notes": "Long-form blog"
+  },
+  {
+    "id": "cnt-05",
+    "url": "https://www.copyblogger.com",
+    "category": "content_business",
+    "business_model": "content_business",
+    "ui_tier": "medium",
+    "notes": "Marketing content business"
+  },
+  {
+    "id": "cnt-06",
+    "url": "https://www.cookieandkate.com",
+    "category": "content_business",
+    "business_model": "blog",
+    "ui_tier": "medium-high",
+    "notes": "Vegetarian food blog"
+  },
+  {
+    "id": "hyb-01",
+    "url": "https://www.tentree.com",
+    "category": "online_offline_store",
+    "business_model": "online_plus_offline_store",
+    "ui_tier": "medium",
+    "notes": "Sustainable apparel + retail"
+  },
+  {
+    "id": "hyb-02",
+    "url": "https://www.bombas.com",
+    "category": "online_offline_store",
+    "business_model": "online_plus_offline_store",
+    "ui_tier": "medium-high",
+    "notes": "DTC socks + retail presence"
+  },
+  {
+    "id": "hyb-03",
+    "url": "https://www.worldmarket.com",
+    "category": "online_offline_store",
+    "business_model": "online_plus_offline_store",
+    "ui_tier": "medium",
+    "notes": "Specialty retail + ecommerce"
+  },
+  {
+    "id": "hyb-04",
+    "url": "https://www.peakdesign.com",
+    "category": "online_offline_store",
+    "business_model": "online_plus_offline_store",
+    "ui_tier": "medium-high",
+    "notes": "Camera gear DTC + stores"
+  },
+  {
+    "id": "hyb-05",
+    "url": "https://www.publicgoods.com",
+    "category": "online_offline_store",
+    "business_model": "online_plus_offline_store",
+    "ui_tier": "medium",
+    "notes": "Household goods DTC"
+  },
+  {
+    "id": "hyb-06",
+    "url": "https://www.ourplace.com",
+    "category": "online_offline_store",
+    "business_model": "online_plus_offline_store",
+    "ui_tier": "medium-high",
+    "notes": "Kitchenware DTC + retail"
+  }
+]

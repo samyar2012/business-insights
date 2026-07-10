@@ -83,7 +83,7 @@ const ActionPlan = () => {
         <p className="app-eyebrow">Tasks</p>
         <h1 className="app-page-title mt-2">Action Plan</h1>
         <p className="app-page-subtitle">
-          Track scan recommendations and growth tasks from todo to done.
+          Track website fixes and growth tasks from your analyzer report — todo to done.
         </p>
       </header>
 
@@ -99,10 +99,10 @@ const ActionPlan = () => {
         <div className="app-card mt-8 p-8 text-center">
           <p className="text-sm text-[var(--app-text-secondary)]">No action items yet.</p>
           <p className="mt-2 text-sm text-[var(--app-text-muted)]">
-            Open a scan report and click Create action plan to turn next actions into tasks.
+            Open your website report and click Create fix plan to turn ranked problems into tasks.
           </p>
-          <Link to="/app/scans" className="app-btn app-btn--primary mt-5 inline-flex">
-            View scans
+          <Link to="/app" className="app-btn app-btn--primary mt-5 inline-flex">
+            Go to dashboard
           </Link>
         </div>
       ) : (

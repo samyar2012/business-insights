@@ -3,17 +3,17 @@ import Footer from '../components/general/Footer'
 import Hero from '../components/general/Hero'
 import Reveal from '../components/general/Reveal'
 import {
-  aiProducts,
-  businessVerticals,
-  primaryServices,
-  serviceTracks,
-  trialFlow,
+  aiToolsPreview,
+  businessTypes,
+  howItWorks,
+  productPillars,
+  reportHighlights,
 } from '../content/home'
 
 const aboutBullets = [
-  'A premium black-glass interface designed for confident executive decision making.',
-  'Live operating views for acquisition, sales calls, onboarding, and renewals.',
-  'Service-driven delivery model so strategy and implementation move together.',
+  'Built for owners and operators — not agencies pitching retainers.',
+  'Website Analyzer is the core product; AI tools extend what you learn from the scan.',
+  'Scores adapt to your business model, from online stores to local services and listings.',
 ]
 
 const Home = () => {
@@ -21,26 +21,71 @@ const Home = () => {
     <>
       <Hero />
 
-      <section id="services" className="modern-section scroll-mt-24 lg:scroll-mt-28">
+      <section id="how-it-works" className="modern-section scroll-mt-24 lg:scroll-mt-28">
         <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
           <Reveal>
             <div className="mx-auto max-w-3xl text-center">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/65 sm:text-sm">
-                Core services
+                How it works
               </p>
               <h2 className="section-heading-gradient mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-                A complete service stack to drive calls and customer growth.
+                Analyze, review, plan, and improve — in one app.
               </h2>
               <p className="mt-3 text-base text-white/75 sm:text-lg">
-                Every layer of the platform is built to improve response speed, conversion quality, and
-                long-term retention.
+                Business Insights is a practical workspace for fixing your website, not a services
+                brochure.
               </p>
             </div>
           </Reveal>
-          <ul className="mt-12 grid gap-6 md:grid-cols-3">
-            {primaryServices.map((item, index) => (
+          <ol className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {howItWorks.map((item, index) => (
+              <li key={item.step}>
+                <Reveal variant="scale" delay={index * 70}>
+                  <div className="card-hover flex h-full flex-col rounded-2xl bg-white/6 p-6 text-left sm:p-7">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/14 text-sm font-bold text-white">
+                      {item.step}
+                    </span>
+                    <h3 className="mt-4 text-lg font-semibold text-white">{item.title}</h3>
+                    <p className="mt-2 text-sm leading-relaxed text-white/72">{item.body}</p>
+                  </div>
+                </Reveal>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <section id="product" className="modern-section scroll-mt-24 lg:scroll-mt-28">
+        <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
+          <Reveal>
+            <div className="mx-auto max-w-3xl text-center">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/65 sm:text-sm">
+                What you get
+              </p>
+              <h2 className="section-heading-gradient mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
+                A website report that tells you what to fix first.
+              </h2>
+            </div>
+          </Reveal>
+          <ul className="mt-10 grid gap-4 sm:grid-cols-3">
+            {reportHighlights.map((item, index) => (
+              <li key={item.label}>
+                <Reveal variant="scale" delay={index * 60}>
+                  <div className="card-hover rounded-2xl bg-white/6 p-5 text-center sm:p-6">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-white/60">
+                      {item.label}
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-white">{item.value}</p>
+                    <p className="mt-2 text-sm text-white/70">{item.detail}</p>
+                  </div>
+                </Reveal>
+              </li>
+            ))}
+          </ul>
+          <ul className="mt-8 grid gap-6 md:grid-cols-3">
+            {productPillars.map((item, index) => (
               <li key={item.title}>
-                <Reveal variant="scale" delay={index * 80}>
+                <Reveal variant="scale" delay={index * 50}>
                   <div className="card-hover flex h-full flex-col rounded-2xl bg-white/6 p-6 text-left sm:p-7">
                     <h3 className="text-lg font-semibold text-white">{item.title}</h3>
                     <p className="mt-3 text-sm leading-relaxed text-white/72">{item.desc}</p>
@@ -57,36 +102,26 @@ const Home = () => {
           <Reveal>
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/65 sm:text-sm">
-                Service programs
+                Who it is for
               </p>
               <h2 className="section-heading-gradient mt-2 max-w-3xl text-2xl font-semibold tracking-tight sm:text-3xl">
-                Done-for-you tracks that match your growth stage.
+                Built for any business that relies on its website to win customers.
               </h2>
               <p className="mt-3 max-w-2xl text-base text-white/75 sm:text-lg">
-                Choose the right path for your team and scale into deeper service support as your volume
-                and complexity increase.
+                Stores, service providers, galleries, listings, and hybrid models — scoring adjusts
+                to how you actually operate.
               </p>
             </div>
           </Reveal>
-          <div className="mt-10 grid gap-6 lg:grid-cols-3">
-            {serviceTracks.map((track, index) => (
-              <Reveal key={track.id} variant="scale" delay={index * 70}>
-                <article
-                  id={track.id}
-                  className="card-hover flex h-full flex-col rounded-2xl bg-linear-to-b from-white/12 to-white/4 p-6 backdrop-blur-lg sm:p-7"
-                >
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/65 sm:text-xs">
-                    {track.tag}
+          <div className="mt-10 grid gap-5 lg:grid-cols-2">
+            {businessTypes.map((v, index) => (
+              <Reveal key={v.id} variant="scale" delay={index * 60}>
+                <article id={v.id} className="card-hover h-full rounded-2xl bg-white/4 p-6">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/60 sm:text-xs">
+                    {v.badge}
                   </p>
-                  <h3 className="mt-2 text-xl font-semibold tracking-tight text-white">{track.title}</h3>
-                  <ul className="mt-5 space-y-2 text-sm text-white/80">
-                    {track.items.map((line) => (
-                      <li key={line} className="flex gap-2.5">
-                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-white/60" aria-hidden />
-                        <span>{line}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  <h3 className="mt-2 text-xl font-semibold tracking-tight text-white">{v.title}</h3>
+                  <p className="mt-3 text-sm leading-relaxed text-white/75">{v.blurb}</p>
                 </article>
               </Reveal>
             ))}
@@ -94,20 +129,20 @@ const Home = () => {
         </div>
       </section>
 
-      <section id="ai-tools" className="modern-section scroll-mt-24 lg:scroll-mt-28">
+      <section id="tools" className="modern-section scroll-mt-24 lg:scroll-mt-28">
         <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
           <Reveal>
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/65 sm:text-sm">
-                Modern capabilities
+                After your scan
               </p>
               <h2 className="section-heading-gradient mt-2 max-w-3xl text-2xl font-semibold tracking-tight sm:text-3xl">
-                Purpose-built products for acquisition, conversion, and retention.
+                AI tools that connect back to your website report.
               </h2>
             </div>
           </Reveal>
           <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-5">
-            {aiProducts.map((item, index) => (
+            {aiToolsPreview.map((item, index) => (
               <li key={item.title}>
                 <Reveal variant="scale" delay={index * 45}>
                   <div className="card-hover flex h-full flex-col rounded-2xl bg-white/6 p-5 sm:p-6">
@@ -124,78 +159,20 @@ const Home = () => {
         </div>
       </section>
 
-      <section className="modern-section scroll-mt-24 lg:scroll-mt-28" aria-label="Vertical playbooks">
-        <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
-          <Reveal>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/65 sm:text-sm">
-                Industry verticals
-              </p>
-              <h2 className="section-heading-gradient mt-2 max-w-3xl text-2xl font-semibold tracking-tight sm:text-3xl">
-                Specialized playbooks for every kind of ecommerce business.
-              </h2>
-            </div>
-          </Reveal>
-          <div className="mt-10 grid gap-5 lg:grid-cols-3">
-            {businessVerticals.map((v, index) => (
-              <Reveal key={v.id} variant="scale" delay={index * 60}>
-                <article id={v.id} className="card-hover h-full rounded-2xl bg-white/4 p-6">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/60 sm:text-xs">
-                    {v.badge}
-                  </p>
-                  <h3 className="mt-2 text-xl font-semibold tracking-tight text-white">{v.title}</h3>
-                  <p className="mt-3 text-sm leading-relaxed text-white/75">{v.blurb}</p>
-                </article>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="trial" className="modern-section scroll-mt-24 lg:scroll-mt-28">
-        <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
-          <Reveal>
-            <div className="mx-auto max-w-3xl text-center">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/65 sm:text-sm">
-                How to get started
-              </p>
-              <h2 className="section-heading-gradient mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-                Three clean steps from onboarding to ongoing growth.
-              </h2>
-            </div>
-          </Reveal>
-          <ol className="mt-12 grid gap-6 md:grid-cols-3">
-            {trialFlow.map((item, index) => (
-              <li key={item.step}>
-                <Reveal variant="scale" delay={index * 80}>
-                  <div className="card-hover flex h-full flex-col rounded-2xl bg-white/6 p-6 text-left sm:p-7">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/14 text-sm font-bold text-white">
-                      {item.step}
-                    </span>
-                    <h3 className="mt-4 text-lg font-semibold text-white">{item.title}</h3>
-                    <p className="mt-2 text-sm leading-relaxed text-white/72">{item.body}</p>
-                  </div>
-                </Reveal>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
-
       <section id="about" className="modern-section scroll-mt-24 lg:scroll-mt-28">
         <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
           <div className="grid gap-8 lg:grid-cols-2 lg:items-start lg:gap-12">
             <Reveal>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/65 sm:text-sm">
-                  Why Business Insight
+                  Why Business Insights
                 </p>
                 <h2 className="section-heading-gradient mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-                  A luxury-modern experience with real business outcomes.
+                  An app for fixing your site, not another agency pitch deck.
                 </h2>
                 <p className="mt-3 text-base text-white/75 sm:text-lg">
-                  Built for teams that care about design quality and revenue quality. We combine elegant
-                  UX, intelligent workflows, and hands-on growth partnership.
+                  Scan your website, understand what blocks customers, build a fix plan, and use AI
+                  tools to keep improving — all in one workspace.
                 </p>
               </div>
             </Reveal>
@@ -224,25 +201,25 @@ const Home = () => {
             >
               <div className="mx-auto max-w-xl text-center">
                 <h2 className="section-heading-gradient text-xl font-semibold tracking-tight sm:text-2xl lg:text-3xl">
-                  Ready to build a premium growth engine?
+                  Start with a free website scan
                 </h2>
                 <p className="mt-3 text-sm text-white/75 sm:text-base">
-                  Book your strategy call and we will map your service plan, growth priorities, and launch
-                  timeline.
+                  Create an account, add your business URL, and see what is stopping customers from
+                  buying or contacting you.
                 </p>
                 <div className="mt-7 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
                   <Link
                     to="/signup"
                     className="btn-lift inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-semibold text-black shadow-lg"
                   >
-                    Start now
+                    Start analyzing
                   </Link>
-                  <a
-                    href="tel:+18005550199"
+                  <Link
+                    to="/#how-it-works"
                     className="btn-lift inline-flex items-center justify-center rounded-full border border-white/35 px-6 py-3 text-sm font-semibold text-white hover:bg-white/10"
                   >
-                    Call sales
-                  </a>
+                    See how it works
+                  </Link>
                 </div>
                 <p className="mt-5 text-xs text-white/55">
                   Already have an account?{' '}
@@ -255,16 +232,6 @@ const Home = () => {
                 </p>
               </div>
             </div>
-          </Reveal>
-        </div>
-      </section>
-
-      <section id="login" className="scroll-mt-24 pb-16 lg:scroll-mt-28">
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          <Reveal>
-            <p className="text-center text-sm text-white/60">
-              Secure workspace login is available for active clients and internal teams.
-            </p>
           </Reveal>
         </div>
       </section>

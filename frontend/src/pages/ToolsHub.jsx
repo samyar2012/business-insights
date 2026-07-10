@@ -1,60 +1,87 @@
 import { Link } from 'react-router-dom'
-import { TOOL_CATALOG, TOOL_ICONS } from './tools/toolConfig'
+import { useAuth } from '../context/AuthContext'
+import ToolIcon from '../components/app/ToolIcon'
+import { resolveToolPath, toolsByGroup } from './tools/toolConfig'
 
 const ToolsHub = () => {
+  const { user } = useAuth()
+  const businessId = user?.businesses?.[0]?.id
+  const groups = toolsByGroup()
+
   return (
     <div className="mx-auto max-w-5xl">
       <header className="app-stagger">
-        <p className="app-eyebrow">Intelligence suite</p>
+        <p className="app-eyebrow">Workspace tools</p>
         <h1 className="app-page-title mt-2">Tools</h1>
         <p className="app-page-subtitle max-w-2xl">
-          Growth tools built for ecommerce operators. Run a Business Scanner first, then use AI
-          coaching, content generation, and competitor research on dedicated pages.
+          Every tool connects to your Website Analyzer workflow — scan, plan, improve, compare, and
+          grow. Built for online stores, service businesses, listings, and hybrid models.
         </p>
       </header>
 
-      <section className="app-card app-card--accent app-stagger mt-10 p-6 sm:p-8">
-        <p className="app-eyebrow">Getting started</p>
-        <h2 className="mt-2 text-xl font-semibold text-[var(--app-text)]">Run your first scan</h2>
+      <section className="app-next-action app-stagger mt-8">
+        <p className="app-eyebrow">Recommended start</p>
+        <h2 className="mt-2 text-lg font-semibold text-[var(--app-text)]">Run the Website Analyzer</h2>
         <p className="mt-2 max-w-xl text-sm text-[var(--app-text-secondary)]">
-          Select a business, add your store and social URLs, and get scores with strengths, risks,
-          and next actions. Connect your workspace for richer context later.
+          Add your business URL if needed, then scan your public pages for trust, UX, and conversion
+          blockers.
         </p>
-        <div className="mt-5 flex flex-wrap gap-3">
-          <Link to="/app/workspace/url" className="app-btn app-btn--secondary">
-            Add store URL
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Link
+            to={resolveToolPath({ resolveTo: 'website-report', to: '/app' }, businessId)}
+            className="app-btn app-btn--primary"
+          >
+            {businessId ? 'Open Website Analyzer' : 'Add business first'}
           </Link>
-          <Link to="/app/tools/business-scanner" className="app-btn app-btn--primary">
-            Run Business Scanner
+          <Link to="/app/action-plan" className="app-btn app-btn--secondary">
+            View fix plan
           </Link>
         </div>
       </section>
 
-      <div className="app-stagger mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {TOOL_CATALOG.map((tool) => (
-          <Link
-            key={tool.slug}
-            to={tool.to}
-            className="app-card app-card--interactive group block p-6"
-          >
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--app-accent-soft)] text-lg text-[var(--app-accent-strong)] transition group-hover:scale-105">
-              {TOOL_ICONS[tool.icon] || '*'}
-            </span>
-            <h3 className="mt-4 text-lg font-semibold text-[var(--app-text)]">{tool.title}</h3>
-            <p className="mt-1 text-sm font-medium text-[var(--app-accent-strong)]">{tool.tagline}</p>
-            <p className="mt-2 text-sm leading-relaxed text-[var(--app-text-secondary)]">
-              {tool.description}
-            </p>
-            <span className="app-link mt-4 inline-block text-sm font-semibold">
-              {tool.live ? 'Open tool ->' : 'Preview ->'}
-            </span>
-          </Link>
+      <div className="app-stagger mt-10 space-y-10">
+        {groups.map((group) => (
+          <section key={group.id}>
+            <div className="mb-4">
+              <p className="app-eyebrow">{group.label}</p>
+              <p className="mt-1 text-sm text-[var(--app-text-secondary)]">{group.description}</p>
+            </div>
+            <ul className="grid gap-3 sm:grid-cols-2">
+              {group.tools.map((tool) => (
+                <li key={tool.slug}>
+                  <Link
+                    to={resolveToolPath(tool, businessId)}
+                    className="app-tool-row group block h-full"
+                  >
+                    <span className="app-tool-row__icon">
+                      <ToolIcon name={tool.icon} className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-[var(--app-text)]">{tool.title}</span>
+                        {!tool.live ? (
+                          <span className="rounded bg-[var(--app-input-bg)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--app-text-muted)]">
+                            Preview
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="mt-0.5 block text-xs font-medium text-[var(--app-accent-strong)]">
+                        {tool.tagline}
+                      </span>
+                      <span className="mt-1 block text-sm leading-relaxed text-[var(--app-text-secondary)]">
+                        {tool.description}
+                      </span>
+                      <span className="app-link mt-2 inline-block text-xs font-semibold">
+                        {tool.live ? 'Open tool →' : 'Preview →'}
+                      </span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
         ))}
       </div>
-
-      <p className="app-stagger mt-8 text-center text-xs text-[var(--app-text-muted)]">
-        Configure OPENAI_API_KEY and SEARCH_PROVIDER in backend .env for live AI and web search.
-      </p>
     </div>
   )
 }

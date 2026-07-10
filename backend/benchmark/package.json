@@ -1,0 +1,15 @@
+{
+  "name": "analyzer-benchmark",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Isolated batch benchmark for the website analyzer (not part of the main app runtime)",
+  "scripts": {
+    "batch": "node run-batch.js",
+    "batch:fast": "node run-batch.js --no-visual",
+    "batch:smoke": "node run-batch.js --limit=3 --no-visual",
+    "batch:gallery": "node run-batch.js --category=gallery_physical_service"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  }
+}

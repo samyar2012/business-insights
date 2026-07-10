@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { TOOL_ICONS } from './toolConfig'
+import ToolIcon from '../../components/app/ToolIcon'
 
 const ToolPlaceholder = ({ title, tagline, description, iconKey = 'scan' }) => (
   <div className="mx-auto max-w-3xl">
@@ -13,8 +13,8 @@ const ToolPlaceholder = ({ title, tagline, description, iconKey = 'scan' }) => (
     </header>
 
     <div className="app-card mt-8 p-8 text-center">
-      <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--app-accent-soft)] text-xl text-[var(--app-accent-strong)]">
-        {TOOL_ICONS[iconKey] || '*'}
+      <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--app-accent-soft)] text-[var(--app-accent-strong)]">
+        <ToolIcon name={iconKey} className="h-6 w-6" />
       </span>
       <p className="mt-4 text-sm leading-relaxed text-[var(--app-text-secondary)]">{description}</p>
       <p className="mt-4 text-sm font-medium text-[var(--app-text)]">Coming soon</p>

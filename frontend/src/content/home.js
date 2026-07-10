@@ -1,157 +1,149 @@
-/** Shopify, dropship, and social-commerce growth - verticals & catalog */
+/** Product homepage content — centered on Website Analyzer workflow */
 
-export const businessVerticals = [
+export const productPillars = [
   {
-    id: 'shopify-business',
-    badge: 'Shopify',
-    title: 'Shopify brands scaling traffic and repeat revenue',
-    blurb:
-      'Connect your store, ads, and email in one place. We help you test creatives, recover carts, and double down on what converts-without another agency retainer.',
-    services: [
-      'Store + catalog sync & health checks',
-      'Checkout & post-purchase playbooks',
-      'Klaviyo / SMS handoffs we template for you',
-    ],
-    aiTools: ['Listing & SEO copy assistant', 'Discount and bundle suggester', 'Creative angle generator'],
+    title: 'Website Analyzer',
+    desc: 'Crawl your site and score safety, functionality, UX, business fit, and customer attraction.',
   },
   {
-    id: 'dropship-business',
-    badge: 'Dropshipping',
-    title: 'Dropshippers who need lean, fast acquisition',
-    blurb:
-      'Tight margins mean you cannot afford wasted spend. We rotate winning hooks and suppliers signals so each week surfaces a fresh angle-controlled randomness, not chaos.',
-    services: [
-      'Supplier and SKU risk flags',
-      'Lightweight CRO experiments',
-      'Ad account structure templates',
-    ],
-    aiTools: ['Video script shorts', 'Audience persona spins', 'Policy-safe ad copy checker'],
+    title: 'Prioritized fix list',
+    desc: 'See ranked problems with impact — not a generic audit PDF.',
   },
   {
-    id: 'social-business',
-    badge: 'Social-first',
-    title: 'Creators & social storefronts',
-    blurb:
-      'When your funnel lives in feeds and DMs, we unify UTM, storefront, and CRM touches so you see which content actually drives sales-not just likes.',
-    services: [
-      'Link-in-bio and landing flows',
-      'Influencer and affiliate tracking',
-      'Content calendar tied to promos',
-    ],
-    aiTools: ['Hook + caption lab', 'DM reply suggestions', 'Live sale run-of-show builder'],
+    title: 'Action plan',
+    desc: 'Turn recommendations into tasks you can track from to-do to done.',
+  },
+  {
+    title: 'AI growth tools',
+    desc: 'Coach, content, and competitor tools that use your scan context.',
+  },
+  {
+    title: 'Business model aware',
+    desc: 'Scoring adapts to stores, services, listings, galleries, and hybrid models.',
+  },
+  {
+    title: 'Rescan and improve',
+    desc: 'Measure progress as you fix trust, UX, and conversion blockers.',
   },
 ]
 
-export const aiProducts = [
-  {
-    title: 'Acquisition Roulette',
-    desc: 'Weighted "spin" of proven angles each week so you always test something new without guessing blind.',
-    tag: 'Growth',
-  },
-  {
-    title: 'Offer Architect',
-    desc: 'Suggests bundles, guarantees, and urgency lines matched to your vertical and margin profile.',
-    tag: 'Offers',
-  },
-  {
-    title: 'Creative Brief Bot',
-    desc: 'Turns product URLs into shot lists, hooks, and UGC briefs for TikTok, Reels, and Shorts.',
-    tag: 'Creative',
-  },
-  {
-    title: 'Support Sidekick',
-    desc: 'Drafts on-brand replies for common pre-sale questions so you close faster in chat and email.',
-    tag: 'Ops',
-  },
-  {
-    title: 'Forecast Lite',
-    desc: 'Projects next-30-day revenue bands from recent traffic and AOV-built for operators, not data teams.',
-    tag: 'Analytics',
-  },
-  {
-    title: 'Compliance Guard',
-    desc: 'Flags risky claims in ads and landing copy before you push live (rules you can customize).',
-    tag: 'Trust',
-  },
-]
-
-export const primaryServices = [
-  {
-    title: 'Growth workspace',
-    desc: 'One dashboard for ads, store, and social signals-tailored to Shopify, dropship, or creator stacks.',
-  },
-  {
-    title: 'Playbooks by vertical',
-    desc: 'Pre-built flows for launches, sales, and restocks; swap modules per business type.',
-  },
-  {
-    title: 'AI add-ons',
-    desc: 'Mix and match assistants for copy, creative, offers, and support-we ship updates you can sell through.',
-  },
-  {
-    title: 'Integrations',
-    desc: 'Shopify, Meta, TikTok, Google, Klaviyo, and webhooks-bring your stack, we map the events.',
-  },
-  {
-    title: 'Operator coaching',
-    desc: 'Weekly reviews on what to scale, pause, or spin next-aligned to your trial and paid plan.',
-  },
-  {
-    title: 'White-label ready',
-    desc: 'Agencies and media buyers can resell seats with your branding (enterprise).',
-  },
-]
-
-export const serviceTracks = [
-  {
-    id: 'trial-onboarding',
-    tag: 'Phase 1 - Trial',
-    title: 'Start free: no credit card',
-    items: [
-      '14-day full workspace access',
-      'Pick your vertical: Shopify, dropship, or social',
-      'Connect one store and one ad account minimum',
-      'We enable "acquisition spins" on day one',
-    ],
-  },
-  {
-    id: 'trial-momentum',
-    tag: 'Phase 2 - During trial',
-    title: 'We help you pull levers',
-    items: [
-      'Daily/weekly experiment queue with clear hypotheses',
-      'AI modules unlocked per your plan tier',
-      'Slack or email check-ins with growth playbooks',
-      'Export-ready reports for partners or investors',
-    ],
-  },
-  {
-    id: 'trial-convert',
-    tag: 'Phase 3 - After trial',
-    title: 'Pay only when you are ready',
-    items: [
-      'Trial ends -> choose Starter, Growth, or Scale',
-      'No surprise charges: card collected only at upgrade',
-      'Pause or downgrade anytime; data export included',
-      'Optional done-for-you builds billed separately',
-    ],
-  },
-]
-
-export const trialFlow = [
+export const howItWorks = [
   {
     step: 1,
-    title: 'Sign up free',
-    body: 'No credit card. Pick your business type and connect Shopify or your social storefront.',
+    title: 'Add your business URL',
+    body: 'Tell us your business type and website. We crawl public same-domain pages — no code install required.',
   },
   {
     step: 2,
-    title: 'Run smart acquisition',
-    body: 'Our system rotates high-performing hooks and audiences-like a loot drop for your funnel, backed by data.',
+    title: 'Review your report',
+    body: 'Get an overall score, category breakdown, and the top problems blocking purchases or contact.',
   },
   {
     step: 3,
-    title: 'Upgrade after trial',
-    body: 'When your trial ends, choose a paid plan. We only ask for payment in step two of your journey-not upfront.',
+    title: 'Build your fix plan',
+    body: 'Convert ranked recommendations into an action plan. Work through high-impact items first.',
+  },
+  {
+    step: 4,
+    title: 'Ask the AI coach',
+    body: 'Get help prioritizing, writing copy, and deciding what to fix next — grounded in your report.',
   },
 ]
+
+export const businessTypes = [
+  {
+    id: 'stores',
+    badge: 'Online store',
+    title: 'E-commerce and online-only businesses',
+    blurb:
+      'Find checkout friction, missing policies, weak product pages, and trust gaps that cost sales.',
+  },
+  {
+    id: 'hybrid',
+    badge: 'Online + offline',
+    title: 'Stores with physical locations or services',
+    blurb:
+      'Make sure your site explains hours, location, booking, and how online and in-person work together.',
+  },
+  {
+    id: 'services',
+    badge: 'Services',
+    title: 'Local and professional service businesses',
+    blurb:
+      'Score contact paths, service clarity, proof, and mobile UX — what drives calls and bookings.',
+  },
+  {
+    id: 'content',
+    badge: 'Content & listings',
+    title: 'Blogs, galleries, directories, and listings',
+    blurb:
+      'Check readability, navigation, SEO signals, and whether visitors know what to do next.',
+  },
+]
+
+export const aiToolsPreview = [
+  {
+    title: 'AI Growth Coach',
+    desc: 'Ask what to fix first using your website report, scans, and action plan.',
+    tag: 'Plan',
+  },
+  {
+    title: 'Content Generator',
+    desc: 'Draft headlines, captions, and page copy aligned with your findings.',
+    tag: 'Improve',
+  },
+  {
+    title: 'Store Health Report',
+    desc: 'Deep dive on trust, merchandising, and conversion using your scan history.',
+    tag: 'Improve',
+  },
+  {
+    title: 'Competitor Tracker',
+    desc: 'Benchmark positioning and offers against businesses in your space.',
+    tag: 'Compare',
+  },
+  {
+    title: 'Social Analyzer',
+    desc: 'Check whether your social presence matches your website promise.',
+    tag: 'Compare',
+  },
+  {
+    title: 'Business Scanner',
+    desc: 'Quick structured scan across URLs and checklist signals.',
+    tag: 'Analyze',
+  },
+]
+
+export const reportHighlights = [
+  {
+    label: 'Overall score',
+    value: '0–100',
+    detail: 'Weighted across five customer-facing categories.',
+  },
+  {
+    label: 'Top problems',
+    value: 'Ranked',
+    detail: 'Critical fixes surfaced before technical noise.',
+  },
+  {
+    label: 'Business model',
+    value: 'Matched',
+    detail: 'Scoring rubric fits your type of business.',
+  },
+]
+
+/** Legacy export names used by Product and Solutions pages */
+export const aiProducts = aiToolsPreview
+export const primaryServices = productPillars
+export const trialFlow = howItWorks
+export const businessVerticals = businessTypes.map((type) => ({
+  ...type,
+  services: [type.blurb],
+  aiTools: [],
+}))
+export const serviceTracks = howItWorks.map((step) => ({
+  id: `step-${step.step}`,
+  tag: `Step ${step.step}`,
+  title: step.title,
+  items: [step.body],
+}))

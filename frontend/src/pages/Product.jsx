@@ -11,11 +11,11 @@ const Product = () => {
           <Reveal>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/65">Product</p>
             <h1 className="section-heading-gradient mt-2 max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">
-              The growth operating system for Shopify, dropship, and social commerce teams.
+              Website improvement platform for stores, services, and online businesses.
             </h1>
             <p className="mt-4 max-w-3xl text-white/75">
-              Use one workspace to run acquisition experiments, launch AI assistants, and move
-              from free trial to paid plan without friction.
+              Scan your site, review ranked problems, build a fix plan, and use AI tools — from free
+              trial to paid when you are ready.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link

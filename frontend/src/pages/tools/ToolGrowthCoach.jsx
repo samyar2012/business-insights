@@ -9,9 +9,13 @@ const ToolGrowthCoach = () => {
   const { user } = useAuth()
   const [searchParams] = useSearchParams()
   const scanId = searchParams.get('scanId')
+  const queryBusinessId = searchParams.get('businessId')
+  const reportContext = searchParams.get('context')
   const businesses = user?.businesses || []
 
-  const [businessId, setBusinessId] = useState(businesses[0]?.id || '')
+  const [businessId, setBusinessId] = useState(
+    queryBusinessId || businesses[0]?.id || '',
+  )
   const [message, setMessage] = useState('')
   const [useSearch, setUseSearch] = useState(false)
   const [messages, setMessages] = useState([])
@@ -20,17 +24,21 @@ const ToolGrowthCoach = () => {
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    if (!businessId && businesses[0]?.id) setBusinessId(businesses[0].id)
-  }, [businesses, businessId])
+    if (queryBusinessId) setBusinessId(queryBusinessId)
+    else if (!businessId && businesses[0]?.id) setBusinessId(businesses[0].id)
+  }, [businesses, businessId, queryBusinessId])
 
-  const scanPrompt = useMemo(() => {
-    if (!scanId) return ''
-    return 'Help me understand my scan report and what to do first.'
-  }, [scanId])
+  const initialPrompt = useMemo(() => {
+    if (scanId) return 'Help me understand my scan report and what to do first.'
+    if (reportContext === 'website-report') {
+      return 'Review my website analyzer report and tell me what to fix first for more customers.'
+    }
+    return ''
+  }, [scanId, reportContext])
 
   useEffect(() => {
-    if (scanPrompt && !message) setMessage(scanPrompt)
-  }, [scanPrompt, message])
+    if (initialPrompt && !message) setMessage(initialPrompt)
+  }, [initialPrompt, message])
 
   const send = useCallback(async () => {
     const text = message.trim()

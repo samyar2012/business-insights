@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useSidebar } from '../../context/SidebarContext'
 import PlanAccountSection from './PlanAccountSection'
-import { TOOL_CATALOG, TOOL_ICONS } from '../../pages/tools/toolConfig'
+import ToolIcon from '../../components/app/ToolIcon'
+import { TOOL_CATALOG } from '../../pages/tools/toolConfig'
 
 const Chevron = ({ open }) => (
   <svg
@@ -31,7 +32,7 @@ const toolItems = [
   ...TOOL_CATALOG.map((tool) => ({
     label: tool.title,
     to: tool.to,
-    icon: TOOL_ICONS[tool.icon] || '*',
+    icon: <ToolIcon name={tool.icon} className="h-4 w-4" />,
   })),
 ]
 

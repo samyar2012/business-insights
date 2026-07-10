@@ -2,7 +2,8 @@ import { Link } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { apiFetch } from '../lib/api'
-import { TOOL_CATALOG, TOOL_ICONS } from './tools/toolConfig'
+import ToolIcon from '../components/app/ToolIcon'
+import { TOOL_CATALOG, resolveToolPath } from './tools/toolConfig'
 import { formatScanDate, scoreTone } from '../components/app/ScanUi'
 
 const greetingForHour = (hour) => {
@@ -11,31 +12,55 @@ const greetingForHour = (hour) => {
   return 'Good evening'
 }
 
+const JOURNEY_STEPS = [
+  { key: 'analyze', label: 'Analyze website', icon: 'website' },
+  { key: 'review', label: 'Review report', icon: 'scan' },
+  { key: 'plan', label: 'Work on fix plan', icon: 'plan' },
+  { key: 'coach', label: 'Ask AI coach', icon: 'coach' },
+]
+
+function journeyStepState(step, { webProfile, isCrawling, openActions }) {
+  if (step === 'analyze') {
+    if (isCrawling) return 'active'
+    if (webProfile) return 'done'
+    return 'active'
+  }
+  if (step === 'review') {
+    if (webProfile) return 'active'
+    if (isCrawling) return 'pending'
+    return 'pending'
+  }
+  if (step === 'plan') {
+    if (openActions.length) return 'active'
+    if (webProfile) return 'active'
+    return 'pending'
+  }
+  if (step === 'coach') {
+    if (webProfile) return 'active'
+    return 'pending'
+  }
+  return 'pending'
+}
+
 const Dashboard = () => {
   const { user } = useAuth()
-  const [latestScan, setLatestScan] = useState(null)
   const [actions, setActions] = useState([])
-  const [research, setResearch] = useState(null)
   const [webProfile, setWebProfile] = useState(null)
   const [latestCrawl, setLatestCrawl] = useState(null)
-  const [researchBusy, setResearchBusy] = useState(false)
-  const [latestInsight, setLatestInsight] = useState('')
   const [scansLoading, setScansLoading] = useState(true)
 
   const name = user?.profile?.display_name || user?.email?.split('@')[0] || 'there'
   const business = user?.businesses?.[0]
   const hour = new Date().getHours()
   const greeting = greetingForHour(hour)
+  const reportPath = business?.id ? `/app/businesses/${business.id}/website-report` : '/app/businesses'
+  const isCrawling = latestCrawl?.status === 'running'
 
   const load = useCallback(async () => {
     setScansLoading(true)
     try {
-      const [scansData, actionsData, researchData, webData] = await Promise.all([
-        apiFetch('/scans'),
+      const [actionsData, webData] = await Promise.all([
         apiFetch('/actions').catch(() => ({ actions: [] })),
-        business?.id
-          ? apiFetch(`/research/business/${business.id}`).catch(() => ({ profile: null }))
-          : Promise.resolve({ profile: null }),
         business?.id
           ? apiFetch(`/businesses/${business.id}/web-profile`).catch(() => ({
               profile: null,
@@ -43,13 +68,10 @@ const Dashboard = () => {
             }))
           : Promise.resolve({ profile: null, latest_crawl: null }),
       ])
-      setLatestScan((scansData.scans || [])[0] || null)
       setActions(actionsData.actions || [])
-      setResearch(researchData.profile || null)
       setWebProfile(webData.profile || null)
       setLatestCrawl(webData.latest_crawl || null)
     } catch {
-      setLatestScan(null)
       setActions([])
     } finally {
       setScansLoading(false)
@@ -59,19 +81,6 @@ const Dashboard = () => {
   useEffect(() => {
     load()
   }, [load])
-
-  const runResearch = async () => {
-    if (!business?.id) return
-    setResearchBusy(true)
-    try {
-      const data = await apiFetch(`/research/business/${business.id}/run`, { method: 'POST' })
-      setResearch(data.profile)
-    } catch {
-      // keep dashboard usable if research fails
-    } finally {
-      setResearchBusy(false)
-    }
-  }
 
   const openActions = useMemo(
     () => actions.filter((a) => a.status !== 'done'),
@@ -91,290 +100,206 @@ const Dashboard = () => {
     [openActions],
   )
 
-  useEffect(() => {
-    if (!latestScan && !nextHighPriority) return
-    const parts = []
-    if (latestScan) {
-      parts.push(
-        `Latest scan scored ${latestScan.overall_score} for ${latestScan.business_name || 'your business'}.`,
-      )
+  const nextBestAction = (() => {
+    if (!business?.id) {
+      return {
+        eyebrow: 'Get started',
+        title: 'Add your business',
+        description: 'Create a business profile with your website URL to run the Website Analyzer.',
+        cta: 'Manage businesses',
+        to: '/app/businesses',
+        secondaryCta: 'Explore tools',
+        secondaryTo: '/app/tools',
+      }
     }
-    if (research?.scores?.overall_score != null) {
-      parts.push(`Research score: ${research.scores.overall_score}/100.`)
+    if (!webProfile && !isCrawling) {
+      return {
+        eyebrow: 'Next best action',
+        title: 'Analyze your website',
+        description: business.store_url
+          ? 'Run the Website Analyzer on your public pages to find what stops customers from buying or contacting you.'
+          : 'Add your website URL, then run the analyzer to get scores and ranked fixes.',
+        cta: business.store_url ? 'Start analysis' : 'Add website URL',
+        to: business.store_url ? reportPath : '/app/businesses',
+        secondaryCta: 'Explore tools',
+        secondaryTo: '/app/tools',
+      }
+    }
+    if (isCrawling) {
+      return {
+        eyebrow: 'In progress',
+        title: 'Website scan running',
+        description: `Crawling pages — ${latestCrawl?.pages_crawled ?? 0} of ${latestCrawl?.pages_discovered ?? '?'} complete.`,
+        cta: 'View progress',
+        to: reportPath,
+      }
+    }
+    if (webProfile && openActions.length === 0) {
+      return {
+        eyebrow: 'Next best action',
+        title: 'Create your fix plan',
+        description:
+          'Your report is ready. Turn ranked problems into trackable tasks so you know what to fix first.',
+        cta: 'Open website report',
+        to: reportPath,
+        secondaryCta: 'View action plan',
+        secondaryTo: '/app/action-plan',
+      }
     }
     if (nextHighPriority) {
-      parts.push(`Next up: ${nextHighPriority.title}`)
+      return {
+        eyebrow: 'Next best action',
+        title: nextHighPriority.title,
+        description: nextHighPriority.description || 'Your highest-priority open task from the fix plan.',
+        cta: 'Open action plan',
+        to: '/app/action-plan',
+        secondaryCta: 'View report',
+        secondaryTo: reportPath,
+      }
     }
-    setLatestInsight(parts.join(' '))
-  }, [latestScan, nextHighPriority, research])
+    return {
+      eyebrow: 'Looking good',
+      title: 'Keep improving',
+      description:
+        'No urgent open tasks. Ask the AI coach for advice or rescan to measure progress after your fixes.',
+      cta: 'Ask AI coach',
+      to: `/app/tools/growth-coach?businessId=${business.id}&context=website-report`,
+      secondaryCta: 'Rescan website',
+      secondaryTo: reportPath,
+    }
+  })()
+
+  const journeyContext = { webProfile, isCrawling, openActions }
 
   return (
     <div className="mx-auto max-w-5xl">
-      <section className="app-dashboard-hero app-stagger rounded-2xl p-6 sm:p-10">
+      <header className="app-stagger">
         <p className="app-eyebrow">{greeting}</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[var(--app-text)] sm:text-4xl">
-          Welcome back, {name}
-        </h1>
-        <p className="mt-3 max-w-xl text-base leading-relaxed text-[var(--app-text-secondary)]">
-          Your command center for scans, action plans, and AI growth tools - starting with{' '}
+        <h1 className="app-page-title mt-2">Welcome back, {name}</h1>
+        <p className="app-page-subtitle max-w-2xl">
+          Your command center for{' '}
           <span className="font-medium text-[var(--app-text)]">
             {business?.business_name || 'your business'}
           </span>
-          .
+          . Scan your site, review the report, work your fix plan, then ask the AI coach.
         </p>
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Link to="/app/tools/business-scanner" className="app-btn app-btn--primary">
-            Run scan
+      </header>
+
+      <section className="app-next-action app-stagger mt-8">
+        <p className="app-eyebrow">{nextBestAction.eyebrow}</p>
+        <h2 className="mt-2 text-xl font-semibold tracking-tight text-[var(--app-text)] sm:text-2xl">
+          {nextBestAction.title}
+        </h2>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--app-text-secondary)]">
+          {nextBestAction.description}
+        </p>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <Link to={nextBestAction.to} className="app-btn app-btn--primary">
+            {nextBestAction.cta}
           </Link>
-          <Link to="/app/action-plan" className="app-btn app-btn--secondary">
-            View action plan
-          </Link>
-          <Link to="/app/tools/growth-coach" className="app-btn app-btn--secondary">
-            Ask AI coach
-          </Link>
-          <Link to="/app/tools/content-generator" className="app-btn app-btn--ghost">
-            Generate content
-          </Link>
+          {nextBestAction.secondaryCta ? (
+            <Link to={nextBestAction.secondaryTo} className="app-btn app-btn--secondary">
+              {nextBestAction.secondaryCta}
+            </Link>
+          ) : null}
         </div>
       </section>
 
-      <div className="app-stagger mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <article className="app-card p-5">
-          <p className="app-eyebrow">Open tasks</p>
-          <p className="app-stat-value mt-2">{openActions.length}</p>
-        </article>
-        <article className="app-card p-5">
-          <p className="app-eyebrow">Completed</p>
-          <p className="app-stat-value mt-2">{doneActions.length}</p>
-        </article>
-        <article className="app-card p-5 sm:col-span-2">
-          <p className="app-eyebrow">Next high-priority task</p>
-          <p className="mt-2 text-sm font-medium text-[var(--app-text)]">
-            {nextHighPriority?.title || 'No open tasks'}
-          </p>
-          {nextHighPriority ? (
-            <Link to="/app/action-plan" className="app-link mt-2 inline-block text-xs font-medium">
-              Open action plan -&gt;
-            </Link>
-          ) : null}
-        </article>
-      </div>
-
-      <section className="app-stagger mt-8">
-        <article className="app-card p-5">
-          <p className="app-eyebrow">Analyze your website</p>
-          {webProfile ? (
-            <>
-              <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
-                <div>
-                  <p className={`text-4xl font-semibold ${scoreTone(webProfile.scores?.overall_score)}`}>
-                    {webProfile.scores?.overall_score ?? '-'}
-                  </p>
-                  <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
-                    {webProfile.summary?.platform
-                      ? `Platform: ${webProfile.summary.platform}`
-                      : 'Website profile ready'}
-                    {webProfile.summary?.pages_analyzed
-                      ? ` - ${webProfile.summary.pages_analyzed} pages`
-                      : ''}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2 text-xs text-[var(--app-text-muted)]">
-                  <span>Store {webProfile.scores?.store_score}</span>
-                  <span>Trust {webProfile.scores?.trust_score}</span>
-                  <span>Content {webProfile.scores?.content_score}</span>
-                </div>
-              </div>
-              <div className="mt-5 flex flex-wrap gap-3">
-                <Link
-                  to={`/app/businesses/${business?.id}/website-report`}
-                  className="app-btn app-btn--primary"
-                >
-                  Website report
-                </Link>
-              </div>
-            </>
-          ) : latestCrawl?.status === 'running' ? (
-            <>
-              <p className="mt-3 text-sm text-[var(--app-text-secondary)]">
-                Crawling your website... {latestCrawl.pages_crawled ?? 0} of{' '}
-                {latestCrawl.pages_discovered ?? '?'} pages
-              </p>
-              <Link
-                to={`/app/businesses/${business?.id}/website-report`}
-                className="app-btn app-btn--secondary mt-4 inline-flex"
+      <nav className="app-journey app-stagger mt-8" aria-label="Product workflow">
+        <ol className="app-journey__steps">
+          {JOURNEY_STEPS.map((step) => {
+            const state = journeyStepState(step.key, journeyContext)
+            return (
+              <li
+                key={step.key}
+                className={`app-journey__step app-journey__step--${state}`}
               >
-                View progress
-              </Link>
-            </>
-          ) : (
-            <>
-              <p className="mt-3 text-sm text-[var(--app-text-secondary)]">
-                Crawl your store URL directly — no Google Search required. We scan public same-domain pages
-                and build a structured profile for AI coaching.
-              </p>
-              {!business?.store_url ? (
-                <p className="mt-2 text-xs text-[var(--app-text-muted)]">
-                  Add a store URL in Businesses to enable website analysis.
-                </p>
-              ) : null}
-              <Link
-                to={`/app/businesses/${business?.id}/website-report`}
-                className="app-btn app-btn--primary mt-4 inline-flex"
-              >
-                Analyze your website
-              </Link>
-            </>
-          )}
-        </article>
-      </section>
-
-      <section className="app-stagger mt-8">
-        <article className="app-card p-5">
-          <p className="app-eyebrow">Business research</p>
-          {research ? (
-            <>
-              <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
-                <div>
-                  <p className={`text-4xl font-semibold ${scoreTone(research.scores?.overall_score)}`}>
-                    {research.scores?.overall_score ?? '-'}
-                  </p>
-                  <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
-                    {business?.business_name || 'Business'} - researched {formatScanDate(research.created_at)}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2 text-xs text-[var(--app-text-muted)]">
-                  <span>Store {research.scores?.store_score}</span>
-                  <span>Trust {research.scores?.trust_score}</span>
-                  <span>Offer {research.scores?.offer_score}</span>
-                  <span>Market {research.scores?.market_score}</span>
-                </div>
-              </div>
-              <div className="mt-5 flex flex-wrap gap-3">
-                <Link to={`/app/research/${business?.id}`} className="app-btn app-btn--primary">
-                  Full research report
-                </Link>
-                <button
-                  type="button"
-                  className="app-btn app-btn--secondary"
-                  disabled={researchBusy}
-                  onClick={runResearch}
-                >
-                  {researchBusy ? 'Rescanning...' : 'Rescan'}
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="mt-3 text-sm text-[var(--app-text-secondary)]">
-                Run external market research for competitors, trends, and mentions (optional — uses web search).
-              </p>
-              <button
-                type="button"
-                className="app-btn app-btn--primary mt-4"
-                disabled={researchBusy || !business?.id}
-                onClick={runResearch}
-              >
-                {researchBusy ? 'Researching...' : 'Run business research'}
-              </button>
-            </>
-          )}
-        </article>
-      </section>
-
-      <section className="app-stagger mt-8">
-        <article className="app-card p-5">
-          <p className="app-eyebrow">Latest scan</p>
-          {scansLoading ? (
-            <p className="mt-3 text-sm text-[var(--app-text-muted)]">Loading scan data...</p>
-          ) : latestScan ? (
-            <>
-              <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
-                <div>
-                  <p className={`text-4xl font-semibold ${scoreTone(latestScan.overall_score)}`}>
-                    {latestScan.overall_score}
-                  </p>
-                  <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
-                    {latestScan.business_name || 'Business scan'} - {formatScanDate(latestScan.created_at)}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2 text-xs text-[var(--app-text-muted)]">
-                  <span>Store {latestScan.store_score}</span>
-                  <span>Trust {latestScan.trust_score}</span>
-                  <span>Content {latestScan.content_score}</span>
-                  <span>Competitor {latestScan.competitor_score}</span>
-                </div>
-              </div>
-              <div className="mt-5 flex flex-wrap gap-3">
-                <Link to={`/app/scans/${latestScan.id}`} className="app-btn app-btn--primary">
-                  View report
-                </Link>
-                <Link to="/app/tools/business-scanner" className="app-btn app-btn--secondary">
-                  Run new scan
-                </Link>
-                <Link to="/app/scans" className="app-link self-center text-sm font-medium">
-                  All scans -&gt;
-                </Link>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="mt-3 text-sm text-[var(--app-text-secondary)]">No scans yet</p>
-              <p className="mt-1 text-sm text-[var(--app-text-muted)]">
-                Run the Business Scanner to get scores, risks, and next actions.
-              </p>
-              <Link to="/app/tools/business-scanner" className="app-btn app-btn--primary mt-4 inline-flex">
-                Run Business Scanner
-              </Link>
-            </>
-          )}
-        </article>
-      </section>
-
-      {latestInsight ? (
-        <section className="app-stagger mt-6">
-          <article className="app-card p-5">
-            <p className="app-eyebrow">Latest AI insight</p>
-            <p className="mt-2 text-sm text-[var(--app-text-secondary)]">{latestInsight}</p>
-            <Link to="/app/tools/growth-coach" className="app-link mt-3 inline-block text-sm font-medium">
-              Ask AI coach -&gt;
-            </Link>
-          </article>
-        </section>
-      ) : null}
+                <span className="app-journey__icon">
+                  <ToolIcon name={step.icon} className="h-4 w-4" />
+                </span>
+                <span className="app-journey__label">{step.label}</span>
+              </li>
+            )
+          })}
+        </ol>
+      </nav>
 
       <div className="app-stagger mt-8 grid gap-4 sm:grid-cols-3">
-        <article className="app-card app-card--interactive p-5">
+        <div className="app-metric">
+          <p className="app-eyebrow">Website score</p>
+          {scansLoading ? (
+            <p className="app-metric__value mt-2 text-[var(--app-text-muted)]">—</p>
+          ) : webProfile ? (
+            <>
+              <p className={`app-metric__value mt-2 ${scoreTone(webProfile.scores?.overall_score)}`}>
+                {webProfile.scores?.overall_score ?? '—'}
+              </p>
+              <p className="mt-1 text-xs text-[var(--app-text-muted)]">
+                {webProfile.summary?.platform ? `${webProfile.summary.platform} · ` : ''}
+                {webProfile.summary?.pages_analyzed
+                  ? `${webProfile.summary.pages_analyzed} pages`
+                  : 'Report ready'}
+              </p>
+            </>
+          ) : isCrawling ? (
+            <p className="app-metric__value mt-2 text-sm text-[var(--app-text-secondary)]">Scanning…</p>
+          ) : (
+            <p className="app-metric__value mt-2 text-sm text-[var(--app-text-muted)]">Not analyzed</p>
+          )}
+          <Link to={reportPath} className="app-link mt-3 inline-block text-xs font-medium">
+            {webProfile ? 'View report →' : 'Analyze website →'}
+          </Link>
+        </div>
+
+        <div className="app-metric">
+          <p className="app-eyebrow">Open fixes</p>
+          <p className="app-metric__value mt-2">{openActions.length}</p>
+          <p className="mt-1 text-xs text-[var(--app-text-muted)]">{doneActions.length} completed</p>
+          <Link to="/app/action-plan" className="app-link mt-3 inline-block text-xs font-medium">
+            Open action plan →
+          </Link>
+        </div>
+
+        <div className="app-metric">
           <p className="app-eyebrow">Business</p>
-          <p className="app-stat-value mt-3">{business?.business_name || '-'}</p>
-          <p className="mt-1 text-sm text-[var(--app-text-secondary)]">{business?.business_type || '-'}</p>
-        </article>
-        <article className="app-card app-card--interactive p-5">
-          <p className="app-eyebrow">Customers</p>
-          <p className="app-stat-value mt-3">{business?.customer_count ?? '-'}</p>
-          <p className="mt-1 text-sm text-[var(--app-text-muted)]">Total tracked</p>
-        </article>
-        <article className="app-card app-card--interactive p-5">
-          <p className="app-eyebrow">Monthly revenue</p>
-          <p className="app-stat-value mt-3">
-            {business?.monthly_revenue != null ? `$${business.monthly_revenue.toLocaleString()}` : '-'}
-          </p>
-          <p className="mt-1 text-sm text-[var(--app-text-muted)]">Last reported</p>
-        </article>
+          <p className="app-metric__value mt-2 text-lg">{business?.business_name || '—'}</p>
+          <p className="mt-1 text-xs text-[var(--app-text-muted)]">{business?.business_type || '—'}</p>
+          <Link to="/app/businesses" className="app-link mt-3 inline-block text-xs font-medium">
+            Manage →
+          </Link>
+        </div>
       </div>
 
       <section className="app-stagger mt-10">
-        <p className="app-eyebrow">Tools</p>
-        <h2 className="mt-1 text-xl font-semibold text-[var(--app-text)]">Quick access</h2>
-        <div className="mt-5 grid gap-4 sm:grid-cols-3">
-          {TOOL_CATALOG.slice(0, 6).map((tool) => (
-            <Link key={tool.slug} to={tool.to} className="app-card app-card--interactive block p-5">
-              <span className="text-lg text-[var(--app-accent-strong)]">{TOOL_ICONS[tool.icon] || '*'}</span>
-              <p className="mt-3 font-semibold text-[var(--app-text)]">{tool.title}</p>
-              <p className="mt-1 text-xs text-[var(--app-text-secondary)]">{tool.tagline}</p>
-            </Link>
-          ))}
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="app-eyebrow">Tools</p>
+            <h2 className="mt-1 text-lg font-semibold text-[var(--app-text)]">Continue your workflow</h2>
+          </div>
+          <Link to="/app/tools" className="app-link text-sm font-medium">
+            All tools →
+          </Link>
         </div>
+        <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {TOOL_CATALOG.slice(0, 4).map((tool) => (
+            <li key={tool.slug}>
+              <Link
+                to={resolveToolPath(tool, business?.id)}
+                className="app-tool-row group block"
+              >
+                <span className="app-tool-row__icon">
+                  <ToolIcon name={tool.icon} className="h-5 w-5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block font-semibold text-[var(--app-text)]">{tool.title}</span>
+                  <span className="mt-0.5 block text-xs text-[var(--app-text-secondary)] line-clamp-2">
+                    {tool.tagline}
+                  </span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
       </section>
     </div>
   )

@@ -8,3 +8,5 @@ __pycache__/
 dist/
 build/
 backend/debug/
+backend/benchmark/output/
+backend/benchmark/node_modules/
