@@ -258,15 +258,15 @@ const WebsiteReport = () => {
 
   const rescan = () => startCrawl(true)
 
-  const hasActionPlan = actions.length > 0
+  const hasActionPlan = actions.some(
+    (a) => a.source === 'website-report' || a.metadata?.plan_type === 'website_fix',
+  )
 
   const createFixPlan = async () => {
-    const fixes = profile?.scores?.priority_fixes?.length
-      ? profile.scores.priority_fixes
-      : (profile?.scores?.recommended_actions || []).map((action, index) => ({
-          action,
-          priority: index === 0 ? 'high' : 'medium',
-        }))
+    const scores = profile?.scores || {}
+    const fixes = scores.priority_fixes?.length
+      ? scores.priority_fixes
+      : scores.recommended_actions || []
 
     if (!fixes.length) {
       setPlanMessage('No recommended fixes to add. Review the report sections below.')
@@ -277,37 +277,34 @@ const WebsiteReport = () => {
     setPlanMessage('')
     setError('')
     try {
-      const created = []
-      for (let i = 0; i < fixes.length; i++) {
-        const fix = fixes[i]
-        const title = String(fix.action || fix).trim()
-        if (!title) continue
-        const priority =
-          fix.priority === 'critical' || fix.priority === 'high'
-            ? 'high'
-            : fix.priority === 'low'
-              ? 'low'
-              : 'medium'
-        const data = await apiFetch('/actions', {
-          method: 'POST',
-          body: JSON.stringify({
-            business_id: businessId,
-            title,
-            description: fix.reason || fix.expected_impact || fix.impact || null,
-            priority,
-            source: 'website-report',
-          }),
-        })
-        created.push(data.action)
+      const data = await apiFetch('/actions/fix-plan', {
+        method: 'POST',
+        body: JSON.stringify({
+          business_id: businessId,
+          scan_id: latestCrawl?.id || null,
+          scores,
+        }),
+      })
+      setActions(data.actions || [])
+      if (data.already_exists && !data.created?.length) {
+        setPlanMessage('These fixes are already in your plan. Open fix plan to track progress.')
+      } else {
+        const count = data.created?.length ?? 0
+        const skipped = data.skipped?.length ?? 0
+        setPlanMessage(
+          count
+            ? `Added ${count} fix${count === 1 ? '' : 'es'} to your plan${skipped ? ` (${skipped} already tracked)` : ''}.`
+            : 'Fix plan updated.',
+        )
       }
-      setActions((prev) => [...created, ...prev])
-      setPlanMessage(`Added ${created.length} tasks to your fix plan.`)
     } catch (err) {
       setError(err.message)
     } finally {
       setPlanBusy(false)
     }
   }
+
+  const fixPlanPath = `/app/action-plan?businessId=${businessId}`
 
   const coachPath = `/app/tools/growth-coach?businessId=${businessId}&context=website-report`
 
@@ -486,8 +483,8 @@ const WebsiteReport = () => {
 
             <div className="mt-6 flex flex-wrap gap-3">
               {hasActionPlan ? (
-                <Link to="/app/action-plan" className="app-btn app-btn--primary">
-                  Open action plan
+                <Link to={fixPlanPath} className="app-btn app-btn--primary">
+                  Open fix plan
                 </Link>
               ) : (
                 <button
@@ -496,7 +493,7 @@ const WebsiteReport = () => {
                   disabled={planBusy || !priorityFixes.length}
                   onClick={createFixPlan}
                 >
-                  {planBusy ? 'Creating...' : 'Create fix plan'}
+                  {planBusy ? 'Generating...' : 'Generate fix plan'}
                 </button>
               )}
               <Link to={coachPath} className="app-btn app-btn--secondary">
@@ -1039,8 +1036,8 @@ const WebsiteReport = () => {
 
           <div className="mt-10 flex flex-wrap gap-3 border-t border-[var(--app-border)] pt-8">
             {hasActionPlan ? (
-              <Link to="/app/action-plan" className="app-btn app-btn--primary">
-                Open action plan
+              <Link to={fixPlanPath} className="app-btn app-btn--primary">
+                Open fix plan
               </Link>
             ) : (
               <button
@@ -1049,7 +1046,7 @@ const WebsiteReport = () => {
                 disabled={planBusy || !priorityFixes.length}
                 onClick={createFixPlan}
               >
-                {planBusy ? 'Creating...' : 'Create fix plan'}
+                {planBusy ? 'Generating...' : 'Generate fix plan'}
               </button>
             )}
             <Link to={coachPath} className="app-btn app-btn--secondary">

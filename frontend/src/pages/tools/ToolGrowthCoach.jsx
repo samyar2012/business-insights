@@ -29,12 +29,18 @@ const ToolGrowthCoach = () => {
   }, [businesses, businessId, queryBusinessId])
 
   const initialPrompt = useMemo(() => {
+    const fixTitle = searchParams.get('fix')
+    const fixCategory = searchParams.get('category')
+    if (fixTitle && reportContext === 'fix') {
+      const categoryPart = fixCategory ? ` (${fixCategory.replace(/_/g, ' ')})` : ''
+      return `Help me implement this website fix${categoryPart}: "${fixTitle}". What should I do first, and how will it help customers?`
+    }
     if (scanId) return 'Help me understand my scan report and what to do first.'
     if (reportContext === 'website-report') {
       return 'Review my website analyzer report and tell me what to fix first for more customers.'
     }
     return ''
-  }, [scanId, reportContext])
+  }, [scanId, reportContext, searchParams])
 
   useEffect(() => {
     if (initialPrompt && !message) setMessage(initialPrompt)

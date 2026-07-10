@@ -1,6 +1,19 @@
 const { query } = require('../db')
+const {
+  buildFixMetadata,
+  normalizeFixesFromScores,
+  mapFixPriority,
+  isWebsiteFixAction,
+  CATEGORY_LABELS,
+} = require('./actionPlanFixBuilder')
+
+function parseMetadata(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return value
+}
 
 function formatAction(row) {
+  const metadata = parseMetadata(row.metadata_json)
   return {
     id: row.id,
     user_id: row.user_id,
@@ -12,6 +25,7 @@ function formatAction(row) {
     status: row.status,
     priority: row.priority,
     source: row.source,
+    metadata,
     created_at: row.created_at,
     updated_at: row.updated_at,
     completed_at: row.completed_at,
@@ -59,10 +73,12 @@ async function createAction(userId, body) {
   if (!['todo', 'in_progress', 'done'].includes(status)) throw new Error('Invalid status')
   if (!['low', 'medium', 'high'].includes(priority)) throw new Error('Invalid priority')
 
+  const metadata = parseMetadata(body.metadata)
+
   const result = await query(
     `INSERT INTO action_items (
-       user_id, business_id, scan_id, title, description, status, priority, source, completed_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       user_id, business_id, scan_id, title, description, status, priority, source, completed_at, metadata_json
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
      RETURNING *`,
     [
       userId,
@@ -74,6 +90,7 @@ async function createAction(userId, body) {
       priority,
       body.source || 'manual',
       status === 'done' ? new Date().toISOString() : null,
+      JSON.stringify(metadata),
     ],
   )
 
@@ -108,6 +125,57 @@ async function updateAction(userId, actionId, body) {
 
   const joined = await query(`${ACTION_SELECT} WHERE a.id = $1`, [actionId])
   return formatAction(joined.rows[0])
+}
+
+async function createFixPlanFromReport(userId, body) {
+  const businessId = body.business_id || null
+  if (!businessId) throw new Error('business_id is required')
+
+  const scores = body.scores || {}
+  const fixes = normalizeFixesFromScores(scores)
+  if (!fixes.length) {
+    return { error: 'no_fixes', message: 'No priority fixes found in this report.' }
+  }
+
+  const existing = await listActions(userId, { business_id: businessId })
+  const existingTitles = new Set(existing.map((item) => item.title.trim().toLowerCase()))
+
+  const created = []
+  const skipped = []
+  for (const fix of fixes) {
+    const title = String(fix.action || fix).trim()
+    if (!title) continue
+    if (existingTitles.has(title.toLowerCase())) {
+      skipped.push(title)
+      continue
+    }
+
+    const metadata = buildFixMetadata(fix, {
+      business_id: businessId,
+      scan_id: body.scan_id || null,
+      scores,
+    })
+
+    const item = await createAction(userId, {
+      business_id: businessId,
+      scan_id: body.scan_id || null,
+      title,
+      description: metadata.reason || metadata.expected_impact || null,
+      priority: mapFixPriority(fix.priority),
+      source: 'website-report',
+      metadata,
+    })
+    created.push(item)
+    existingTitles.add(title.toLowerCase())
+  }
+
+  const actions = await listActions(userId, { business_id: businessId })
+  return {
+    created,
+    skipped,
+    actions,
+    already_exists: created.length === 0 && skipped.length > 0,
+  }
 }
 
 async function createActionPlanFromScan(userId, scanId) {
@@ -163,5 +231,8 @@ module.exports = {
   createAction,
   updateAction,
   createActionPlanFromScan,
+  createFixPlanFromReport,
   formatAction,
+  isWebsiteFixAction,
+  CATEGORY_LABELS,
 }

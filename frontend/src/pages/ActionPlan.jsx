@@ -1,12 +1,12 @@
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import Alert from '../components/app/Alert'
 
-const COLUMNS = [
-  { key: 'todo', label: 'To do' },
-  { key: 'in_progress', label: 'In progress' },
-  { key: 'done', label: 'Done' },
+const STATUS_OPTIONS = [
+  { value: 'todo', label: 'Not started' },
+  { value: 'in_progress', label: 'In progress' },
+  { value: 'done', label: 'Done' },
 ]
 
 const priorityClass = {
@@ -15,8 +15,14 @@ const priorityClass = {
   low: 'text-[var(--app-text-muted)]',
 }
 
+const difficultyClass = {
+  easy: 'bg-[var(--app-success-bg)] text-[var(--app-success-icon)]',
+  moderate: 'bg-[var(--app-warning-bg)] text-[var(--app-warning-icon)]',
+  hard: 'bg-[var(--app-error-bg)] text-[var(--app-error-fg)]',
+}
+
 const formatDate = (value) => {
-  if (!value) return '-'
+  if (!value) return '—'
   return new Date(value).toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
@@ -24,7 +30,31 @@ const formatDate = (value) => {
   })
 }
 
+const readMeta = (action, key) => action.metadata?.[key] ?? null
+
+const isWebsiteFix = (action) =>
+  readMeta(action, 'plan_type') === 'website_fix' || action.source === 'website-report'
+
+const coachPathForFix = (action) => {
+  const params = new URLSearchParams()
+  if (action.business_id) params.set('businessId', action.business_id)
+  params.set('context', 'fix')
+  params.set('fix', action.title)
+  const category = readMeta(action, 'category')
+  if (category) params.set('category', category)
+  return `/app/tools/growth-coach?${params.toString()}`
+}
+
+const reportPathForAction = (action) => {
+  const fromMeta = readMeta(action, 'report_path')
+  if (fromMeta) return fromMeta
+  if (action.business_id) return `/app/businesses/${action.business_id}/website-report`
+  return null
+}
+
 const ActionPlan = () => {
+  const [searchParams] = useSearchParams()
+  const filterBusinessId = searchParams.get('businessId') || ''
   const [actions, setActions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -34,26 +64,55 @@ const ActionPlan = () => {
     setLoading(true)
     setError('')
     try {
-      const data = await apiFetch('/actions')
+      const query = filterBusinessId ? `?business_id=${filterBusinessId}` : ''
+      const data = await apiFetch(`/actions${query}`)
       setActions(data.actions || [])
     } catch (err) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [filterBusinessId])
 
   useEffect(() => {
     load()
   }, [load])
 
-  const grouped = useMemo(() => {
-    const map = { todo: [], in_progress: [], done: [] }
-    for (const action of actions) {
-      if (map[action.status]) map[action.status].push(action)
-    }
-    return map
+  const fixItems = useMemo(() => {
+    const items = actions.filter(isWebsiteFix)
+    return items.sort((a, b) => {
+      const rankA = readMeta(a, 'fix_rank')
+      const rankB = readMeta(b, 'fix_rank')
+      if (rankA != null && rankB != null) return rankA - rankB
+      if (rankA != null) return -1
+      if (rankB != null) return 1
+      return new Date(b.created_at) - new Date(a.created_at)
+    })
   }, [actions])
+
+  const otherItems = useMemo(() => actions.filter((a) => !isWebsiteFix(a)), [actions])
+
+  const progress = useMemo(() => {
+    const total = fixItems.length || actions.length
+    const done = (fixItems.length ? fixItems : actions).filter((a) => a.status === 'done').length
+    return { total, done, pct: total ? Math.round((done / total) * 100) : 0 }
+  }, [actions, fixItems])
+
+  const businessGroups = useMemo(() => {
+    const map = new Map()
+    for (const action of fixItems) {
+      const key = action.business_id || 'unknown'
+      if (!map.has(key)) {
+        map.set(key, {
+          businessId: action.business_id,
+          businessName: action.business_name || 'Website',
+          items: [],
+        })
+      }
+      map.get(key).items.push(action)
+    }
+    return [...map.values()]
+  }, [fixItems])
 
   const updateStatus = async (action, status) => {
     setBusyId(action.id)
@@ -70,20 +129,14 @@ const ActionPlan = () => {
     }
   }
 
-  const cycleStatus = (action) => {
-    const order = ['todo', 'in_progress', 'done']
-    const idx = order.indexOf(action.status)
-    const next = order[(idx + 1) % order.length]
-    updateStatus(action, next)
-  }
-
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="mx-auto max-w-5xl">
       <header>
-        <p className="app-eyebrow">Tasks</p>
-        <h1 className="app-page-title mt-2">Action Plan</h1>
+        <p className="app-eyebrow">Improve</p>
+        <h1 className="app-page-title mt-2">Fix Plan</h1>
         <p className="app-page-subtitle">
-          Track website fixes and growth tasks from your analyzer report — todo to done.
+          Structured fixes from your website analyzer — ranked by customer impact, with clear next
+          steps for you or your team.
         </p>
       </header>
 
@@ -94,32 +147,193 @@ const ActionPlan = () => {
       ) : null}
 
       {loading ? (
-        <p className="mt-8 text-sm text-[var(--app-text-muted)]">Loading tasks...</p>
+        <p className="mt-8 text-sm text-[var(--app-text-muted)]">Loading fix plan...</p>
       ) : actions.length === 0 ? (
         <div className="app-card mt-8 p-8 text-center">
-          <p className="text-sm text-[var(--app-text-secondary)]">No action items yet.</p>
+          <p className="text-sm text-[var(--app-text-secondary)]">No fixes in your plan yet.</p>
           <p className="mt-2 text-sm text-[var(--app-text-muted)]">
-            Open your website report and click Create fix plan to turn ranked problems into tasks.
+            Open a website report and generate a fix plan from ranked analyzer findings.
           </p>
           <Link to="/app" className="app-btn app-btn--primary mt-5 inline-flex">
             Go to dashboard
           </Link>
         </div>
       ) : (
-        <div className="mt-8 grid gap-4 lg:grid-cols-3">
-          {COLUMNS.map((col) => (
-            <section key={col.key} className="app-card p-4">
-              <h2 className="text-sm font-semibold text-[var(--app-text)]">
-                {col.label}
-                <span className="ml-2 text-xs font-normal text-[var(--app-text-muted)]">
-                  ({grouped[col.key].length})
-                </span>
-              </h2>
-              <ul className="mt-4 space-y-3">
-                {grouped[col.key].map((action) => (
+        <>
+          <section className="app-card mt-8 p-5">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-[var(--app-text)]">Progress</p>
+                <p className="mt-1 text-xs text-[var(--app-text-muted)]">
+                  {progress.done} of {progress.total} fixes completed
+                </p>
+              </div>
+              <p className="text-2xl font-semibold text-[var(--app-text)]">{progress.pct}%</p>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--app-input-bg)]">
+              <div
+                className="h-full rounded-full bg-[var(--app-success-icon)] transition-all"
+                style={{ width: `${progress.pct}%` }}
+              />
+            </div>
+          </section>
+
+          {fixItems.length ? (
+            <div className="mt-8 space-y-8">
+              {businessGroups.map((group) => (
+                <section key={group.businessId || group.businessName}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-semibold text-[var(--app-text)]">
+                        {group.businessName}
+                      </h2>
+                      <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
+                        {group.items.length} prioritized fix{group.items.length === 1 ? '' : 'es'} from
+                        your website report
+                      </p>
+                    </div>
+                    {group.businessId ? (
+                      <Link
+                        to={`/app/businesses/${group.businessId}/website-report`}
+                        className="app-link text-sm font-medium"
+                      >
+                        View website report →
+                      </Link>
+                    ) : null}
+                  </div>
+
+                  <ol className="mt-5 space-y-4">
+                    {group.items.map((action) => {
+                      const reason = readMeta(action, 'reason') || action.description
+                      const impact = readMeta(action, 'expected_impact')
+                      const difficulty = readMeta(action, 'difficulty')
+                      const ownerAction = readMeta(action, 'owner_action')
+                      const categoryLabel = readMeta(action, 'category_label')
+                      const reportPath = reportPathForAction(action)
+                      const rank = readMeta(action, 'fix_rank')
+
+                      return (
+                        <li key={action.id} className="app-card p-5">
+                          <div className="flex flex-wrap items-start gap-3">
+                            {rank != null ? (
+                              <span className="app-priority-fix__rank shrink-0">{rank}</span>
+                            ) : null}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span
+                                  className={`text-xs font-semibold uppercase tracking-wide ${priorityClass[action.priority] || ''}`}
+                                >
+                                  {action.priority} priority
+                                </span>
+                                {difficulty ? (
+                                  <span
+                                    className={`rounded px-2 py-0.5 text-xs font-medium capitalize ${difficultyClass[difficulty] || ''}`}
+                                  >
+                                    {difficulty}
+                                  </span>
+                                ) : null}
+                                {categoryLabel ? (
+                                  <span className="text-xs text-[var(--app-text-muted)]">
+                                    {categoryLabel}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <h3 className="mt-2 text-base font-semibold text-[var(--app-text)]">
+                                {action.title}
+                              </h3>
+
+                              {reason ? (
+                                <div className="mt-4">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
+                                    Why this matters
+                                  </p>
+                                  <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
+                                    {reason}
+                                  </p>
+                                </div>
+                              ) : null}
+
+                              {impact ? (
+                                <div className="mt-4">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
+                                    Expected customer impact
+                                  </p>
+                                  <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
+                                    {impact}
+                                  </p>
+                                </div>
+                              ) : null}
+
+                              {ownerAction ? (
+                                <div className="mt-4">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
+                                    Suggested owner action
+                                  </p>
+                                  <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
+                                    {ownerAction}
+                                  </p>
+                                </div>
+                              ) : null}
+
+                              <div className="mt-5 flex flex-wrap items-center gap-3">
+                                <label className="text-xs font-medium text-[var(--app-text-muted)]">
+                                  Status
+                                  <select
+                                    className="app-input ml-2 mt-1 block min-w-[10rem] text-sm"
+                                    value={action.status}
+                                    disabled={busyId === action.id}
+                                    onChange={(e) => updateStatus(action, e.target.value)}
+                                  >
+                                    {STATUS_OPTIONS.map((opt) => (
+                                      <option key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <span className="text-xs text-[var(--app-text-muted)]">
+                                  Updated {formatDate(action.updated_at)}
+                                </span>
+                              </div>
+
+                              <div className="mt-4 flex flex-wrap gap-2">
+                                {reportPath ? (
+                                  <Link
+                                    to={reportPath}
+                                    className="app-btn app-btn--secondary text-xs"
+                                  >
+                                    View in website report
+                                  </Link>
+                                ) : null}
+                                <Link
+                                  to={coachPathForFix(action)}
+                                  className="app-btn app-btn--ghost text-xs"
+                                >
+                                  Ask AI coach about this fix
+                                </Link>
+                              </div>
+                            </div>
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ol>
+                </section>
+              ))}
+            </div>
+          ) : null}
+
+          {otherItems.length ? (
+            <section className="mt-10">
+              <h2 className="text-lg font-semibold text-[var(--app-text)]">Other tasks</h2>
+              <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
+                Manual items and scan tasks that are not part of a website fix plan.
+              </p>
+              <ul className="mt-5 space-y-3">
+                {otherItems.map((action) => (
                   <li
                     key={action.id}
-                    className="rounded-lg border border-[var(--app-border)] bg-[var(--app-surface)] p-3"
+                    className="rounded-lg border border-[var(--app-border)] bg-[var(--app-surface)] p-4"
                   >
                     <p className="text-sm font-semibold text-[var(--app-text)]">{action.title}</p>
                     {action.description ? (
@@ -127,50 +341,31 @@ const ActionPlan = () => {
                         {action.description}
                       </p>
                     ) : null}
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--app-text-muted)]">
-                      <span className={priorityClass[action.priority] || ''}>
-                        {action.priority} priority
-                      </span>
-                      {action.business_name ? <span>{action.business_name}</span> : null}
-                      <span>Created {formatDate(action.created_at)}</span>
-                    </div>
-                    {action.scan_id ? (
-                      <Link
-                        to={`/app/scans/${action.scan_id}`}
-                        className="app-link mt-2 inline-block text-xs font-medium"
-                      >
-                        View source scan -&gt;
-                      </Link>
-                    ) : null}
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        className="app-btn app-btn--secondary text-xs"
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <select
+                        className="app-input text-xs"
+                        value={action.status}
                         disabled={busyId === action.id}
-                        onClick={() => cycleStatus(action)}
+                        onChange={(e) => updateStatus(action, e.target.value)}
                       >
-                        Move status
-                      </button>
-                      {action.status !== 'done' ? (
-                        <button
-                          type="button"
-                          className="app-btn app-btn--ghost text-xs"
-                          disabled={busyId === action.id}
-                          onClick={() => updateStatus(action, 'done')}
-                        >
-                          Mark done
-                        </button>
+                        {STATUS_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      {action.scan_id ? (
+                        <Link to={`/app/scans/${action.scan_id}`} className="app-link text-xs">
+                          View source scan →
+                        </Link>
                       ) : null}
                     </div>
                   </li>
                 ))}
-                {!grouped[col.key].length ? (
-                  <li className="text-xs text-[var(--app-text-muted)]">No tasks here.</li>
-                ) : null}
               </ul>
             </section>
-          ))}
-        </div>
+          ) : null}
+        </>
       )}
     </div>
   )

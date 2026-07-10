@@ -4,6 +4,7 @@ const {
   listActions,
   createAction,
   updateAction,
+  createFixPlanFromReport,
 } = require('../services/actionPlanService')
 
 const router = express.Router()
@@ -18,6 +19,22 @@ router.get('/', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('list actions:', err.message)
     return res.status(500).json({ error: 'Failed to load actions' })
+  }
+})
+
+router.post('/fix-plan', requireAuth, async (req, res) => {
+  try {
+    const result = await createFixPlanFromReport(req.auth.sub, req.body)
+    if (result.error === 'no_fixes') {
+      return res.status(400).json({ error: result.message })
+    }
+    return res.status(201).json(result)
+  } catch (err) {
+    if (err.message === 'business_id is required' || err.message.startsWith('Invalid')) {
+      return res.status(400).json({ error: err.message })
+    }
+    console.error('create fix plan:', err.message)
+    return res.status(500).json({ error: 'Failed to create fix plan' })
   }
 })
 
