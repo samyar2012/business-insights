@@ -20,14 +20,13 @@ const {
   detectNoConversionPath,
 } = require('./scoreCaps')
 const {
-  buildPriorityFixes,
   buildReadableSummary,
-  buildStrengthsList,
-  buildRisksList,
   buildScoreExplanation,
 } = require('./explanationBuilder')
 const { buildBenchmarkComparison, humanEquivalentFromOverall } = require('./benchmarkInterpreter')
 const { buildUxFeatureSnapshot } = require('../uxFeatureExtractor')
+const { buildFixPlan } = require('./fixPlanEngine')
+const { buildEvidenceStrengths, buildEvidenceRisks } = require('./evidenceNarrator')
 
 function computeConfidenceScore({ pages, visualAudit, safetyResult, aggregated, crawlHealth, benchmark }) {
   let score = 35
@@ -170,11 +169,15 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     benchmark: benchmarkComparison,
   })
 
-  const capContext = {
-    safetyStatus,
-    cap_reasons: capResult.cap_reasons,
-  }
-  const priority_fixes = buildPriorityFixes(categoryDetails, capContext)
+  const fix_plan = buildFixPlan({
+    categoryDetails,
+    uxFeatures,
+    capReasons: capResult.cap_reasons,
+    rubric,
+    pages,
+    benchmarkComparison,
+  })
+  const priority_fixes = fix_plan
   const readable_summary = buildReadableSummary({
     overallScore: overall_score,
     confidenceScore: confidence_score,
@@ -203,13 +206,14 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     category_scores: categoryScores,
     category_details: categoryDetails,
     priority_fixes,
+    fix_plan,
     benchmark_comparison: benchmarkComparison?.enabled ? benchmarkComparison : { enabled: false, reason: benchmarkComparison?.reason },
     score_caps_applied: capResult.score_caps_applied,
     cap_reasons: capResult.cap_reasons,
     mismatch_warnings: mismatchWarnings,
     readable_summary,
-    strengths: buildStrengthsList(categoryDetails),
-    risks: buildRisksList(categoryDetails, mismatchWarnings),
+    strengths: buildEvidenceStrengths(categoryDetails, { rubric }),
+    risks: buildEvidenceRisks(categoryDetails, { rubric }, mismatchWarnings),
     recommended_actions: priority_fixes.map((fix) => fix.action),
     score_explanation: buildScoreExplanation(categoryDetails),
     ...legacyFields,

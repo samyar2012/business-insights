@@ -171,6 +171,38 @@ const PRIORITY_LABELS = {
   low: 'Polish',
 }
 
+const priorityClassMap = {
+  critical: 'font-semibold text-[var(--app-error-fg)]',
+  high: 'font-semibold text-[var(--app-error-fg)]',
+  medium: 'font-semibold text-[var(--app-warning-fg)]',
+  low: 'font-medium text-[var(--app-text-muted)]',
+}
+
+const FIX_CATEGORY_LABELS = {
+  safety: 'Safety',
+  functionality: 'Functionality',
+  ux_ui: 'UX / UI',
+  business_fit: 'Business fit',
+  customer_attraction: 'Customer attraction',
+  trust: 'Trust & proof',
+  content: 'Content',
+  seo: 'SEO',
+  mobile: 'Mobile',
+  overall: 'Overall',
+}
+
+const CORE_CATEGORY_LABELS = {
+  safety_trust: 'Safety & trust',
+  technical_functionality: 'Technical functionality',
+  ux_ui_visual: 'UX / UI & visual quality',
+  offer_business_fit: 'Offer clarity & business fit',
+  customer_attraction: 'Customer attraction & conversion',
+}
+
+function fixCategoryLabel(category) {
+  return FIX_CATEGORY_LABELS[category] || String(category || '').replace(/_/g, ' ')
+}
+
 function uxUiScoreDetail(scores) {
   const uxModel = scores.ux_model
   if (uxModel?.used) {
@@ -337,6 +369,7 @@ const WebsiteReport = () => {
         action,
         impact: '',
       }))
+  const topFixPreview = priorityFixes.slice(0, 3)
   const benchmark = scores.benchmark_comparison
   const uxFeatures = scores.ux_features || {}
   const categoryDetails = scores.category_details || {}
@@ -481,7 +514,50 @@ const WebsiteReport = () => {
               </p>
             ) : null}
 
-            <div className="mt-6 flex flex-wrap gap-3">
+            {topFixPreview.length ? (
+              <div className="mt-6 border-t border-[var(--app-border)] pt-5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
+                  Top {topFixPreview.length} evidence-based fix{topFixPreview.length === 1 ? '' : 'es'} from this report
+                </p>
+                <ul className="mt-3 space-y-4">
+                  {topFixPreview.map((fix) => (
+                    <li key={`${fix.rank}-${fix.action}`} className="flex gap-3">
+                      <span className="app-priority-fix__rank shrink-0">{fix.rank}</span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-[var(--app-text)]">{fix.action}</p>
+                        <p className="mt-0.5 text-xs text-[var(--app-text-muted)]">
+                          <span className={priorityClassMap[fix.priority] || ''}>
+                            {PRIORITY_LABELS[fix.priority] || fix.priority}
+                          </span>
+                          {fix.category ? ` - ${fixCategoryLabel(fix.category)}` : ''}
+                        </p>
+                        {fix.reason || fix.expected_impact || fix.impact ? (
+                          <p className="mt-1 text-xs leading-relaxed text-[var(--app-text-secondary)]">
+                            {fix.reason || fix.expected_impact || fix.impact}
+                          </p>
+                        ) : null}
+                        {fix.affected_scores?.length || fix.expected_score_lift ? (
+                          <p className="mt-1 text-xs text-[var(--app-text-muted)]">
+                            {fix.affected_scores?.length
+                              ? `Affects: ${fix.affected_scores.map((key) => CORE_CATEGORY_LABELS[key] || key).join(', ')}`
+                              : ''}
+                            {fix.affected_scores?.length && fix.expected_score_lift ? ' · ' : ''}
+                            {fix.expected_score_lift ? `Estimated lift: ${fix.expected_score_lift}` : ''}
+                          </p>
+                        ) : null}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            <p className="mt-6 text-xs text-[var(--app-text-muted)]">
+              {hasActionPlan
+                ? 'Your fix plan was generated from these analyzer findings.'
+                : 'Generates a fix plan directly from your ranked analyzer findings above.'}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-3">
               {hasActionPlan ? (
                 <Link to={fixPlanPath} className="app-btn app-btn--primary">
                   Open fix plan
@@ -493,7 +569,7 @@ const WebsiteReport = () => {
                   disabled={planBusy || !priorityFixes.length}
                   onClick={createFixPlan}
                 >
-                  {planBusy ? 'Generating...' : 'Generate fix plan'}
+                  {planBusy ? 'Creating...' : 'Create fix plan'}
                 </button>
               )}
               <Link to={coachPath} className="app-btn app-btn--secondary">
@@ -556,9 +632,10 @@ const WebsiteReport = () => {
             <section className="mt-8">
               <h2 className="text-lg font-semibold text-[var(--app-text)]">Top problems to fix first</h2>
               <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
-                Ranked by customer impact — start at the top for the fastest wins.
+                Ranked by customer impact and grounded in what the crawler and visual audit actually found — start at
+                the top for the fastest wins.
               </p>
-              <ol className="mt-5 space-y-4">
+              <ol className="mt-5 space-y-5">
                 {priorityFixes.map((fix) => (
                   <li key={`${fix.rank}-${fix.action}`} className="app-priority-fix flex gap-3">
                     <span className="app-priority-fix__rank">{fix.rank}</span>
@@ -566,20 +643,48 @@ const WebsiteReport = () => {
                       <p className="text-xs font-medium uppercase tracking-wide text-[var(--app-warning-icon)]">
                         {PRIORITY_LABELS[fix.priority] || fix.priority}
                         {fix.category ? (
-                          <span className="text-[var(--app-text-muted)]">
-                            {' '}
-                            · {String(fix.category).replace(/_/g, ' ')}
-                          </span>
+                          <span className="text-[var(--app-text-muted)]"> · {fixCategoryLabel(fix.category)}</span>
                         ) : null}
                       </p>
                       <p className="mt-1 text-sm font-medium text-[var(--app-text)]">{fix.action}</p>
                       {fix.reason ? (
-                        <p className="mt-1 text-xs text-[var(--app-text-muted)]">{fix.reason}</p>
+                        <p className="mt-1 text-xs leading-relaxed text-[var(--app-text-secondary)]">{fix.reason}</p>
                       ) : null}
-                      {fix.expected_impact || fix.impact ? (
-                        <p className="mt-1 text-xs text-[var(--app-text-muted)]">
-                          {fix.expected_impact || fix.impact}
+
+                      {fix.evidence?.length ? (
+                        <div className="mt-2">
+                          <p className="text-xs font-semibold text-[var(--app-text-muted)]">What we found</p>
+                          <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs text-[var(--app-text-secondary)]">
+                            {fix.evidence.slice(0, 3).map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {fix.steps?.length ? (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-xs font-semibold text-[var(--app-text-muted)]">
+                            How to fix it ({fix.steps.length} steps)
+                          </summary>
+                          <ol className="mt-1 list-inside list-decimal space-y-0.5 text-xs text-[var(--app-text-secondary)]">
+                            {fix.steps.map((step) => (
+                              <li key={step}>{step}</li>
+                            ))}
+                          </ol>
+                        </details>
+                      ) : null}
+
+                      {(fix.affected_scores?.length || fix.expected_score_lift) ? (
+                        <p className="mt-2 text-xs text-[var(--app-text-muted)]">
+                          {fix.affected_scores?.length
+                            ? `Affects: ${fix.affected_scores.map((key) => CORE_CATEGORY_LABELS[key] || key).join(', ')}`
+                            : null}
+                          {fix.affected_scores?.length && fix.expected_score_lift ? ' · ' : ''}
+                          {fix.expected_score_lift ? `Estimated lift: ${fix.expected_score_lift}` : null}
                         </p>
+                      ) : fix.expected_impact || fix.impact ? (
+                        <p className="mt-2 text-xs text-[var(--app-text-muted)]">{fix.expected_impact || fix.impact}</p>
                       ) : null}
                     </div>
                   </li>
@@ -1046,7 +1151,7 @@ const WebsiteReport = () => {
                 disabled={planBusy || !priorityFixes.length}
                 onClick={createFixPlan}
               >
-                {planBusy ? 'Generating...' : 'Generate fix plan'}
+                {planBusy ? 'Creating...' : 'Create fix plan'}
               </button>
             )}
             <Link to={coachPath} className="app-btn app-btn--secondary">

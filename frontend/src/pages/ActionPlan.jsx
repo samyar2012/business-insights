@@ -3,11 +3,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import Alert from '../components/app/Alert'
 
-const STATUS_OPTIONS = [
-  { value: 'todo', label: 'Not started' },
-  { value: 'in_progress', label: 'In progress' },
-  { value: 'done', label: 'Done' },
+const STATUS_COLUMNS = [
+  { key: 'todo', label: 'To do' },
+  { key: 'in_progress', label: 'In progress' },
+  { key: 'done', label: 'Done' },
 ]
+
+const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 }
 
 const priorityClass = {
   high: 'text-[var(--app-error-fg)]',
@@ -21,8 +23,22 @@ const difficultyClass = {
   hard: 'bg-[var(--app-error-bg)] text-[var(--app-error-fg)]',
 }
 
+const SOURCE_LABELS = {
+  'website-report': 'Website report',
+  scan: 'Scan',
+  manual: 'Manual',
+}
+
+const CORE_CATEGORY_LABELS = {
+  safety_trust: 'Safety & trust',
+  technical_functionality: 'Technical functionality',
+  ux_ui_visual: 'UX / UI & visual quality',
+  offer_business_fit: 'Offer clarity & business fit',
+  customer_attraction: 'Customer attraction & conversion',
+}
+
 const formatDate = (value) => {
-  if (!value) return '—'
+  if (!value) return '-'
   return new Date(value).toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
@@ -32,24 +48,34 @@ const formatDate = (value) => {
 
 const readMeta = (action, key) => action.metadata?.[key] ?? null
 
-const isWebsiteFix = (action) =>
-  readMeta(action, 'plan_type') === 'website_fix' || action.source === 'website-report'
+const sourceLabel = (action) => SOURCE_LABELS[action.source] || action.source || 'Manual'
 
-const coachPathForFix = (action) => {
+const reportLink = (action) => {
+  const fromMeta = readMeta(action, 'report_path')
+  if (fromMeta) return { to: fromMeta, label: 'View website report' }
+  if (action.business_id) {
+    return { to: `/app/businesses/${action.business_id}/website-report`, label: 'View website report' }
+  }
+  if (action.scan_id) return { to: `/app/scans/${action.scan_id}`, label: 'View source scan' }
+  return null
+}
+
+const coachPathForAction = (action) => {
   const params = new URLSearchParams()
   if (action.business_id) params.set('businessId', action.business_id)
-  params.set('context', 'fix')
-  params.set('fix', action.title)
-  const category = readMeta(action, 'category')
-  if (category) params.set('category', category)
+  params.set('context', 'fix-plan')
+  params.set('actionId', action.id)
   return `/app/tools/growth-coach?${params.toString()}`
 }
 
-const reportPathForAction = (action) => {
-  const fromMeta = readMeta(action, 'report_path')
-  if (fromMeta) return fromMeta
-  if (action.business_id) return `/app/businesses/${action.business_id}/website-report`
-  return null
+const sortByPriorityThenDate = (a, b) => {
+  const rankA = readMeta(a, 'fix_rank')
+  const rankB = readMeta(b, 'fix_rank')
+  if (rankA != null && rankB != null) return rankA - rankB
+  const pa = PRIORITY_ORDER[a.priority] ?? 3
+  const pb = PRIORITY_ORDER[b.priority] ?? 3
+  if (pa !== pb) return pa - pb
+  return new Date(a.created_at) - new Date(b.created_at)
 }
 
 const ActionPlan = () => {
@@ -78,44 +104,9 @@ const ActionPlan = () => {
     load()
   }, [load])
 
-  const fixItems = useMemo(() => {
-    const items = actions.filter(isWebsiteFix)
-    return items.sort((a, b) => {
-      const rankA = readMeta(a, 'fix_rank')
-      const rankB = readMeta(b, 'fix_rank')
-      if (rankA != null && rankB != null) return rankA - rankB
-      if (rankA != null) return -1
-      if (rankB != null) return 1
-      return new Date(b.created_at) - new Date(a.created_at)
-    })
-  }, [actions])
-
-  const otherItems = useMemo(() => actions.filter((a) => !isWebsiteFix(a)), [actions])
-
-  const progress = useMemo(() => {
-    const total = fixItems.length || actions.length
-    const done = (fixItems.length ? fixItems : actions).filter((a) => a.status === 'done').length
-    return { total, done, pct: total ? Math.round((done / total) * 100) : 0 }
-  }, [actions, fixItems])
-
-  const businessGroups = useMemo(() => {
-    const map = new Map()
-    for (const action of fixItems) {
-      const key = action.business_id || 'unknown'
-      if (!map.has(key)) {
-        map.set(key, {
-          businessId: action.business_id,
-          businessName: action.business_name || 'Website',
-          items: [],
-        })
-      }
-      map.get(key).items.push(action)
-    }
-    return [...map.values()]
-  }, [fixItems])
-
   const updateStatus = async (action, status) => {
     setBusyId(action.id)
+    setError('')
     try {
       const data = await apiFetch(`/actions/${action.id}`, {
         method: 'PATCH',
@@ -129,14 +120,39 @@ const ActionPlan = () => {
     }
   }
 
+  const metrics = useMemo(() => {
+    const total = actions.length
+    const open = actions.filter((a) => a.status === 'todo').length
+    const inProgress = actions.filter((a) => a.status === 'in_progress').length
+    const completed = actions.filter((a) => a.status === 'done').length
+    const highPriority = actions.filter((a) => a.priority === 'high').length
+    return { total, open, inProgress, completed, highPriority }
+  }, [actions])
+
+  const nextFix = useMemo(() => {
+    const openItems = actions.filter((a) => a.status !== 'done')
+    if (!openItems.length) return null
+    return [...openItems].sort(sortByPriorityThenDate)[0]
+  }, [actions])
+
+  const columns = useMemo(() => {
+    const grouped = { todo: [], in_progress: [], done: [] }
+    for (const action of actions) {
+      if (grouped[action.status]) grouped[action.status].push(action)
+    }
+    for (const key of Object.keys(grouped)) {
+      grouped[key].sort(sortByPriorityThenDate)
+    }
+    return grouped
+  }, [actions])
+
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto max-w-6xl">
       <header>
         <p className="app-eyebrow">Improve</p>
         <h1 className="app-page-title mt-2">Fix Plan</h1>
         <p className="app-page-subtitle">
-          Structured fixes from your website analyzer — ranked by customer impact, with clear next
-          steps for you or your team.
+          Turn analyzer findings into trackable website and business improvements.
         </p>
       </header>
 
@@ -152,7 +168,7 @@ const ActionPlan = () => {
         <div className="app-card mt-8 p-8 text-center">
           <p className="text-sm text-[var(--app-text-secondary)]">No fixes in your plan yet.</p>
           <p className="mt-2 text-sm text-[var(--app-text-muted)]">
-            Open a website report and generate a fix plan from ranked analyzer findings.
+            Open a website report and create a fix plan from ranked analyzer findings.
           </p>
           <Link to="/app" className="app-btn app-btn--primary mt-5 inline-flex">
             Go to dashboard
@@ -160,211 +176,208 @@ const ActionPlan = () => {
         </div>
       ) : (
         <>
-          <section className="app-card mt-8 p-5">
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold text-[var(--app-text)]">Progress</p>
-                <p className="mt-1 text-xs text-[var(--app-text-muted)]">
-                  {progress.done} of {progress.total} fixes completed
+          <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="app-metric">
+              <p className="app-eyebrow">Total fixes</p>
+              <p className="app-metric__value mt-2">{metrics.total}</p>
+            </div>
+            <div className="app-metric">
+              <p className="app-eyebrow">Open</p>
+              <p className="app-metric__value mt-2">{metrics.open}</p>
+            </div>
+            <div className="app-metric">
+              <p className="app-eyebrow">In progress</p>
+              <p className="app-metric__value mt-2">{metrics.inProgress}</p>
+            </div>
+            <div className="app-metric">
+              <p className="app-eyebrow">Completed</p>
+              <p className="app-metric__value mt-2">{metrics.completed}</p>
+            </div>
+            <div className="app-metric">
+              <p className="app-eyebrow">High priority</p>
+              <p className="app-metric__value mt-2 text-[var(--app-error-fg)]">{metrics.highPriority}</p>
+            </div>
+          </div>
+
+          {nextFix ? (
+            <section className="app-next-action mt-8">
+              <p className="app-eyebrow">Next fix to work on</p>
+              <h2 className="mt-2 text-xl font-semibold tracking-tight text-[var(--app-text)]">
+                {nextFix.title}
+              </h2>
+              {nextFix.description || readMeta(nextFix, 'reason') || readMeta(nextFix, 'why_it_matters') ? (
+                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--app-text-secondary)]">
+                  {readMeta(nextFix, 'why_it_matters') || readMeta(nextFix, 'reason') || nextFix.description}
                 </p>
+              ) : null}
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-[var(--app-text-muted)]">
+                <span className={`font-semibold uppercase tracking-wide ${priorityClass[nextFix.priority] || ''}`}>
+                  {nextFix.priority} priority
+                </span>
+                {nextFix.business_name ? <span>{nextFix.business_name}</span> : null}
+                <span>{sourceLabel(nextFix)}</span>
+                {readMeta(nextFix, 'expected_score_lift') ? (
+                  <span>Estimated lift: {readMeta(nextFix, 'expected_score_lift')}</span>
+                ) : null}
               </div>
-              <p className="text-2xl font-semibold text-[var(--app-text)]">{progress.pct}%</p>
-            </div>
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--app-input-bg)]">
-              <div
-                className="h-full rounded-full bg-[var(--app-success-icon)] transition-all"
-                style={{ width: `${progress.pct}%` }}
-              />
-            </div>
-          </section>
-
-          {fixItems.length ? (
-            <div className="mt-8 space-y-8">
-              {businessGroups.map((group) => (
-                <section key={group.businessId || group.businessName}>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h2 className="text-lg font-semibold text-[var(--app-text)]">
-                        {group.businessName}
-                      </h2>
-                      <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
-                        {group.items.length} prioritized fix{group.items.length === 1 ? '' : 'es'} from
-                        your website report
-                      </p>
-                    </div>
-                    {group.businessId ? (
-                      <Link
-                        to={`/app/businesses/${group.businessId}/website-report`}
-                        className="app-link text-sm font-medium"
-                      >
-                        View website report →
-                      </Link>
-                    ) : null}
-                  </div>
-
-                  <ol className="mt-5 space-y-4">
-                    {group.items.map((action) => {
-                      const reason = readMeta(action, 'reason') || action.description
-                      const impact = readMeta(action, 'expected_impact')
-                      const difficulty = readMeta(action, 'difficulty')
-                      const ownerAction = readMeta(action, 'owner_action')
-                      const categoryLabel = readMeta(action, 'category_label')
-                      const reportPath = reportPathForAction(action)
-                      const rank = readMeta(action, 'fix_rank')
-
-                      return (
-                        <li key={action.id} className="app-card p-5">
-                          <div className="flex flex-wrap items-start gap-3">
-                            {rank != null ? (
-                              <span className="app-priority-fix__rank shrink-0">{rank}</span>
-                            ) : null}
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span
-                                  className={`text-xs font-semibold uppercase tracking-wide ${priorityClass[action.priority] || ''}`}
-                                >
-                                  {action.priority} priority
-                                </span>
-                                {difficulty ? (
-                                  <span
-                                    className={`rounded px-2 py-0.5 text-xs font-medium capitalize ${difficultyClass[difficulty] || ''}`}
-                                  >
-                                    {difficulty}
-                                  </span>
-                                ) : null}
-                                {categoryLabel ? (
-                                  <span className="text-xs text-[var(--app-text-muted)]">
-                                    {categoryLabel}
-                                  </span>
-                                ) : null}
-                              </div>
-                              <h3 className="mt-2 text-base font-semibold text-[var(--app-text)]">
-                                {action.title}
-                              </h3>
-
-                              {reason ? (
-                                <div className="mt-4">
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
-                                    Why this matters
-                                  </p>
-                                  <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
-                                    {reason}
-                                  </p>
-                                </div>
-                              ) : null}
-
-                              {impact ? (
-                                <div className="mt-4">
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
-                                    Expected customer impact
-                                  </p>
-                                  <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
-                                    {impact}
-                                  </p>
-                                </div>
-                              ) : null}
-
-                              {ownerAction ? (
-                                <div className="mt-4">
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
-                                    Suggested owner action
-                                  </p>
-                                  <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
-                                    {ownerAction}
-                                  </p>
-                                </div>
-                              ) : null}
-
-                              <div className="mt-5 flex flex-wrap items-center gap-3">
-                                <label className="text-xs font-medium text-[var(--app-text-muted)]">
-                                  Status
-                                  <select
-                                    className="app-input ml-2 mt-1 block min-w-[10rem] text-sm"
-                                    value={action.status}
-                                    disabled={busyId === action.id}
-                                    onChange={(e) => updateStatus(action, e.target.value)}
-                                  >
-                                    {STATUS_OPTIONS.map((opt) => (
-                                      <option key={opt.value} value={opt.value}>
-                                        {opt.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-                                <span className="text-xs text-[var(--app-text-muted)]">
-                                  Updated {formatDate(action.updated_at)}
-                                </span>
-                              </div>
-
-                              <div className="mt-4 flex flex-wrap gap-2">
-                                {reportPath ? (
-                                  <Link
-                                    to={reportPath}
-                                    className="app-btn app-btn--secondary text-xs"
-                                  >
-                                    View in website report
-                                  </Link>
-                                ) : null}
-                                <Link
-                                  to={coachPathForFix(action)}
-                                  className="app-btn app-btn--ghost text-xs"
-                                >
-                                  Ask AI coach about this fix
-                                </Link>
-                              </div>
-                            </div>
-                          </div>
-                        </li>
-                      )
-                    })}
-                  </ol>
-                </section>
-              ))}
-            </div>
-          ) : null}
-
-          {otherItems.length ? (
-            <section className="mt-10">
-              <h2 className="text-lg font-semibold text-[var(--app-text)]">Other tasks</h2>
-              <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
-                Manual items and scan tasks that are not part of a website fix plan.
-              </p>
-              <ul className="mt-5 space-y-3">
-                {otherItems.map((action) => (
-                  <li
-                    key={action.id}
-                    className="rounded-lg border border-[var(--app-border)] bg-[var(--app-surface)] p-4"
+              {readMeta(nextFix, 'evidence')?.length ? (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold text-[var(--app-text-muted)]">What we found</p>
+                  <ul className="mt-1 list-inside list-disc space-y-0.5 text-sm text-[var(--app-text-secondary)]">
+                    {readMeta(nextFix, 'evidence')
+                      .slice(0, 3)
+                      .map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                  </ul>
+                </div>
+              ) : null}
+              <div className="mt-5 flex flex-wrap gap-3">
+                {nextFix.status === 'todo' ? (
+                  <button
+                    type="button"
+                    className="app-btn app-btn--primary"
+                    disabled={busyId === nextFix.id}
+                    onClick={() => updateStatus(nextFix, 'in_progress')}
                   >
-                    <p className="text-sm font-semibold text-[var(--app-text)]">{action.title}</p>
-                    {action.description ? (
-                      <p className="mt-1 text-xs text-[var(--app-text-secondary)]">
-                        {action.description}
-                      </p>
-                    ) : null}
-                    <div className="mt-3 flex flex-wrap items-center gap-3">
-                      <select
-                        className="app-input text-xs"
-                        value={action.status}
-                        disabled={busyId === action.id}
-                        onChange={(e) => updateStatus(action, e.target.value)}
-                      >
-                        {STATUS_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                      {action.scan_id ? (
-                        <Link to={`/app/scans/${action.scan_id}`} className="app-link text-xs">
-                          View source scan →
-                        </Link>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                    Start
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className={nextFix.status === 'todo' ? 'app-btn app-btn--secondary' : 'app-btn app-btn--primary'}
+                  disabled={busyId === nextFix.id}
+                  onClick={() => updateStatus(nextFix, 'done')}
+                >
+                  Mark done
+                </button>
+                <Link to={coachPathForAction(nextFix)} className="app-btn app-btn--ghost">
+                  Ask AI coach
+                </Link>
+              </div>
             </section>
           ) : null}
+
+          <div className="mt-10 grid gap-5 lg:grid-cols-3">
+            {STATUS_COLUMNS.map((col) => (
+              <section key={col.key}>
+                <div className="flex items-center justify-between px-1">
+                  <h2 className="text-sm font-semibold text-[var(--app-text)]">{col.label}</h2>
+                  <span className="text-xs text-[var(--app-text-muted)]">{columns[col.key].length}</span>
+                </div>
+
+                <ul className="mt-3 space-y-3">
+                  {columns[col.key].map((action) => {
+                    const whyItMatters = readMeta(action, 'why_it_matters')
+                    const reason = whyItMatters || readMeta(action, 'reason') || action.description
+                    const difficulty = readMeta(action, 'difficulty')
+                    const categoryLabel = readMeta(action, 'category_label')
+                    const evidence = readMeta(action, 'evidence') || []
+                    const steps = readMeta(action, 'steps') || []
+                    const affectedScores = readMeta(action, 'affected_scores') || []
+                    const expectedLift = readMeta(action, 'expected_score_lift')
+                    const link = reportLink(action)
+
+                    return (
+                      <li key={action.id} className="app-card p-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`text-xs font-semibold uppercase tracking-wide ${priorityClass[action.priority] || ''}`}
+                          >
+                            {action.priority}
+                          </span>
+                          {difficulty ? (
+                            <span
+                              className={`rounded px-2 py-0.5 text-xs font-medium capitalize ${difficultyClass[difficulty] || ''}`}
+                            >
+                              {difficulty}
+                            </span>
+                          ) : null}
+                          {categoryLabel ? (
+                            <span className="text-xs text-[var(--app-text-muted)]">{categoryLabel}</span>
+                          ) : null}
+                        </div>
+
+                        <p className="mt-2 text-sm font-semibold text-[var(--app-text)]">{action.title}</p>
+                        {reason ? (
+                          <p className="mt-1 text-xs leading-relaxed text-[var(--app-text-secondary)]">
+                            {reason}
+                          </p>
+                        ) : null}
+
+                        {evidence.length ? (
+                          <ul className="mt-2 list-inside list-disc space-y-0.5 text-xs text-[var(--app-text-secondary)]">
+                            {evidence.slice(0, 2).map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+
+                        {steps.length ? (
+                          <details className="mt-2">
+                            <summary className="cursor-pointer text-xs font-semibold text-[var(--app-text-muted)]">
+                              How to fix it ({steps.length} steps)
+                            </summary>
+                            <ol className="mt-1 list-inside list-decimal space-y-0.5 text-xs text-[var(--app-text-secondary)]">
+                              {steps.map((step) => (
+                                <li key={step}>{step}</li>
+                              ))}
+                            </ol>
+                          </details>
+                        ) : null}
+
+                        {affectedScores.length || expectedLift ? (
+                          <p className="mt-2 text-xs text-[var(--app-text-muted)]">
+                            {affectedScores.length
+                              ? `Affects: ${affectedScores.map((key) => CORE_CATEGORY_LABELS[key] || key).join(', ')}`
+                              : null}
+                            {affectedScores.length && expectedLift ? ' · ' : ''}
+                            {expectedLift ? `Estimated lift: ${expectedLift}` : null}
+                          </p>
+                        ) : null}
+
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[var(--app-text-muted)]">
+                          {action.business_name ? <span>{action.business_name}</span> : null}
+                          <span>{sourceLabel(action)}</span>
+                          <span>{formatDate(action.created_at)}</span>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {STATUS_COLUMNS.filter((s) => s.key !== action.status).map((s) => (
+                            <button
+                              key={s.key}
+                              type="button"
+                              className="app-btn app-btn--ghost text-xs"
+                              disabled={busyId === action.id}
+                              onClick={() => updateStatus(action, s.key)}
+                            >
+                              {s.key === 'todo' ? 'Move to to do' : s.key === 'in_progress' ? 'Start' : 'Mark done'}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-3 border-t border-[var(--app-border)] pt-3">
+                          {link ? (
+                            <Link to={link.to} className="app-link text-xs font-medium">
+                              {link.label} -&gt;
+                            </Link>
+                          ) : null}
+                          <Link to={coachPathForAction(action)} className="app-link text-xs font-medium">
+                            Ask AI coach -&gt;
+                          </Link>
+                        </div>
+                      </li>
+                    )
+                  })}
+                  {!columns[col.key].length ? (
+                    <li className="rounded-lg border border-dashed border-[var(--app-border)] p-4 text-center text-xs text-[var(--app-text-muted)]">
+                      Nothing here yet.
+                    </li>
+                  ) : null}
+                </ul>
+              </section>
+            ))}
+          </div>
         </>
       )}
     </div>

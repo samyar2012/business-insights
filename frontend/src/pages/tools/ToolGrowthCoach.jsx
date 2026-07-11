@@ -11,6 +11,7 @@ const ToolGrowthCoach = () => {
   const scanId = searchParams.get('scanId')
   const queryBusinessId = searchParams.get('businessId')
   const reportContext = searchParams.get('context')
+  const actionId = searchParams.get('actionId')
   const businesses = user?.businesses || []
 
   const [businessId, setBusinessId] = useState(
@@ -22,25 +23,48 @@ const ToolGrowthCoach = () => {
   const [lastReply, setLastReply] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [fixAction, setFixAction] = useState(null)
 
   useEffect(() => {
     if (queryBusinessId) setBusinessId(queryBusinessId)
     else if (!businessId && businesses[0]?.id) setBusinessId(businesses[0].id)
   }, [businesses, businessId, queryBusinessId])
 
+  useEffect(() => {
+    if (reportContext !== 'fix-plan' || !actionId) {
+      setFixAction(null)
+      return
+    }
+    let cancelled = false
+    apiFetch('/actions')
+      .then((data) => {
+        if (cancelled) return
+        const found = (data.actions || []).find((a) => a.id === actionId)
+        setFixAction(found || null)
+      })
+      .catch(() => {
+        if (!cancelled) setFixAction(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [reportContext, actionId])
+
   const initialPrompt = useMemo(() => {
-    const fixTitle = searchParams.get('fix')
-    const fixCategory = searchParams.get('category')
-    if (fixTitle && reportContext === 'fix') {
-      const categoryPart = fixCategory ? ` (${fixCategory.replace(/_/g, ' ')})` : ''
-      return `Help me implement this website fix${categoryPart}: "${fixTitle}". What should I do first, and how will it help customers?`
+    if (reportContext === 'fix-plan') {
+      if (fixAction) {
+        const category = fixAction.metadata?.category_label
+        const categoryPart = category ? ` (${category})` : ''
+        return `Help me implement this fix${categoryPart}: "${fixAction.title}". What should I do first, and how will it help customers?`
+      }
+      return 'Help me work through the next fix in my fix plan. What should I prioritize?'
     }
     if (scanId) return 'Help me understand my scan report and what to do first.'
     if (reportContext === 'website-report') {
       return 'Review my website analyzer report and tell me what to fix first for more customers.'
     }
     return ''
-  }, [scanId, reportContext, searchParams])
+  }, [scanId, reportContext, fixAction])
 
   useEffect(() => {
     if (initialPrompt && !message) setMessage(initialPrompt)
@@ -88,7 +112,7 @@ const ToolGrowthCoach = () => {
         <label className="app-card mt-4 block p-4 text-sm">
           <span className="text-[var(--app-text-secondary)]">Business</span>
           <select
-            className="app-input mt-1 w-full"
+            className="app-field mt-1 w-full"
             value={businessId}
             onChange={(e) => setBusinessId(e.target.value)}
           >
@@ -173,7 +197,7 @@ const ToolGrowthCoach = () => {
 
         <div className="mt-4 flex flex-col gap-2">
           <textarea
-            className="app-input min-h-[80px] w-full resize-y"
+            className="app-field min-h-[80px] w-full resize-y"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="What should I focus on this week?"
