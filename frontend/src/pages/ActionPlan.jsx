@@ -11,12 +11,6 @@ const STATUS_COLUMNS = [
 
 const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 }
 
-const priorityClass = {
-  high: 'text-[var(--app-error-fg)]',
-  medium: 'text-[var(--app-warning-fg)]',
-  low: 'text-[var(--app-text-muted)]',
-}
-
 const difficultyClass = {
   easy: 'bg-[var(--app-success-bg)] text-[var(--app-success-icon)]',
   moderate: 'bg-[var(--app-warning-bg)] text-[var(--app-warning-icon)]',
@@ -211,15 +205,20 @@ const ActionPlan = () => {
                 </p>
               ) : null}
               <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-[var(--app-text-muted)]">
-                <span className={`font-semibold uppercase tracking-wide ${priorityClass[nextFix.priority] || ''}`}>
-                  {nextFix.priority} priority
-                </span>
+                {readMeta(nextFix, 'fix_rank') ? (
+                  <span className="font-semibold text-[var(--app-accent-strong)]">
+                    Fix #{readMeta(nextFix, 'fix_rank')}
+                  </span>
+                ) : null}
                 {nextFix.business_name ? <span>{nextFix.business_name}</span> : null}
                 <span>{sourceLabel(nextFix)}</span>
                 {readMeta(nextFix, 'expected_score_lift') ? (
                   <span>Estimated lift: {readMeta(nextFix, 'expected_score_lift')}</span>
                 ) : null}
               </div>
+              {readMeta(nextFix, 'unlock_reason') ? (
+                <p className="app-fix-card__unlock mt-3 max-w-2xl">{readMeta(nextFix, 'unlock_reason')}</p>
+              ) : null}
               {readMeta(nextFix, 'evidence')?.length ? (
                 <div className="mt-4">
                   <p className="text-xs font-semibold text-[var(--app-text-muted)]">What we found</p>
@@ -276,16 +275,16 @@ const ActionPlan = () => {
                     const steps = readMeta(action, 'steps') || []
                     const affectedScores = readMeta(action, 'affected_scores') || []
                     const expectedLift = readMeta(action, 'expected_score_lift')
+                    const fixRank = readMeta(action, 'fix_rank')
+                    const unlockReason = readMeta(action, 'unlock_reason')
                     const link = reportLink(action)
 
                     return (
                       <li key={action.id} className="app-card p-4">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            className={`text-xs font-semibold uppercase tracking-wide ${priorityClass[action.priority] || ''}`}
-                          >
-                            {action.priority}
-                          </span>
+                          {fixRank ? (
+                            <span className="app-priority-fix__rank">{fixRank}</span>
+                          ) : null}
                           {difficulty ? (
                             <span
                               className={`rounded px-2 py-0.5 text-xs font-medium capitalize ${difficultyClass[difficulty] || ''}`}
@@ -304,6 +303,8 @@ const ActionPlan = () => {
                             {reason}
                           </p>
                         ) : null}
+
+                        {unlockReason ? <p className="app-fix-card__unlock mt-2">{unlockReason}</p> : null}
 
                         {evidence.length ? (
                           <ul className="mt-2 list-inside list-disc space-y-0.5 text-xs text-[var(--app-text-secondary)]">

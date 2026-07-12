@@ -142,6 +142,73 @@ describe('fixPlanEngine unit clusters', () => {
     assert.ok(allEvidence.includes('HTTPS was not detected — visitors may see security warnings.'))
   })
 
+  it('sequences fixes into "do this first, so it unlocks the next fix" waves instead of flat priority labels', () => {
+    const categoryDetails = {
+      safety_trust: categoryDetail({ score: 4, max: 20, problems: ['HTTPS was not detected — visitors may see security warnings.'] }),
+      technical_functionality: categoryDetail({ score: 13, max: 15 }),
+      ux_ui_visual: categoryDetail({
+        score: 10,
+        max: 25,
+        problems: [
+          'Largest text block is 1284 characters and lacks section breaks.',
+          'Hero text is dense: largest above-fold block is 910 characters.',
+        ],
+      }),
+      offer_business_fit: categoryDetail({ score: 16, max: 20 }),
+      customer_attraction: categoryDetail({
+        score: 15,
+        max: 20,
+        problems: ['Images look misaligned across the homepage grid.'],
+      }),
+    }
+    const uxFeatures = {
+      readability_problems: [
+        'Largest text block is 1284 characters and lacks section breaks.',
+        'Hero text is dense: largest above-fold block is 910 characters.',
+      ],
+    }
+
+    const plan = buildFixPlan({ categoryDetails, uxFeatures, capReasons: [], rubric: 'ecommerce_store', pages: [] })
+    const httpsIndex = plan.findIndex((item) => item.id === 'no_https')
+    const readabilityIndex = plan.findIndex((item) => item.id === 'mobile_readability')
+    const imagesIndex = plan.findIndex((item) => item.id === 'misaligned_images')
+
+    assert.ok(httpsIndex >= 0 && readabilityIndex >= 0 && imagesIndex >= 0)
+    // Security comes before mobile readability, which comes before visual polish — each wave
+    // unlocks the next one instead of a flat "critical/high/medium" ranking.
+    assert.ok(httpsIndex < readabilityIndex, 'HTTPS fix should be sequenced before mobile readability')
+    assert.ok(readabilityIndex < imagesIndex, 'mobile readability should be sequenced before visual polish')
+
+    assert.equal(plan[0].rank, 1)
+    assert.ok(/do this first/i.test(plan[0].unlock_reason), 'first fix should read as "do this first"')
+    for (const item of plan) {
+      assert.ok(typeof item.unlock_reason === 'string' && item.unlock_reason.length > 10)
+      assert.ok(!/^(critical|high|medium|low)$/i.test(item.unlock_reason.trim()))
+    }
+  })
+
+  it('never lets internal ops/config strings (API keys, env vars) leak into evidence or steps', () => {
+    const categoryDetails = {
+      safety_trust: categoryDetail({
+        score: 10,
+        max: 20,
+        problems: ['Google Safe Browsing is not configured — safety confidence is reduced.'],
+        recommended_fixes: ['Configure GOOGLE_SAFE_BROWSING_API_KEY for live threat verification.'],
+      }),
+      technical_functionality: categoryDetail({ score: 13, max: 15 }),
+      ux_ui_visual: categoryDetail({ score: 20, max: 25 }),
+      offer_business_fit: categoryDetail({ score: 16, max: 20 }),
+      customer_attraction: categoryDetail({ score: 15, max: 20 }),
+    }
+
+    const plan = buildFixPlan({ categoryDetails, uxFeatures: {}, capReasons: [], rubric: 'ecommerce_store', pages: [] })
+    const allText = plan.flatMap((item) => [...item.evidence, ...item.steps, item.title, item.why_it_matters])
+    assert.ok(
+      allText.every((text) => !/API_KEY|process\.env/i.test(text)),
+      'no fix-plan text should reference internal API keys or env vars — the business owner cannot act on those',
+    )
+  })
+
   it('surfaces a benchmark-gap fix when the site trails same-model competitors', () => {
     const categoryDetails = {
       safety_trust: categoryDetail({ score: 18, max: 20 }),
@@ -294,6 +361,8 @@ describe('fixPlanEngine + evidenceNarrator integration via calculateAnalyzerV2Sc
         assert.ok(['critical', 'high', 'medium', 'low'].includes(fix.priority))
         assert.ok(['easy', 'medium', 'hard'].includes(fix.difficulty))
         assert.equal(fix.source, 'analyzer')
+        assert.ok(typeof fix.unlock_reason === 'string' && fix.unlock_reason.length > 10)
+        assert.ok(typeof fix.rank === 'number' && fix.rank >= 1)
       }
     }
   })

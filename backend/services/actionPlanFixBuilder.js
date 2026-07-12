@@ -100,6 +100,8 @@ function buildFixMetadata(fix, { business_id, scan_id, scores } = {}) {
     why_it_matters: fix.why_it_matters || null,
     steps: Array.isArray(fix.steps) ? fix.steps.slice(0, 6) : [],
     expected_score_lift: fix.expected_score_lift || null,
+    // Sequencing: "do this first, so it unlocks the next fix" instead of a flat priority label.
+    unlock_reason: fix.unlock_reason || null,
     affected_scores: Array.isArray(fix.affected_scores) ? fix.affected_scores : [],
     related_pages: Array.isArray(fix.related_pages) ? fix.related_pages.slice(0, 3) : [],
     report_path: reportPath,

@@ -164,20 +164,6 @@ const UX_COMPONENT_LABELS = {
   trust_visual_score: 'Trust visuals',
 }
 
-const PRIORITY_LABELS = {
-  critical: 'Critical',
-  high: 'High impact',
-  medium: 'Medium impact',
-  low: 'Polish',
-}
-
-const priorityClassMap = {
-  critical: 'font-semibold text-[var(--app-error-fg)]',
-  high: 'font-semibold text-[var(--app-error-fg)]',
-  medium: 'font-semibold text-[var(--app-warning-fg)]',
-  low: 'font-medium text-[var(--app-text-muted)]',
-}
-
 const FIX_CATEGORY_LABELS = {
   safety: 'Safety',
   functionality: 'Functionality',
@@ -517,7 +503,7 @@ const WebsiteReport = () => {
             {topFixPreview.length ? (
               <div className="mt-6 border-t border-[var(--app-border)] pt-5">
                 <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
-                  Top {topFixPreview.length} evidence-based fix{topFixPreview.length === 1 ? '' : 'es'} from this report
+                  Top {topFixPreview.length} evidence-based fix{topFixPreview.length === 1 ? '' : 'es'} - in order
                 </p>
                 <ul className="mt-3 space-y-4">
                   {topFixPreview.map((fix) => (
@@ -525,12 +511,9 @@ const WebsiteReport = () => {
                       <span className="app-priority-fix__rank shrink-0">{fix.rank}</span>
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-[var(--app-text)]">{fix.action}</p>
-                        <p className="mt-0.5 text-xs text-[var(--app-text-muted)]">
-                          <span className={priorityClassMap[fix.priority] || ''}>
-                            {PRIORITY_LABELS[fix.priority] || fix.priority}
-                          </span>
-                          {fix.category ? ` - ${fixCategoryLabel(fix.category)}` : ''}
-                        </p>
+                        {fix.category ? (
+                          <p className="mt-0.5 text-xs text-[var(--app-text-muted)]">{fixCategoryLabel(fix.category)}</p>
+                        ) : null}
                         {fix.reason || fix.expected_impact || fix.impact ? (
                           <p className="mt-1 text-xs leading-relaxed text-[var(--app-text-secondary)]">
                             {fix.reason || fix.expected_impact || fix.impact}
@@ -632,51 +615,62 @@ const WebsiteReport = () => {
             <section className="mt-8">
               <h2 className="text-lg font-semibold text-[var(--app-text)]">Top problems to fix first</h2>
               <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
-                Ranked by customer impact and grounded in what the crawler and visual audit actually found — start at
-                the top for the fastest wins.
+                Sequenced from what the crawler and visual audit actually found on this site — each fix unlocks the
+                next, so work left to right. Scroll for more.
               </p>
-              <ol className="mt-5 space-y-5">
-                {priorityFixes.map((fix) => (
-                  <li key={`${fix.rank}-${fix.action}`} className="app-priority-fix flex gap-3">
-                    <span className="app-priority-fix__rank">{fix.rank}</span>
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium uppercase tracking-wide text-[var(--app-warning-icon)]">
-                        {PRIORITY_LABELS[fix.priority] || fix.priority}
-                        {fix.category ? (
-                          <span className="text-[var(--app-text-muted)]"> · {fixCategoryLabel(fix.category)}</span>
+              <div className="app-fix-row mt-5">
+                {priorityFixes.map((fix, index) => (
+                  <article
+                    key={`${fix.rank}-${fix.action}`}
+                    className={`app-fix-card${index === 0 ? ' app-fix-card--current' : ''}`}
+                  >
+                    <div className="app-fix-card__head">
+                      <span className="app-fix-card__rank">{fix.rank}</span>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
+                          Fix #{fix.rank}
+                          {fix.category ? ` · ${fixCategoryLabel(fix.category)}` : ''}
+                        </p>
+                        {fix.difficulty ? (
+                          <p className="mt-0.5 text-xs capitalize text-[var(--app-text-muted)]">
+                            {fix.difficulty} effort
+                          </p>
                         ) : null}
-                      </p>
-                      <p className="mt-1 text-sm font-medium text-[var(--app-text)]">{fix.action}</p>
-                      {fix.reason ? (
-                        <p className="mt-1 text-xs leading-relaxed text-[var(--app-text-secondary)]">{fix.reason}</p>
-                      ) : null}
+                      </div>
+                    </div>
 
-                      {fix.evidence?.length ? (
-                        <div className="mt-2">
-                          <p className="text-xs font-semibold text-[var(--app-text-muted)]">What we found</p>
-                          <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs text-[var(--app-text-secondary)]">
-                            {fix.evidence.slice(0, 3).map((item) => (
-                              <li key={item}>{item}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
+                    <p className="mt-3 text-sm font-semibold leading-snug text-[var(--app-text)]">{fix.action}</p>
+                    {fix.reason ? (
+                      <p className="mt-1.5 text-xs leading-relaxed text-[var(--app-text-secondary)]">{fix.reason}</p>
+                    ) : null}
 
-                      {fix.steps?.length ? (
-                        <details className="mt-2">
-                          <summary className="cursor-pointer text-xs font-semibold text-[var(--app-text-muted)]">
-                            How to fix it ({fix.steps.length} steps)
-                          </summary>
-                          <ol className="mt-1 list-inside list-decimal space-y-0.5 text-xs text-[var(--app-text-secondary)]">
-                            {fix.steps.map((step) => (
-                              <li key={step}>{step}</li>
-                            ))}
-                          </ol>
-                        </details>
-                      ) : null}
+                    {fix.evidence?.length ? (
+                      <div className="mt-3">
+                        <p className="text-xs font-semibold text-[var(--app-text-muted)]">What we found</p>
+                        <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs text-[var(--app-text-secondary)]">
+                          {fix.evidence.slice(0, 3).map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
 
-                      {(fix.affected_scores?.length || fix.expected_score_lift) ? (
-                        <p className="mt-2 text-xs text-[var(--app-text-muted)]">
+                    {fix.steps?.length ? (
+                      <details className="mt-3">
+                        <summary className="cursor-pointer text-xs font-semibold text-[var(--app-text-muted)]">
+                          How to fix it ({fix.steps.length} steps)
+                        </summary>
+                        <ol className="mt-1 list-inside list-decimal space-y-0.5 text-xs text-[var(--app-text-secondary)]">
+                          {fix.steps.map((step) => (
+                            <li key={step}>{step}</li>
+                          ))}
+                        </ol>
+                      </details>
+                    ) : null}
+
+                    <div className="mt-auto pt-3">
+                      {fix.affected_scores?.length || fix.expected_score_lift ? (
+                        <p className="text-xs text-[var(--app-text-muted)]">
                           {fix.affected_scores?.length
                             ? `Affects: ${fix.affected_scores.map((key) => CORE_CATEGORY_LABELS[key] || key).join(', ')}`
                             : null}
@@ -684,12 +678,15 @@ const WebsiteReport = () => {
                           {fix.expected_score_lift ? `Estimated lift: ${fix.expected_score_lift}` : null}
                         </p>
                       ) : fix.expected_impact || fix.impact ? (
-                        <p className="mt-2 text-xs text-[var(--app-text-muted)]">{fix.expected_impact || fix.impact}</p>
+                        <p className="text-xs text-[var(--app-text-muted)]">{fix.expected_impact || fix.impact}</p>
+                      ) : null}
+                      {fix.unlock_reason ? (
+                        <p className="app-fix-card__unlock">{fix.unlock_reason}</p>
                       ) : null}
                     </div>
-                  </li>
+                  </article>
                 ))}
-              </ol>
+              </div>
             </section>
           ) : null}
 

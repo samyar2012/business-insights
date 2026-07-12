@@ -665,6 +665,70 @@ function runBenchmarkGap(benchmark, categoryDetails, rubric) {
 
 const PRIORITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 }
 
+// Sequencing model: instead of just labeling each fix "critical/high/medium", the engine orders
+// fixes into dependency-aware waves so the plan reads as "do this first, so the next fix actually
+// works" rather than a flat priority list. Earlier waves block or undermine later ones - e.g. a
+// mobile layout fix is wasted if the site is still flagged unsafe, and a CTA fix is wasted if
+// mobile visitors can't read the page it lives on.
+const TIER_SEQUENCE = [
+  {
+    ids: ['unsafe_site', 'homepage_down', 'business_model_mismatch', 'no_conversion_path'],
+    first:
+      'Do this first - nothing else on this list matters until visitors can safely reach your site and tell what you sell.',
+    next: 'Do this next - it is still blocking every visitor from reaching or trusting the rest of the site.',
+  },
+  {
+    ids: ['no_https'],
+    first:
+      'Do this first - an insecure connection triggers browser warnings before visitors ever see your other fixes.',
+    next:
+      'Unlocked now - fix this next, because browsers keep warning visitors away until the connection is secure.',
+  },
+  {
+    ids: ['no_mobile_viewport', 'mobile_overflow', 'mobile_readability'],
+    first:
+      'Do this first - most visitors are on mobile, so a broken phone layout hides every other fix from most of your traffic.',
+    next: 'Unlocked now - with the basics secure, fix mobile next so the rest of your fixes are actually visible.',
+  },
+  {
+    ids: ['weak_cta', 'missing_contact_trust', 'unclear_offer'],
+    first: 'Do this first - without one clear next step, visitors read the page and leave instead of converting.',
+    next: 'Unlocked now - visitors can safely reach and read the site, so give them an obvious way to act next.',
+  },
+  {
+    ids: (id) => id.startsWith('catchall_') || ['thin_content', 'js_rendered_sparse', 'weak_seo_meta'].includes(id),
+    first: 'Start here - deepen content and technical signals so search engines and visitors trust the site long-term.',
+    next: 'Unlocked now - with the essentials solid, strengthen content and technical depth next.',
+  },
+  {
+    ids: ['nav_clutter', 'visual_polish', 'misaligned_images'],
+    first: 'Start here - polish the layout so it matches the trust you already built with the fixes above.',
+    next: 'Unlocked now - this is the polish pass, worth doing once the fixes above are in place.',
+  },
+  {
+    ids: ['benchmark_gap'],
+    first: 'Start here - use this to close the remaining gap versus similar businesses.',
+    next: 'Unlocked last - once you are ahead on the fundamentals, use this to close the gap versus competitors.',
+  },
+]
+
+function tierIndexFor(id) {
+  for (let i = 0; i < TIER_SEQUENCE.length; i++) {
+    const matcher = TIER_SEQUENCE[i].ids
+    const matches = typeof matcher === 'function' ? matcher(id) : matcher.includes(id)
+    if (matches) return i
+  }
+  return 4
+}
+
+// Defensive guard: fix-plan text must only ever describe something the site owner can act on.
+// Internal ops/config strings (env vars, API keys, etc.) must never reach the customer-facing plan.
+const INTERNAL_TEXT_PATTERN = /_API_KEY|process\.env|localhost:\d|GOOGLE_SAFE_BROWSING/i
+
+function sanitize(list) {
+  return (list || []).filter((text) => !INTERNAL_TEXT_PATTERN.test(String(text)))
+}
+
 function finalizeItem(raw, ctx) {
   const affected = dedupe(raw.affected || [])
   const priority = raw.forcedPriority || priorityFromGap(ctx.categoryDetails, affected)
@@ -673,16 +737,33 @@ function finalizeItem(raw, ctx) {
     id: raw.id,
     title: raw.title,
     category: raw.category,
-    evidence: dedupe(raw.matched.map((e) => e.text)).slice(0, 4),
+    evidence: sanitize(dedupe(raw.matched.map((e) => e.text))).slice(0, 4),
     why_it_matters: raw.why_it_matters,
-    steps: finalizeSteps(raw.steps),
+    steps: sanitize(finalizeSteps(raw.steps)),
     expected_score_lift: lift.label,
     affected_scores: affected,
     priority,
     difficulty: raw.difficulty || 'medium',
     source: 'analyzer',
     related_pages: relatedPagesFor(raw.category, ctx.pages),
+    _tier: tierIndexFor(raw.id),
   }
+}
+
+function compareFixItems(a, b) {
+  if (a._tier !== b._tier) return a._tier - b._tier
+  const pa = PRIORITY_ORDER[a.priority] ?? 9
+  const pb = PRIORITY_ORDER[b.priority] ?? 9
+  if (pa !== pb) return pa - pb
+  if (a.evidence.length !== b.evidence.length) return b.evidence.length - a.evidence.length
+  return a.id.localeCompare(b.id)
+}
+
+function unlockReasonFor(tier, index, previousTier, previousRank) {
+  const meta = TIER_SEQUENCE[tier] || TIER_SEQUENCE[TIER_SEQUENCE.length - 1]
+  if (index === 0) return meta.first
+  if (previousTier !== tier) return meta.next
+  return `Tackle this right after Fix #${previousRank} - it is part of the same fix wave, so handle both together.`
 }
 
 const CLUSTER_RUNNERS = [
@@ -726,15 +807,26 @@ function buildFixPlan(input = {}) {
   if (benchmarkItem) rawItems.push(benchmarkItem)
 
   const finalized = rawItems.map((raw) => finalizeItem(raw, ctx))
-  finalized.sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9))
+  finalized.sort(compareFixItems)
 
-  return finalized.slice(0, 9).map((item, index) => ({
-    ...item,
-    rank: index + 1,
-    action: item.title,
-    reason: item.why_it_matters,
-    expected_impact: item.expected_score_lift,
-  }))
+  const sequenced = finalized.slice(0, 9)
+  let previousTier = null
+  let previousRank = null
+  return sequenced.map((item, index) => {
+    const rank = index + 1
+    const unlockReason = unlockReasonFor(item._tier, index, previousTier, previousRank)
+    previousTier = item._tier
+    previousRank = rank
+    const { _tier, ...rest } = item
+    return {
+      ...rest,
+      rank,
+      unlock_reason: unlockReason,
+      action: item.title,
+      reason: item.why_it_matters,
+      expected_impact: item.expected_score_lift,
+    }
+  })
 }
 
 module.exports = {

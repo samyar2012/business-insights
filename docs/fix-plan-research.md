@@ -87,6 +87,37 @@ The Fix Plan Engine instead:
 `scores.priority_fixes` and `scores.fix_plan` are now the same array — `recommended_actions` is
 still `fix_plan.map(fix => fix.title)`.
 
+## 2b. Sequencing: "do this first, so it unlocks the next fix" instead of flat priority labels
+
+A flat `critical/high/medium/low` label does not tell a business owner *why* one fix comes before
+another, and several fixes actively undermine each other if done out of order (polishing layout on
+a site that is still flagged unsafe, or fixing a CTA that mobile visitors can't scroll to). The
+engine now orders fixes into dependency-aware waves (`TIER_SEQUENCE` in `fixPlanEngine.js`):
+
+1. Hard blockers (unsafe site, homepage down, business-model mismatch, no conversion path)
+2. Security foundation (no HTTPS)
+3. Mobile essentials (no viewport tag, overflow, dense/unreadable mobile text)
+4. Conversion & trust signals (weak CTA, missing contact/proof, unclear offer)
+5. Content & technical depth (thin content, JS-rendered sparse HTML, weak SEO meta, and the
+   per-category catch-alls)
+6. Visual polish (nav clutter, visual polish, misaligned images)
+7. Competitive benchmark gap (only once the site is otherwise ahead on fundamentals)
+
+Within a wave, items are still ordered by how large the underlying score gap is (same
+`priorityFromGap` computation as before) so severity still matters — the waves just make sure a
+security blocker is never sequenced after a nav-spacing tweak. Each finalized item gets an
+`unlock_reason` string instead of (or in addition to) a bare priority word:
+
+- Rank 1 always reads `"Do this first - ..."` / `"Start here - ..."`.
+- The first item in a new wave reads `"Unlocked now - ..."`, explaining what became possible
+  because the earlier wave is assumed done.
+- Items in the same wave as the previous one read `"Tackle this right after Fix #N - it is part
+  of the same fix wave, so handle both together."`
+
+`priority` is still computed and stored (action items still need it for the existing
+open/high-priority dashboard metric), but the customer-facing plan leads with rank + unlock
+reasoning, not the priority word.
+
 ## 3. Evidence-based strengths and risks
 
 `evidenceNarrator.js` takes the deterministic `strengths[]`/`problems[]` that the category
@@ -121,6 +152,20 @@ this crawl."` — never a bare priority label like "Medium impact."
   legacy fallback path, which has its own local implementations, is unaffected.
 - No Google Search API, or any other external web lookup, is used by the Fix Plan Engine.
 
+## 4b. Internal ops text must never reach the customer-facing plan
+
+`categoryScorers.js` and `businessProfileLogic.js` previously surfaced
+`"Configure GOOGLE_SAFE_BROWSING_API_KEY for live threat verification."` as a customer-facing
+"problem" and "recommended fix" whenever our own Safe Browsing API key was not configured. That is
+an internal ops/config detail — the business owner cannot set an environment variable on our
+server — so it was removed at the source (the missing-key case still lowers scoring *confidence*
+internally, it just no longer becomes a fix-plan item). `fixPlanEngine.js` also adds a defensive
+`INTERNAL_TEXT_PATTERN` filter (`sanitize()`) on every evidence/step string as a second layer, so
+any future `_API_KEY` / `process.env` / `GOOGLE_SAFE_BROWSING` style string can never reach a fix
+plan even if a scorer regresses. Covered by
+`"never lets internal ops/config strings (API keys, env vars) leak into evidence or steps"` in
+`backend/tests/fixPlanEngine.test.js`.
+
 ## 5. Tests
 
 `backend/tests/fixPlanEngine.test.js` covers:
@@ -131,11 +176,15 @@ this crawl."` — never a bare priority label like "Medium impact."
   fix), asserting real evidence with numbers is attached, not placeholder text.
 - That many raw problems collapse into a materially smaller number of fix items (clustering,
   not one-per-point), while every raw problem still shows up as evidence somewhere.
+- That fixes are sequenced into dependency-aware waves (e.g. HTTPS before mobile readability
+  before visual polish) and every item carries a non-generic `unlock_reason`, with rank 1 always
+  reading "do this first".
+- That internal ops/config strings (API keys, env vars) can never leak into evidence or steps.
 - That two different site fixtures (`trustGap` vs. a dense-mobile-text service site) produce
   different fix-plan titles, different strengths, and different risks end-to-end through
   `calculateAnalyzerV2Scores`.
 - That every fix item is fully-formed against the required schema (title, category, evidence,
-  why_it_matters, steps 3–6, expected_score_lift, affected_scores, priority, difficulty,
-  source).
+  why_it_matters, steps 3–6, expected_score_lift, affected_scores, priority, difficulty, source,
+  rank, unlock_reason).
 - That generic strengths get rewritten with business-impact language, and risks are never a bare
   priority label.

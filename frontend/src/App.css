@@ -1832,6 +1832,90 @@ select.app-field option {
   color: var(--app-accent-strong);
 }
 
+/* Horizontal fix-plan carousel ("do this first, so it unlocks the next fix") */
+.app-fix-row {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding-bottom: 0.5rem;
+  margin: 0 -0.25rem;
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--app-border-strong) transparent;
+}
+
+.app-fix-row::-webkit-scrollbar {
+  height: 6px;
+}
+
+.app-fix-row::-webkit-scrollbar-thumb {
+  background: var(--app-border-strong);
+  border-radius: 9999px;
+}
+
+.app-fix-card {
+  scroll-snap-align: start;
+  flex: 0 0 auto;
+  width: min(340px, 85vw);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--app-border);
+  border-radius: 1rem;
+  padding: 1.125rem;
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-sm);
+  transition:
+    border-color 0.3s var(--app-ease),
+    box-shadow 0.3s var(--app-ease),
+    transform 0.3s var(--app-ease);
+}
+
+.app-fix-card:hover {
+  border-color: var(--app-border-strong);
+  box-shadow: var(--app-shadow);
+  transform: translateY(-2px);
+}
+
+.app-fix-card--current {
+  border-color: var(--app-accent-strong);
+  background:
+    linear-gradient(155deg, var(--app-accent-soft), transparent 60%),
+    var(--app-surface);
+}
+
+.app-fix-card__head {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.app-fix-card__rank {
+  display: flex;
+  height: 2.25rem;
+  width: 2.25rem;
+  shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--app-accent-soft);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--app-accent-strong);
+}
+
+.app-fix-card__unlock {
+  margin-top: 0.75rem;
+  border-radius: 0.625rem;
+  border: 1px solid var(--app-border);
+  background: var(--app-input-bg);
+  padding: 0.5rem 0.625rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--app-text-secondary);
+}
+
 .app-report-technical {
   border-top: 1px solid var(--app-border);
 }

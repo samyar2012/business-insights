@@ -277,10 +277,9 @@ function scoreSafetyTrust({ aggregated, pages, safetyResult, crawlHealth, rubric
         ? 'API could not verify safety; partial credit from HTTPS and crawl health.'
         : 'Safe Browsing not configured; partial credit from HTTPS and crawl checks only.',
     })
-    if (!result.configured) {
-      detail.problems.push('Google Safe Browsing is not configured — safety confidence is reduced.')
-      detail.recommended_fixes.push('Configure GOOGLE_SAFE_BROWSING_API_KEY for live threat verification.')
-    }
+    // Note: missing Safe Browsing configuration is an internal scoring-confidence detail (handled
+    // via confidenceFactors below), not a customer-facing problem — the business owner cannot fix
+    // our API configuration, so it must never surface as a fix-plan item or "problem" bullet.
     confidenceFactors.push(result.configured ? 55 : 45)
   }
 

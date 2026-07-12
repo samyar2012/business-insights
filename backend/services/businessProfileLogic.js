@@ -467,14 +467,8 @@ function buildPriorityFixes(aggregated, pages, scores) {
       impact: 'You can only optimize conversion on a site you control.',
     })
   }
-  if (scores.safety_status === 'unknown') {
-    addPriorityFix(fixes, seen, {
-      priority: 'low',
-      category: 'safety',
-      action: 'Configure GOOGLE_SAFE_BROWSING_API_KEY in production to verify visitor safety before driving traffic.',
-      impact: 'Live safety checks confirm your site is safe to promote.',
-    })
-  }
+  // Note: an "unknown" safety status reflects our own Safe Browsing configuration, not something
+  // the business owner can act on, so it must not appear as a customer-facing fix.
 
   fixes.sort(
     (a, b) =>
