@@ -25,7 +25,7 @@ const {
 } = require('./explanationBuilder')
 const { buildBenchmarkComparison, humanEquivalentFromOverall } = require('./benchmarkInterpreter')
 const { buildUxFeatureSnapshot } = require('../uxFeatureExtractor')
-const { buildFixPlan } = require('./fixPlanEngine')
+const { buildFixPlan, buildGrowthPlan } = require('./fixPlanEngine')
 const { buildEvidenceStrengths, buildEvidenceRisks } = require('./evidenceNarrator')
 
 function computeConfidenceScore({ pages, visualAudit, safetyResult, aggregated, crawlHealth, benchmark }) {
@@ -177,6 +177,17 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     pages,
     benchmarkComparison,
   })
+  const growth_plan = buildGrowthPlan({
+    categoryDetails,
+    uxFeatures,
+    capReasons: capResult.cap_reasons,
+    rubric,
+    pages,
+    benchmarkComparison,
+    aggregated,
+    business,
+    fixPlan: fix_plan,
+  })
   const priority_fixes = fix_plan
   const readable_summary = buildReadableSummary({
     overallScore: overall_score,
@@ -207,6 +218,7 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     category_details: categoryDetails,
     priority_fixes,
     fix_plan,
+    growth_plan,
     benchmark_comparison: benchmarkComparison?.enabled ? benchmarkComparison : { enabled: false, reason: benchmarkComparison?.reason },
     score_caps_applied: capResult.score_caps_applied,
     cap_reasons: capResult.cap_reasons,
@@ -214,7 +226,7 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     readable_summary,
     strengths: buildEvidenceStrengths(categoryDetails, { rubric }),
     risks: buildEvidenceRisks(categoryDetails, { rubric }, mismatchWarnings),
-    recommended_actions: priority_fixes.map((fix) => fix.action),
+    recommended_actions: growth_plan.map((item) => item.action),
     score_explanation: buildScoreExplanation(categoryDetails),
     ...legacyFields,
   }

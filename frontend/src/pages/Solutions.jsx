@@ -13,7 +13,7 @@ const Solutions = () => {
               Website improvement for every type of online business.
             </h1>
             <p className="mt-4 max-w-3xl text-white/75">
-              Stores, service providers, listings, and hybrid models — analyze your site, fix what
+              Stores, service providers, listings, and hybrid models - analyze your site, fix what
               blocks customers, and grow with AI tools.
             </p>
           </Reveal>

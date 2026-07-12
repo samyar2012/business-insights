@@ -24,7 +24,7 @@ export const BUSINESS_MODEL_HELPERS = {
   online_plus_offline_store:
     'We score store/location info, hours, online catalog, visit/contact CTA, map signals, and local trust.',
   online_gallery_physical_service:
-    'We score gallery quality, portfolio proof, service explanation, consultation/contact CTA, and inquiry path — not checkout.',
+    'We score gallery quality, portfolio proof, service explanation, consultation/contact CTA, and inquiry path - not checkout.',
   online_plus_physical_service:
     'We score service explanation, quote/booking/contact flow, service area, proof, testimonials, and clarity.',
   local_service_business:
@@ -34,7 +34,7 @@ export const BUSINESS_MODEL_HELPERS = {
   blog:
     'We score article structure, readability, navigation, categories, internal links, author trust, and content depth.',
   listing:
-    'We score listing title, images, description, reviews, CTA/contact/buy path, limitations, and trust — not full site structure.',
+    'We score listing title, images, description, reviews, CTA/contact/buy path, limitations, and trust - not full site structure.',
 }
 
 export const BUSINESS_MODEL_LABELS = Object.fromEntries(

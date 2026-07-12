@@ -14,7 +14,7 @@ const greetingForHour = (hour) => {
 const JOURNEY_STEPS = [
   { key: 'analyze', label: 'Analyze website', icon: 'website' },
   { key: 'review', label: 'Review report', icon: 'scan' },
-  { key: 'fix', label: 'Fix top problems', icon: 'plan' },
+  { key: 'fix', label: 'Execute growth roadmap', icon: 'plan' },
   { key: 'rescan', label: 'Rescan to confirm', icon: 'health' },
 ]
 
@@ -93,18 +93,18 @@ const Dashboard = () => {
 
   const scores = webProfile?.scores || {}
   const isV2 = scores.scoring_version === 'business_insights_analyzer_v2'
-  const fixPlan = scores.fix_plan || []
-  const topFix = fixPlan[0] || null
+  const growthPlan = scores.growth_plan?.length ? scores.growth_plan : scores.fix_plan || []
+  const topFix = growthPlan[0] || null
 
   const categories = useMemo(() => {
     if (!isV2) return []
     return CATEGORY_DEFS.map((def) => {
       const value = typeof scores[def.key] === 'number' ? scores[def.key] : null
       const status = categoryStatus(value, def.max)
-      const fix = fixPlan.find((item) => item.affected_scores?.includes(def.id)) || null
+      const fix = growthPlan.find((item) => item.affected_scores?.includes(def.id)) || null
       return { ...def, value, status, fix }
     })
-  }, [isV2, scores, fixPlan])
+  }, [isV2, scores, growthPlan])
 
   const nextBestAction = (() => {
     if (!business?.id) {
@@ -122,7 +122,7 @@ const Dashboard = () => {
         title: 'Analyze your website',
         description: business.store_url
           ? 'Run the Website Analyzer on your public pages to find what stops customers from buying or contacting you.'
-          : 'Add your website URL, then run the analyzer to get scores and ranked fixes.',
+          : 'Add your website URL, then run the analyzer to get scores and ranked growth opportunities.',
         cta: business.store_url ? 'Start analysis' : 'Add website URL',
         to: business.store_url ? reportPath : '/app/businesses',
       }
@@ -166,7 +166,7 @@ const Dashboard = () => {
           <span className="font-medium text-[var(--app-text)]">
             {business?.business_name || 'your business'}
           </span>
-          . Analyze your website, see exactly what to fix, then rescan to confirm the score went up.
+          . Analyze your website, build the growth roadmap, execute steps, then rescan to confirm the score went up.
         </p>
       </header>
 
@@ -212,7 +212,7 @@ const Dashboard = () => {
                 {scores.overall_score ?? '-'}
               </p>
               <p className="mt-1 text-xs text-[var(--app-text-muted)]">
-                {webProfile.summary?.platform ? `${webProfile.summary.platform} · ` : ''}
+                {webProfile.summary?.platform ? `${webProfile.summary.platform} - ` : ''}
                 {webProfile.summary?.pages_analyzed
                   ? `${webProfile.summary.pages_analyzed} pages`
                   : 'Report ready'}
@@ -266,10 +266,10 @@ const Dashboard = () => {
                 </p>
                 {cat.fix ? (
                   <p className="mt-2 text-xs leading-relaxed text-[var(--app-text-secondary)]">
-                    Fix #{cat.fix.rank}: {cat.fix.title}
+                    Step {cat.fix.rank}: {cat.fix.title}
                   </p>
                 ) : (
-                  <p className="mt-2 text-xs text-[var(--app-text-muted)]">No open fixes here right now.</p>
+                  <p className="mt-2 text-xs text-[var(--app-text-muted)]">No open roadmap steps in this area.</p>
                 )}
               </div>
             ))}
@@ -279,9 +279,9 @@ const Dashboard = () => {
 
       {topFix ? (
         <section className="app-next-action app-stagger mt-8">
-          <p className="app-eyebrow">Top fix to work on right now</p>
+          <p className="app-eyebrow">Top growth step to work on right now</p>
           <h2 className="mt-2 text-lg font-semibold tracking-tight text-[var(--app-text)]">
-            Fix #{topFix.rank}: {topFix.title}
+            Step {topFix.rank}: {topFix.title}
           </h2>
           {topFix.unlock_reason ? (
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--app-text-secondary)]">
@@ -297,9 +297,25 @@ const Dashboard = () => {
               {topFix.research_basis}
             </p>
           ) : null}
-          <div className="mt-4">
-            <Link to={reportPath} className="app-btn app-btn--primary">
-              See all fixes in the report
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link
+              to={business?.id ? `/app/action-plan?businessId=${business.id}` : '/app/action-plan'}
+              className="app-btn app-btn--primary"
+            >
+              Open Growth Roadmap
+            </Link>
+            <Link to={reportPath} className="app-btn app-btn--secondary">
+              See all opportunities in the report
+            </Link>
+            <Link
+              to={
+                business?.id
+                  ? `/app/tools/growth-coach?businessId=${business.id}&context=website-report`
+                  : '/app/tools/growth-coach'
+              }
+              className="app-btn app-btn--ghost"
+            >
+              Ask AI Coach
             </Link>
           </div>
         </section>

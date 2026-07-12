@@ -14,7 +14,7 @@ const Product = () => {
               Website improvement platform for stores, services, and online businesses.
             </h1>
             <p className="mt-4 max-w-3xl text-white/75">
-              Scan your site, review ranked problems, build a fix plan, and use AI tools — from free
+              Scan your site, review ranked problems, build a growth roadmap, and use AI tools - from free
               trial to paid when you are ready.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">

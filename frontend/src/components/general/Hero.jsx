@@ -4,7 +4,7 @@ import Reveal from './Reveal'
 const workflowSteps = [
   { step: '1', label: 'Analyze', detail: 'Scan your public pages' },
   { step: '2', label: 'Review', detail: 'See scores and top problems' },
-  { step: '3', label: 'Plan', detail: 'Prioritize fixes that matter' },
+  { step: '3', label: 'Plan', detail: 'Prioritize growth steps that matter' },
   { step: '4', label: 'Improve', detail: 'Use AI tools to execute' },
 ]
 
@@ -27,7 +27,7 @@ const Hero = () => {
             </h1>
             <p className="mt-5 text-base leading-relaxed text-white/80 sm:text-lg lg:text-xl">
               Business Insights scans your website, scores trust, UX, and conversion paths, and gives
-              you a clear fix plan — built for store owners, service businesses, and anyone selling
+              you a clear growth roadmap - built for store owners, service businesses, and anyone selling
               online.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">

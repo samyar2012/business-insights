@@ -17,12 +17,19 @@ const CATEGORY_LABELS = {
   mobile: 'Mobile experience',
 }
 
+const PILLAR_LABELS = {
+  acquire: 'Acquire',
+  convert: 'Convert',
+  retain: 'Retain',
+  operate: 'Operate',
+}
+
 const OWNER_ACTIONS = {
-  safety_trust: 'Review trust signals on your homepage — HTTPS, policies, contact info, and reviews.',
+  safety_trust: 'Review trust signals on your homepage - HTTPS, policies, contact info, and reviews.',
   technical_functionality: 'Work with your developer or hosting provider to fix load, crawl, and mobile issues.',
   ux_ui_visual: 'Improve layout, readability, CTAs, and mobile spacing on your highest-traffic pages.',
   offer_business_fit: 'Clarify what you sell and align page content with your selected business model.',
-  customer_attraction: 'Strengthen conversion paths — booking, contact forms, phone, or checkout.',
+  customer_attraction: 'Strengthen conversion paths - booking, contact forms, phone, or checkout.',
   overall: 'Resolve this blocker before investing in ads or outbound marketing.',
   safety: 'Resolve safety flags and enable HTTPS before driving traffic.',
   functionality: 'Work with your developer or hosting provider to fix load and crawl issues.',
@@ -63,7 +70,11 @@ function suggestOwnerAction(fix, category) {
 }
 
 function normalizeFixesFromScores(scores = {}) {
-  const source = scores.fix_plan?.length ? scores.fix_plan : scores.priority_fixes
+  const source = scores.growth_plan?.length
+    ? scores.growth_plan
+    : scores.fix_plan?.length
+      ? scores.fix_plan
+      : scores.priority_fixes
   if (source?.length) {
     return source.map((fix, index) => ({
       ...fix,
@@ -88,7 +99,11 @@ function buildFixMetadata(fix, { business_id, scan_id, scores } = {}) {
 
   return {
     plan_type: 'website_fix',
+    plan_name: fix.pillar ? 'growth_plan' : 'fix_plan',
     fix_rank: fix.rank ?? null,
+    step_label: fix.step_label || (fix.rank ? `Step ${fix.rank}` : null),
+    pillar: fix.pillar || null,
+    pillar_label: fix.pillar ? PILLAR_LABELS[fix.pillar] || fix.pillar : null,
     category,
     category_label: CATEGORY_LABELS[category] || String(category).replace(/_/g, ' '),
     reason: fix.reason || fix.why_it_matters || null,
@@ -102,6 +117,8 @@ function buildFixMetadata(fix, { business_id, scan_id, scores } = {}) {
     expected_score_lift: fix.expected_score_lift || null,
     // Sequencing: "do this first, so it unlocks the next fix" instead of a flat priority label.
     unlock_reason: fix.unlock_reason || null,
+    expected_business_outcome: fix.expected_business_outcome || null,
+    ask_ai_prompt: fix.ask_ai_prompt || null,
     // Attributed UX/conversion research grounding, varied by business model - not a made-up stat.
     research_basis: fix.research_basis || null,
     affected_scores: Array.isArray(fix.affected_scores) ? fix.affected_scores : [],

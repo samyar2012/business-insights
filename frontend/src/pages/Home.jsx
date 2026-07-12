@@ -11,7 +11,7 @@ import {
 } from '../content/home'
 
 const aboutBullets = [
-  'Built for owners and operators — not agencies pitching retainers.',
+  'Built for owners and operators - not agencies pitching retainers.',
   'Website Analyzer is the core product; AI tools extend what you learn from the scan.',
   'Scores adapt to your business model, from online stores to local services and listings.',
 ]
@@ -29,10 +29,10 @@ const Home = () => {
                 How it works
               </p>
               <h2 className="section-heading-gradient mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-                Analyze, review, plan, and improve — in one app.
+                Analyze, review, plan, and improve - in one app.
               </h2>
               <p className="mt-3 text-base text-white/75 sm:text-lg">
-                Business Insights is a practical workspace for fixing your website, not a services
+                Business Insights is a practical growth workspace, not a services
                 brochure.
               </p>
             </div>
@@ -63,7 +63,7 @@ const Home = () => {
                 What you get
               </p>
               <h2 className="section-heading-gradient mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-                A website report that tells you what to fix first.
+                A website report that tells you what to execute first for growth.
               </h2>
             </div>
           </Reveal>
@@ -108,7 +108,7 @@ const Home = () => {
                 Built for any business that relies on its website to win customers.
               </h2>
               <p className="mt-3 max-w-2xl text-base text-white/75 sm:text-lg">
-                Stores, service providers, galleries, listings, and hybrid models — scoring adjusts
+                Stores, service providers, galleries, listings, and hybrid models - scoring adjusts
                 to how you actually operate.
               </p>
             </div>
@@ -168,11 +168,11 @@ const Home = () => {
                   Why Business Insights
                 </p>
                 <h2 className="section-heading-gradient mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-                  An app for fixing your site, not another agency pitch deck.
+                  An app for growing your business, not another agency pitch deck.
                 </h2>
                 <p className="mt-3 text-base text-white/75 sm:text-lg">
-                  Scan your website, understand what blocks customers, build a fix plan, and use AI
-                  tools to keep improving — all in one workspace.
+                  Scan your website, understand what blocks customers, build a growth roadmap, and use AI
+                  tools to keep improving - all in one workspace.
                 </p>
               </div>
             </Reveal>

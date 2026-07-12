@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { getBusinessModelLabel } from '../lib/businessFormConfig'
 import Alert from '../components/app/Alert'
@@ -96,7 +96,7 @@ const ANALYZER_LENSES_V2 = [
     id: 'offer_business_fit',
     key: 'business_fit_score',
     max: 20,
-    detail: 'Model-specific offer signals — products, services, or listing quality.',
+    detail: 'Model-specific offer signals - products, services, or listing quality.',
   },
   {
     question: 'Will visitors know what to do next?',
@@ -185,6 +185,13 @@ const CORE_CATEGORY_LABELS = {
   customer_attraction: 'Customer attraction & conversion',
 }
 
+const PILLAR_LABELS = {
+  acquire: 'Acquire',
+  convert: 'Convert',
+  retain: 'Retain',
+  operate: 'Operate',
+}
+
 function fixCategoryLabel(category) {
   return FIX_CATEGORY_LABELS[category] || String(category || '').replace(/_/g, ' ')
 }
@@ -205,12 +212,14 @@ function uxUiScoreDetail(scores) {
 
 const WebsiteReport = () => {
   const { businessId } = useParams()
+  const navigate = useNavigate()
   const [business, setBusiness] = useState(null)
   const [profile, setProfile] = useState(null)
   const [latestCrawl, setLatestCrawl] = useState(null)
   const [pages, setPages] = useState([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [creatingPlan, setCreatingPlan] = useState(false)
   const [polling, setPolling] = useState(false)
   const [error, setError] = useState('')
 
@@ -269,6 +278,31 @@ const WebsiteReport = () => {
 
   const rescan = () => startCrawl(true)
 
+  const createFixPlan = async () => {
+    const scores = profile?.scores
+    if (!scores) return
+    setCreatingPlan(true)
+    setError('')
+    try {
+      await apiFetch('/actions/fix-plan', {
+        method: 'POST',
+        body: JSON.stringify({ business_id: businessId, scores }),
+      })
+      navigate(`/app/action-plan?businessId=${businessId}`)
+    } catch (err) {
+      // "already exists" style responses still mean the plan is there - open it.
+      if (err.status === 400) {
+        navigate(`/app/action-plan?businessId=${businessId}`)
+      } else {
+        setError(err.message)
+      }
+    } finally {
+      setCreatingPlan(false)
+    }
+  }
+
+  const coachPath = `/app/tools/growth-coach?businessId=${businessId}&context=website-report`
+
   if (loading) {
     return (
       <div className="app-loading mt-8">
@@ -289,8 +323,12 @@ const WebsiteReport = () => {
     scores.overall_score !== weightedSum &&
     !(scores.score_caps_applied?.length > 0)
   const scoreExplanations = weightedScoreExplanations(scores)
-  const priorityFixes = scores.priority_fixes?.length
-    ? scores.priority_fixes
+  const growthOpportunities = scores.growth_plan?.length
+    ? scores.growth_plan
+    : scores.fix_plan?.length
+      ? scores.fix_plan
+      : scores.priority_fixes?.length
+        ? scores.priority_fixes
     : (scores.recommended_actions || []).map((action, index) => ({
         rank: index + 1,
         priority: index === 0 ? 'high' : 'medium',
@@ -298,7 +336,7 @@ const WebsiteReport = () => {
         action,
         impact: '',
       }))
-  const topFixPreview = priorityFixes.slice(0, 3)
+  const topFixPreview = growthOpportunities.slice(0, 3)
   const benchmark = scores.benchmark_comparison
   const uxFeatures = scores.ux_features || {}
   const categoryDetails = scores.category_details || {}
@@ -329,8 +367,8 @@ const WebsiteReport = () => {
       {!profile && !isRunning ? (
         <div className="app-card mt-8 p-6 text-center">
           <p className="text-sm text-[var(--app-text-secondary)]">
-            Scan your public pages to score trust, UX, business fit, and conversion paths — then get
-            ranked fixes.
+            Scan your public pages to score trust, UX, business fit, and conversion paths - then get
+            evidence-based growth opportunities.
           </p>
           <button
             type="button"
@@ -401,7 +439,7 @@ const WebsiteReport = () => {
                 <div>
                   <dt className="text-[var(--app-text-muted)]">Business model</dt>
                   <dd className="font-medium text-[var(--app-text)]">
-                    {scores.scoring_rubric ? getBusinessModelLabel(scores.scoring_rubric) : '—'}
+                    {scores.scoring_rubric ? getBusinessModelLabel(scores.scoring_rubric) : '-'}
                   </dd>
                 </div>
                 <div>
@@ -415,7 +453,7 @@ const WebsiteReport = () => {
                   <dd className="font-medium text-[var(--app-text)]">
                     {typeof scores.confidence_score === 'number'
                       ? `${scores.confidence_score}/100`
-                      : '—'}
+                      : '-'}
                   </dd>
                 </div>
                 <div>
@@ -425,7 +463,7 @@ const WebsiteReport = () => {
                       ? formatScanDate(latestCrawl.completed_at)
                       : profile.updated_at
                         ? formatScanDate(profile.updated_at)
-                        : '—'}
+                        : '-'}
                   </dd>
                 </div>
               </dl>
@@ -440,7 +478,7 @@ const WebsiteReport = () => {
             {topFixPreview.length ? (
               <div className="mt-6 border-t border-[var(--app-border)] pt-5">
                 <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
-                  Top {topFixPreview.length} evidence-based fix{topFixPreview.length === 1 ? '' : 'es'} - in order
+                  Growth opportunities found from this scan
                 </p>
                 <ul className="mt-3 space-y-4">
                   {topFixPreview.map((fix) => (
@@ -461,7 +499,7 @@ const WebsiteReport = () => {
                             {fix.affected_scores?.length
                               ? `Affects: ${fix.affected_scores.map((key) => CORE_CATEGORY_LABELS[key] || key).join(', ')}`
                               : ''}
-                            {fix.affected_scores?.length && fix.expected_score_lift ? ' · ' : ''}
+                            {fix.affected_scores?.length && fix.expected_score_lift ? ' - ' : ''}
                             {fix.expected_score_lift ? `Estimated lift: ${fix.expected_score_lift}` : ''}
                           </p>
                         ) : null}
@@ -478,12 +516,24 @@ const WebsiteReport = () => {
             ) : null}
 
             <p className="mt-6 text-xs text-[var(--app-text-muted)]">
-              Fix the top items below, then rescan to confirm your score went up.
+              Turn these findings into a step-by-step plan, ask the coach how to execute each fix, then
+              rescan to confirm your score went up.
             </p>
             <div className="mt-3 flex flex-wrap gap-3">
               <button
                 type="button"
                 className="app-btn app-btn--primary"
+                disabled={creatingPlan}
+                onClick={createFixPlan}
+              >
+                {creatingPlan ? 'Creating roadmap...' : 'Create / open Growth Roadmap'}
+              </button>
+              <Link to={coachPath} className="app-btn app-btn--secondary">
+                Ask AI Coach about this report
+              </Link>
+              <button
+                type="button"
+                className="app-btn app-btn--ghost"
                 disabled={busy || !business?.store_url}
                 onClick={rescan}
               >
@@ -534,15 +584,15 @@ const WebsiteReport = () => {
             </Alert>
           ) : null}
 
-          {priorityFixes.length ? (
+          {growthOpportunities.length ? (
             <section className="mt-8">
-              <h2 className="text-lg font-semibold text-[var(--app-text)]">Top problems to fix first</h2>
+              <h2 className="text-lg font-semibold text-[var(--app-text)]">Growth opportunities found from this scan</h2>
               <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
-                Sequenced from what the crawler and visual audit actually found on this site — each fix unlocks the
-                next, so work left to right. Scroll for more.
+                Sequenced from what the crawler and analyzer found. Work left to right on desktop, then
+                open each step in your Growth Roadmap.
               </p>
               <div className="app-fix-row mt-5">
-                {priorityFixes.map((fix, index) => (
+                {growthOpportunities.map((fix, index) => (
                   <article
                     key={`${fix.rank}-${fix.action}`}
                     className={`app-fix-card${index === 0 ? ' app-fix-card--current' : ''}`}
@@ -551,8 +601,9 @@ const WebsiteReport = () => {
                       <span className="app-fix-card__rank">{fix.rank}</span>
                       <div className="min-w-0">
                         <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
-                          Fix #{fix.rank}
-                          {fix.category ? ` · ${fixCategoryLabel(fix.category)}` : ''}
+                          Step {fix.rank || index + 1}
+                          {fix.pillar ? ` - ${PILLAR_LABELS[fix.pillar] || fix.pillar}` : ''}
+                          {fix.category ? ` - ${fixCategoryLabel(fix.category)}` : ''}
                         </p>
                         {fix.difficulty ? (
                           <p className="mt-0.5 text-xs capitalize text-[var(--app-text-muted)]">
@@ -562,9 +613,17 @@ const WebsiteReport = () => {
                       </div>
                     </div>
 
-                    <p className="mt-3 text-sm font-semibold leading-snug text-[var(--app-text)]">{fix.action}</p>
+                    <p className="mt-3 text-sm font-semibold leading-snug text-[var(--app-text)]">
+                      {fix.title || fix.action}
+                    </p>
                     {fix.reason ? (
                       <p className="mt-1.5 text-xs leading-relaxed text-[var(--app-text-secondary)]">{fix.reason}</p>
+                    ) : null}
+                    {fix.expected_business_outcome ? (
+                      <p className="mt-2 text-xs text-[var(--app-text-secondary)]">
+                        <span className="font-semibold">Expected business outcome: </span>
+                        {fix.expected_business_outcome}
+                      </p>
                     ) : null}
 
                     {fix.evidence?.length ? (
@@ -604,7 +663,7 @@ const WebsiteReport = () => {
                           {fix.affected_scores?.length
                             ? `Affects: ${fix.affected_scores.map((key) => CORE_CATEGORY_LABELS[key] || key).join(', ')}`
                             : null}
-                          {fix.affected_scores?.length && fix.expected_score_lift ? ' · ' : ''}
+                          {fix.affected_scores?.length && fix.expected_score_lift ? ' - ' : ''}
                           {fix.expected_score_lift ? `Estimated lift: ${fix.expected_score_lift}` : null}
                         </p>
                       ) : fix.expected_impact || fix.impact ? (
@@ -752,7 +811,7 @@ const WebsiteReport = () => {
                     <span className="text-xs uppercase tracking-wide text-[var(--app-text-muted)]">
                       {String(item.category).replace(/_/g, ' ')}
                     </span>
-                    {' — '}
+                    {' - '}
                     {item.delta > 0 ? '+' : ''}
                     {item.delta !== 0 ? `${item.delta} ` : ''}
                     {item.reason}
@@ -784,10 +843,10 @@ const WebsiteReport = () => {
                   <p className="mt-1 text-xs text-[var(--app-text-muted)]">
                     {scores.visual_audit_status?.ok
                       ? 'Scored from rendered desktop and mobile layout audit.'
-                      : 'Scored from HTML/crawler signals — lower confidence without visual audit.'}
+                      : 'Scored from HTML/crawler signals - lower confidence without visual audit.'}
                     {typeof scores.ux_confidence === 'number' ? ` Confidence: ${scores.ux_confidence}/100.` : ''}
                     {typeof scores.visual_score_100 === 'number'
-                      ? ` Visual score: ${scores.visual_score_100}/100 → UX category ${scores.ux_ui_score ?? '?'}/25.`
+                      ? ` Visual score: ${scores.visual_score_100}/100 -> UX category ${scores.ux_ui_score ?? '?'}/25.`
                       : ''}
                   </p>
                 </div>
@@ -926,14 +985,14 @@ const WebsiteReport = () => {
                 {benchmark.current_benchmark_level || benchmark.target_level}:{' '}
                 {benchmark.current_human_equivalent_score ?? benchmark.target_human_score}/20
                 {benchmark.comparison_scope === 'same_business_model'
-                  ? ` · ${benchmark.compared_count} same-model sites`
+                  ? ` - ${benchmark.compared_count} same-model sites`
                   : benchmark.benchmark_warning
-                    ? ' · limited same-model data'
+                    ? ' - limited same-model data'
                     : ''}
               </p>
               {(benchmark.target_human_score ?? 0) < 17 ? (
                 <p className="mt-2 text-xs text-[var(--app-danger-icon)]">
-                  {(benchmark.target_human_score ?? 0)}/20 is below average (17/20) — this is not strong benchmark performance.
+                  {(benchmark.target_human_score ?? 0)}/20 is below average (17/20) - this is not strong benchmark performance.
                 </p>
               ) : null}
               {benchmark.benchmark_warning ? (
@@ -949,7 +1008,7 @@ const WebsiteReport = () => {
                   <p className="font-semibold">{benchmark.gaps?.gap_to_strong ?? '-'} pts</p>
                 </div>
                 <div className="rounded-lg border border-[var(--app-border)] px-3 py-2 text-sm">
-                  <p className="text-xs text-[var(--app-text-muted)]">Gap to top (19–20/20)</p>
+                  <p className="text-xs text-[var(--app-text-muted)]">Gap to top (19-20/20)</p>
                   <p className="font-semibold">{benchmark.gaps?.gap_to_top ?? '-'} pts</p>
                 </div>
               </div>
@@ -966,7 +1025,7 @@ const WebsiteReport = () => {
                   <ul className="mt-1 space-y-1 text-xs text-[var(--app-text-secondary)]">
                     {benchmark.strong_examples.slice(0, 3).map((example) => (
                       <li key={example.url} className="truncate">
-                        {example.url} — {example.human_score}/20
+                        {example.url} - {example.human_score}/20
                       </li>
                     ))}
                   </ul>
@@ -980,7 +1039,7 @@ const WebsiteReport = () => {
                   <ul className="mt-1 space-y-1 text-xs text-[var(--app-text-secondary)]">
                     {benchmark.same_model_examples.slice(0, 4).map((example) => (
                       <li key={example.url} className="truncate">
-                        {example.url} — {example.human_score}/20
+                        {example.url} - {example.human_score}/20
                       </li>
                     ))}
                   </ul>
@@ -989,12 +1048,12 @@ const WebsiteReport = () => {
               {benchmark.top_examples?.length ? (
                 <details className="mt-3">
                   <summary className="cursor-pointer text-xs font-medium text-[var(--app-text-muted)]">
-                    Top examples (19–20/20)
+                    Top examples (19-20/20)
                   </summary>
                   <ul className="mt-1 space-y-1 text-xs text-[var(--app-text-secondary)]">
                     {benchmark.top_examples.slice(0, 4).map((example) => (
                       <li key={example.url} className="truncate">
-                        {example.url} — {example.human_score}/20
+                        {example.url} - {example.human_score}/20
                       </li>
                     ))}
                   </ul>
@@ -1070,6 +1129,17 @@ const WebsiteReport = () => {
             <button
               type="button"
               className="app-btn app-btn--primary"
+              disabled={creatingPlan}
+              onClick={createFixPlan}
+            >
+              {creatingPlan ? 'Creating roadmap...' : 'Create / open Growth Roadmap'}
+            </button>
+            <Link to={coachPath} className="app-btn app-btn--secondary">
+              Ask AI Coach about this report
+            </Link>
+            <button
+              type="button"
+              className="app-btn app-btn--ghost"
               disabled={busy || !business?.store_url}
               onClick={rescan}
             >

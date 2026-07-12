@@ -260,6 +260,45 @@ const RESEARCH_BASIS = {
   },
 }
 
+const GROWTH_PILLARS = ['acquire', 'convert', 'retain', 'operate']
+
+const PILLAR_LABELS = {
+  acquire: 'Acquire',
+  convert: 'Convert',
+  retain: 'Retain',
+  operate: 'Operate',
+}
+
+function inferPillarFromFix(fix) {
+  const id = String(fix.id || '')
+  const category = String(fix.category || '')
+  if (category === 'seo' || category === 'content' || id === 'benchmark_gap') return 'acquire'
+  if (category === 'safety' || category === 'functionality') return 'operate'
+  return 'convert'
+}
+
+function defaultOutcomeForPillar(pillar, rubric) {
+  if (pillar === 'acquire') {
+    return 'More qualified visitors discover the business through search, local listings, and social channels.'
+  }
+  if (pillar === 'retain') {
+    return 'More first-time customers return and refer others because follow-up and reputation loops are in place.'
+  }
+  if (pillar === 'operate') {
+    return ['online_plus_physical_service', 'local_service_business', 'online_gallery_physical_service'].includes(
+      rubric,
+    )
+      ? 'Faster response and clearer service operations help the team convert more demand without bottlenecks.'
+      : 'Operations can handle more demand without delays, confusion, or support overload.'
+  }
+  return 'More visitors from existing traffic become calls, bookings, inquiries, or checkouts.'
+}
+
+function askAiPromptFor(item) {
+  const evidenceLine = item.evidence?.[0] ? `Use this evidence: ${item.evidence[0]}` : 'Use the current website report evidence.'
+  return `I am executing Step ${item.rank}: "${item.title}" in my ${PILLAR_LABELS[item.pillar]} pillar. ${evidenceLine} Give me a practical implementation checklist for this business, including what to do first, exact copy/examples, and how to measure success this week.`
+}
+
 function researchBasisFor(category, rubric) {
   const entry = RESEARCH_BASIS[category]
   if (!entry) return null
@@ -1030,8 +1069,192 @@ function buildFixPlan(input = {}) {
   })
 }
 
+function buildRetainAndOperateItems({
+  categoryDetails,
+  rubric,
+  aggregated,
+  existingIds,
+  nextRankStart,
+}) {
+  const items = []
+  let rank = nextRankStart
+  const trustProblems = categoryDetails?.safety_trust?.problems || []
+  const attractionProblems = categoryDetails?.customer_attraction?.problems || []
+  const reviewsMissing =
+    !aggregated?.trust_signals?.review_indicators ||
+    trustProblems.some((line) => /review|testimonial/i.test(line)) ||
+    attractionProblems.some((line) => /review|testimonial/i.test(line))
+  if (reviewsMissing && !existingIds.has('retain_reviews_loop')) {
+    items.push({
+      id: 'retain_reviews_loop',
+      rank: rank++,
+      pillar: 'retain',
+      title: 'Build a review and referral follow-up loop.',
+      category: 'trust',
+      why_it_matters:
+        'Retention and referrals start right after a successful customer interaction. A consistent review and referral loop compounds trust and lowers customer acquisition cost over time.',
+      evidence: sanitize([
+        trustProblems.find((line) => /review|testimonial/i.test(line)) ||
+          'The analyzer found weak or missing review proof on key pages.',
+      ]),
+      steps: [
+        'Create a same-day follow-up template asking for a review after each completed order or service.',
+        'Send customers to your strongest review destination first (Google, marketplace profile, or platform reviews).',
+        'Add a simple referral request in the same follow-up message with one clear next step.',
+        'Show fresh reviews on your website and key profile pages every week.',
+      ],
+      expected_business_outcome:
+        'More repeat purchases and referral leads, with stronger social proof that improves conversion for new visitors.',
+      expected_score_lift: '+1-3 pts (Safety & trust, Customer attraction)',
+      affected_scores: ['safety_trust', 'customer_attraction'],
+      difficulty: 'medium',
+      unlock_reason:
+        'Unlocked now - once core conversion blockers are being handled, make each completed customer interaction create future demand.',
+      research_basis:
+        "BrightLocal's Local Consumer Review Survey consistently finds most consumers read reviews before choosing local businesses, making review volume and freshness a direct growth lever.",
+      related_pages: relatedPagesFor('trust', aggregated?.pages || []),
+      source: 'analyzer',
+    })
+  }
+
+  const hasPhone = Boolean(aggregated?.contact_signals?.phones?.length)
+  const hasEmail = Boolean(aggregated?.contact_signals?.emails?.length)
+  const missingResponseOps = !hasPhone || !hasEmail
+  const policyCount = Number(aggregated?.policy_signals?.policy_count || 0)
+  const policyWeak = ['ecommerce_store', 'online_plus_offline_store'].includes(rubric)
+    ? policyCount < 2
+    : false
+  if ((missingResponseOps || policyWeak) && !existingIds.has('operate_response_playbook')) {
+    items.push({
+      id: 'operate_response_playbook',
+      rank: rank++,
+      pillar: 'operate',
+      title: 'Set a response-speed and service-handling playbook.',
+      category: 'functionality',
+      why_it_matters:
+        'Growth stalls when the business cannot respond quickly and consistently to incoming demand. A clear response playbook protects conversion gains as lead volume grows.',
+      evidence: sanitize([
+        !hasPhone || !hasEmail
+          ? 'The analyzer found limited visible contact routes for rapid response.'
+          : null,
+        policyWeak
+          ? 'Policy coverage appears thin for a business model that needs clear fulfillment or return expectations.'
+          : null,
+      ]).slice(0, 3),
+      steps: [
+        'Define an owner for new inquiries and set response SLAs (for example: within 15 minutes during business hours).',
+        'Create ready-to-send reply templates for phone, contact form, and email inquiries.',
+        'Document booking/checkout escalation steps so no lead gets stuck without a next action.',
+        'Review response-time logs weekly and remove recurring delays.',
+      ],
+      expected_business_outcome:
+        'Higher lead-to-customer conversion from faster response times and fewer dropped inquiries.',
+      expected_score_lift: null,
+      affected_scores: ['technical_functionality', 'customer_attraction'],
+      difficulty: 'medium',
+      unlock_reason:
+        'Unlocked now - stronger demand only helps if your team can respond and fulfill consistently.',
+      research_basis:
+        "Nielsen Norman Group's response-time research shows delays quickly reduce trust and task completion, so operational responsiveness directly affects conversion outcomes.",
+      related_pages: relatedPagesFor('customer_attraction', aggregated?.pages || []),
+      source: 'analyzer',
+    })
+  }
+
+  return items
+}
+
+function ensurePillarCoverage(plan, rubric) {
+  const covered = new Set(plan.map((item) => item.pillar))
+  let rank = plan.length + 1
+  const additions = []
+  for (const pillar of GROWTH_PILLARS) {
+    if (covered.has(pillar)) continue
+    additions.push({
+      id: `pillar_backfill_${pillar}`,
+      rank: rank++,
+      pillar,
+      title:
+        pillar === 'acquire'
+          ? 'Create a weekly discovery-growth routine.'
+          : pillar === 'convert'
+            ? 'Tighten the primary conversion path end to end.'
+            : pillar === 'retain'
+              ? 'Launch a repeat-customer follow-up sequence.'
+              : 'Document operations for demand spikes.',
+      category: pillar === 'operate' ? 'functionality' : pillar === 'retain' ? 'trust' : 'customer_attraction',
+      why_it_matters:
+        pillar === 'acquire'
+          ? 'Acquisition grows when discovery channels are worked consistently instead of ad hoc.'
+          : pillar === 'convert'
+            ? 'Traffic only creates revenue when the customer path is obvious and friction is low.'
+            : pillar === 'retain'
+              ? 'Retention creates compounding growth through repeat business and referrals.'
+              : 'Operational readiness protects customer experience as lead volume increases.',
+      evidence: ['This growth pillar has no explicit step yet, so add one to keep the roadmap balanced.'],
+      steps: [
+        'Define one owner and one weekly KPI for this pillar.',
+        'Implement one high-leverage improvement this week.',
+        'Review KPI movement next week and iterate.',
+      ],
+      expected_business_outcome: defaultOutcomeForPillar(pillar, rubric),
+      expected_score_lift: null,
+      affected_scores: [],
+      difficulty: 'medium',
+      unlock_reason: 'Unlocked now - balanced growth requires consistent execution across all four pillars.',
+      research_basis:
+        "Nielsen Norman Group's usability guidance and Stanford credibility research both show that durable performance comes from consistent systems, not one-time changes.",
+      related_pages: [],
+      source: 'analyzer',
+    })
+  }
+  return [...plan, ...additions]
+}
+
+function buildGrowthPlan(input = {}) {
+  const rubric = input.rubric || 'ecommerce_store'
+  const fixPlan = input.fixPlan || buildFixPlan(input)
+  const aggregated = input.aggregated || {}
+  const categoryDetails = input.categoryDetails || {}
+
+  const growthFromFixes = fixPlan.map((fix) => ({
+    ...fix,
+    pillar: inferPillarFromFix(fix),
+    expected_business_outcome: defaultOutcomeForPillar(inferPillarFromFix(fix), rubric),
+    ask_ai_prompt: '', // filled below so prompt can include rank.
+  }))
+
+  const extraItems = buildRetainAndOperateItems({
+    categoryDetails,
+    rubric,
+    aggregated,
+    existingIds: new Set(growthFromFixes.map((item) => item.id)),
+    nextRankStart: growthFromFixes.length + 1,
+  })
+
+  const merged = [...growthFromFixes, ...extraItems].slice(0, 12)
+  const withCoverage = ensurePillarCoverage(merged, rubric)
+
+  return withCoverage.map((item, index) => {
+    const rank = index + 1
+    const normalized = {
+      ...item,
+      rank,
+      step_label: `Step ${rank}`,
+      action: item.title,
+      reason: item.why_it_matters,
+      expected_impact: item.expected_score_lift || item.expected_business_outcome,
+    }
+    return {
+      ...normalized,
+      ask_ai_prompt: askAiPromptFor(normalized),
+    }
+  })
+}
+
 module.exports = {
   buildFixPlan,
+  buildGrowthPlan,
   collectEvents,
   priorityFromGap,
   estimateLift,

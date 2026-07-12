@@ -25,15 +25,20 @@ const workspaceItems = [
   { label: 'Load project', to: '/app/workspace/load', icon: 'L' },
 ]
 
-const topLinks = [{ label: 'Dashboard', to: '/app', icon: 'D' }]
+const topLinks = [
+  { label: 'Dashboard', to: '/app', icon: 'D' },
+  { label: 'Growth Roadmap', to: '/app/action-plan', icon: 'F' },
+  { label: 'Growth Coach', to: '/app/tools/growth-coach', icon: 'C' },
+  { label: 'Tools', to: '/app/tools', icon: 'T', exact: true },
+]
 
 const bottomLinks = [
   { label: 'Businesses', to: '/app/businesses', icon: 'B' },
   { label: 'Settings', to: '/app/settings', icon: '*' },
 ]
 
-const pathMatches = (pathname, to) => {
-  if (to === '/app') return pathname === '/app'
+const pathMatches = (pathname, to, exact = false) => {
+  if (to === '/app' || exact) return pathname === to
   return pathname === to || pathname.startsWith(`${to}/`)
 }
 
@@ -144,7 +149,7 @@ const AppSidebar = () => {
 
           <nav className={`space-y-1 ${effectiveCollapsed ? 'mt-2' : 'mt-4'}`}>
             {topLinks.map((item) => {
-              const active = pathMatches(pathname, item.to)
+              const active = pathMatches(pathname, item.to, item.exact)
               return (
                 <Link
                   key={item.to}

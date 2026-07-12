@@ -1,4 +1,4 @@
-/** Product homepage content — centered on Website Analyzer workflow */
+/** Product homepage content - centered on Website Analyzer workflow */
 
 export const productPillars = [
   {
@@ -6,12 +6,12 @@ export const productPillars = [
     desc: 'Crawl your site and score safety, functionality, UX, business fit, and customer attraction.',
   },
   {
-    title: 'Prioritized fix list',
-    desc: 'See ranked problems with impact — not a generic audit PDF.',
+    title: 'Prioritized growth opportunities',
+    desc: 'See ranked opportunities with impact - not a generic audit PDF.',
   },
   {
-    title: 'Action plan',
-    desc: 'Turn recommendations into tasks you can track from to-do to done.',
+    title: 'Growth roadmap',
+    desc: 'Turn recommendations into step-by-step actions you can execute and track.',
   },
   {
     title: 'AI growth tools',
@@ -31,7 +31,7 @@ export const howItWorks = [
   {
     step: 1,
     title: 'Add your business URL',
-    body: 'Tell us your business type and website. We crawl public same-domain pages — no code install required.',
+    body: 'Tell us your business type and website. We crawl public same-domain pages - no code install required.',
   },
   {
     step: 2,
@@ -40,13 +40,13 @@ export const howItWorks = [
   },
   {
     step: 3,
-    title: 'Build your fix plan',
-    body: 'Convert ranked recommendations into an action plan. Work through high-impact items first.',
+    title: 'Build your growth roadmap',
+    body: 'Convert ranked opportunities into an execution roadmap across acquire, convert, retain, and operate.',
   },
   {
     step: 4,
     title: 'Ask the AI coach',
-    body: 'Get help prioritizing, writing copy, and deciding what to fix next — grounded in your report.',
+    body: 'Get help prioritizing, writing copy, and deciding what growth step to execute next - grounded in your report.',
   },
 ]
 
@@ -70,7 +70,7 @@ export const businessTypes = [
     badge: 'Services',
     title: 'Local and professional service businesses',
     blurb:
-      'Score contact paths, service clarity, proof, and mobile UX — what drives calls and bookings.',
+      'Score contact paths, service clarity, proof, and mobile UX - what drives calls and bookings.',
   },
   {
     id: 'content',
@@ -84,7 +84,7 @@ export const businessTypes = [
 export const aiToolsPreview = [
   {
     title: 'AI Growth Coach',
-    desc: 'Ask what to fix first using your website report, scans, and action plan.',
+    desc: 'Ask what to execute first using your website report, scans, and growth roadmap.',
     tag: 'Plan',
   },
   {
@@ -117,13 +117,13 @@ export const aiToolsPreview = [
 export const reportHighlights = [
   {
     label: 'Overall score',
-    value: '0–100',
+    value: '0-100',
     detail: 'Weighted across five customer-facing categories.',
   },
   {
-    label: 'Top problems',
+    label: 'Top opportunities',
     value: 'Ranked',
-    detail: 'Critical fixes surfaced before technical noise.',
+    detail: 'High-leverage growth steps surfaced before technical noise.',
   },
   {
     label: 'Business model',

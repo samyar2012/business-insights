@@ -211,7 +211,7 @@ const AppSettings = () => {
       <section className="app-card mt-8 p-6">
         <h2 className="text-sm font-semibold text-[var(--app-text)]">Business profile</h2>
         <p className="mt-1 text-sm text-[var(--app-text-secondary)]">
-          Edit the same details you entered during onboarding — name, brand, products, customers, store
+          Edit the same details you entered during onboarding - name, brand, products, customers, store
           URL, and stats.
         </p>
         <BusinessProfileSettings

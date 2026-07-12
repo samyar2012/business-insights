@@ -498,6 +498,11 @@ describe('fixPlanEngine + evidenceNarrator integration via calculateAnalyzerV2Sc
     const denseTitles = new Set(denseScores.fix_plan.map((f) => f.title))
     assert.notDeepEqual([...trustGapTitles], [...denseTitles])
 
+    // Growth plans should also differ by business context.
+    const trustGapGrowthTitles = new Set(trustGapScores.growth_plan.map((f) => f.title))
+    const denseGrowthTitles = new Set(denseScores.growth_plan.map((f) => f.title))
+    assert.notDeepEqual([...trustGapGrowthTitles], [...denseGrowthTitles])
+
     assert.ok(trustGapScores.fix_plan.some((f) => f.id === 'no_https' || f.id === 'missing_contact_trust'))
     assert.ok(denseScores.fix_plan.some((f) => f.id === 'mobile_readability'))
     assert.ok(!denseScores.fix_plan.some((f) => f.id === 'no_https'), 'HTTPS is fine on the dense-text site, so it should not appear')
@@ -522,6 +527,59 @@ describe('fixPlanEngine + evidenceNarrator integration via calculateAnalyzerV2Sc
         assert.ok(typeof fix.unlock_reason === 'string' && fix.unlock_reason.length > 10)
         assert.ok(typeof fix.rank === 'number' && fix.rank >= 1)
       }
+
+      for (const step of scores.growth_plan) {
+        assert.ok(['acquire', 'convert', 'retain', 'operate'].includes(step.pillar))
+        assert.ok(step.title && step.title.length > 5)
+        assert.ok(step.why_it_matters && step.why_it_matters.length > 20)
+        assert.ok(Array.isArray(step.steps) && step.steps.length >= 3)
+        assert.ok(step.expected_business_outcome && step.expected_business_outcome.length > 20)
+        assert.ok(typeof step.ask_ai_prompt === 'string' && step.ask_ai_prompt.length > 20)
+        assert.ok(typeof step.rank === 'number' && step.rank >= 1)
+        assert.ok(typeof step.unlock_reason === 'string' && step.unlock_reason.length > 10)
+      }
+    }
+  })
+
+  it('includes all four growth pillars in the roadmap', () => {
+    const scores = calculateAnalyzerV2Scores(
+      trustGapAggregated,
+      { store_url: 'https://trustgap.example.com', business_model: 'ecommerce_store' },
+      trustGapPages(),
+      {
+        safetyResult: { status: 'safe', configured: true, threats: [], message: 'Safe.' },
+        crawlMeta: { homepage_fetch_ok: true, pages_crawled: 1, pages_discovered: 1 },
+        includeBenchmark: false,
+      },
+    )
+    const pillars = new Set(scores.growth_plan.map((item) => item.pillar))
+    assert.deepEqual(
+      [...pillars].sort(),
+      ['acquire', 'convert', 'operate', 'retain'],
+      'growth roadmap should explicitly cover all four growth pillars',
+    )
+  })
+
+  it('does not generate generic repeated roadmap todo items', () => {
+    const scores = calculateAnalyzerV2Scores(
+      denseServiceAggregated,
+      { store_url: 'https://localpro.example.com', business_model: 'local_service_business' },
+      denseServicePages(),
+      {
+        safetyResult: { status: 'safe', configured: true, threats: [], message: 'Safe.' },
+        crawlMeta: { homepage_fetch_ok: true, pages_crawled: 2, pages_discovered: 2 },
+        includeBenchmark: false,
+      },
+    )
+    const titles = scores.growth_plan.map((item) => item.title.trim().toLowerCase())
+    const uniqueTitles = new Set(titles)
+    assert.equal(uniqueTitles.size, titles.length, 'growth roadmap titles should be unique')
+    for (const item of scores.growth_plan) {
+      assert.ok(item.evidence?.length >= 1, `expected evidence on ${item.id}`)
+      assert.ok(
+        !/^(improve ux|polish|medium impact|high impact|todo|generic improvement)$/i.test(item.title.trim()),
+        `title should be concrete, got "${item.title}"`,
+      )
     }
   })
 

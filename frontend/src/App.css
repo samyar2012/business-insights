@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Nav mounts here (see NavBar createPortal) — NOT inside #root — so `position:fixed` cannot be
+ * Nav mounts here (see NavBar createPortal) - NOT inside #root - so `position:fixed` cannot be
  * broken by transforms / stacking from the React tree or bundler wrappers.
  * Kept outside @layer so nothing overrides it.
  */
@@ -91,7 +91,7 @@
   }
 }
 
-/* Open + switch between mega menus — content eases inside the same glass shell */
+/* Open + switch between mega menus - content eases inside the same glass shell */
 @keyframes mega-menu-inner-swap {
   from {
     opacity: 0;
@@ -129,7 +129,7 @@
 }
 
 /*
- * Hero mega-menu: fully opaque paint—no backdrop-filter, so hero text never shows through.
+ * Hero mega-menu: fully opaque paint-no backdrop-filter, so hero text never shows through.
  */
 .mega-hero-panel {
   isolation: isolate;
@@ -258,7 +258,7 @@
 }
 
 /* On inner span only: parent h1 runs .hero-stagger hero-rise (opacity). If both run on one tag,
- * title-shine overwrites the animation shorthand and opacity stays 0 — heading disappears. */
+ * title-shine overwrites the animation shorthand and opacity stays 0 - heading disappears. */
 .hero-title-gradient {
   display: inline;
   background: linear-gradient(
@@ -402,7 +402,7 @@
 }
 
 /*
- * Footer: no separate “card” background at the top — starts fully transparent so the same
+ * Footer: no separate "card" background at the top - starts fully transparent so the same
  * fixed app-shell gradient shows through and no seam/line appears. Depth only toward the bottom.
  */
 .site-footer {
@@ -1853,6 +1853,19 @@ select.app-field option {
 .app-fix-row::-webkit-scrollbar-thumb {
   background: var(--app-border-strong);
   border-radius: 9999px;
+}
+
+/* On mobile the top fixes stack vertically instead of horizontal swipe. */
+@media (max-width: 640px) {
+  .app-fix-row {
+    flex-direction: column;
+    overflow-x: visible;
+    scroll-snap-type: none;
+  }
+
+  .app-fix-row .app-fix-card {
+    width: 100%;
+  }
 }
 
 .app-fix-card {
