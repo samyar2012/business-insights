@@ -102,6 +102,8 @@ function buildFixMetadata(fix, { business_id, scan_id, scores } = {}) {
     expected_score_lift: fix.expected_score_lift || null,
     // Sequencing: "do this first, so it unlocks the next fix" instead of a flat priority label.
     unlock_reason: fix.unlock_reason || null,
+    // Attributed UX/conversion research grounding, varied by business model - not a made-up stat.
+    research_basis: fix.research_basis || null,
     affected_scores: Array.isArray(fix.affected_scores) ? fix.affected_scores : [],
     related_pages: Array.isArray(fix.related_pages) ? fix.related_pages.slice(0, 3) : [],
     report_path: reportPath,

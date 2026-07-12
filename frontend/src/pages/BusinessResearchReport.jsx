@@ -182,9 +182,6 @@ const BusinessResearchReport = () => {
             <button type="button" className="app-btn app-btn--primary" disabled={busy} onClick={rescan}>
               {busy ? 'Rescanning...' : 'Rescan business'}
             </button>
-            <Link to="/app/tools/growth-coach" className="app-btn app-btn--secondary">
-              Ask AI coach
-            </Link>
           </div>
         </>
       )}

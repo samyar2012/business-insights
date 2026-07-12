@@ -209,26 +209,19 @@ const WebsiteReport = () => {
   const [profile, setProfile] = useState(null)
   const [latestCrawl, setLatestCrawl] = useState(null)
   const [pages, setPages] = useState([])
-  const [actions, setActions] = useState([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [planBusy, setPlanBusy] = useState(false)
-  const [planMessage, setPlanMessage] = useState('')
   const [polling, setPolling] = useState(false)
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
     setError('')
     try {
-      const [data, actionsData] = await Promise.all([
-        apiFetch(`/businesses/${businessId}/web-profile`),
-        apiFetch('/actions').catch(() => ({ actions: [] })),
-      ])
+      const data = await apiFetch(`/businesses/${businessId}/web-profile`)
       setBusiness(data.business)
       setProfile(data.profile)
       setLatestCrawl(data.latest_crawl)
       setPages(data.pages || [])
-      setActions((actionsData.actions || []).filter((a) => a.business_id === businessId))
       return data
     } catch (err) {
       setError(err.message)
@@ -275,56 +268,6 @@ const WebsiteReport = () => {
   }
 
   const rescan = () => startCrawl(true)
-
-  const hasActionPlan = actions.some(
-    (a) => a.source === 'website-report' || a.metadata?.plan_type === 'website_fix',
-  )
-
-  const createFixPlan = async () => {
-    const scores = profile?.scores || {}
-    const fixes = scores.priority_fixes?.length
-      ? scores.priority_fixes
-      : scores.recommended_actions || []
-
-    if (!fixes.length) {
-      setPlanMessage('No recommended fixes to add. Review the report sections below.')
-      return
-    }
-
-    setPlanBusy(true)
-    setPlanMessage('')
-    setError('')
-    try {
-      const data = await apiFetch('/actions/fix-plan', {
-        method: 'POST',
-        body: JSON.stringify({
-          business_id: businessId,
-          scan_id: latestCrawl?.id || null,
-          scores,
-        }),
-      })
-      setActions(data.actions || [])
-      if (data.already_exists && !data.created?.length) {
-        setPlanMessage('These fixes are already in your plan. Open fix plan to track progress.')
-      } else {
-        const count = data.created?.length ?? 0
-        const skipped = data.skipped?.length ?? 0
-        setPlanMessage(
-          count
-            ? `Added ${count} fix${count === 1 ? '' : 'es'} to your plan${skipped ? ` (${skipped} already tracked)` : ''}.`
-            : 'Fix plan updated.',
-        )
-      }
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setPlanBusy(false)
-    }
-  }
-
-  const fixPlanPath = `/app/action-plan?businessId=${businessId}`
-
-  const coachPath = `/app/tools/growth-coach?businessId=${businessId}&context=website-report`
 
   if (loading) {
     return (
@@ -381,12 +324,6 @@ const WebsiteReport = () => {
 
       {error ? (
         <Alert variant="error" title="Error" className="mt-6">{error}</Alert>
-      ) : null}
-
-      {planMessage ? (
-        <Alert variant="success" title="Fix plan updated" className="mt-6">
-          {planMessage}
-        </Alert>
       ) : null}
 
       {!profile && !isRunning ? (
@@ -528,6 +465,11 @@ const WebsiteReport = () => {
                             {fix.expected_score_lift ? `Estimated lift: ${fix.expected_score_lift}` : ''}
                           </p>
                         ) : null}
+                        {fix.research_basis ? (
+                          <p className="mt-1 text-xs italic leading-relaxed text-[var(--app-text-muted)]">
+                            {fix.research_basis}
+                          </p>
+                        ) : null}
                       </div>
                     </li>
                   ))}
@@ -536,31 +478,12 @@ const WebsiteReport = () => {
             ) : null}
 
             <p className="mt-6 text-xs text-[var(--app-text-muted)]">
-              {hasActionPlan
-                ? 'Your fix plan was generated from these analyzer findings.'
-                : 'Generates a fix plan directly from your ranked analyzer findings above.'}
+              Fix the top items below, then rescan to confirm your score went up.
             </p>
             <div className="mt-3 flex flex-wrap gap-3">
-              {hasActionPlan ? (
-                <Link to={fixPlanPath} className="app-btn app-btn--primary">
-                  Open fix plan
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  className="app-btn app-btn--primary"
-                  disabled={planBusy || !priorityFixes.length}
-                  onClick={createFixPlan}
-                >
-                  {planBusy ? 'Creating...' : 'Create fix plan'}
-                </button>
-              )}
-              <Link to={coachPath} className="app-btn app-btn--secondary">
-                Ask AI coach about this report
-              </Link>
               <button
                 type="button"
-                className="app-btn app-btn--ghost"
+                className="app-btn app-btn--primary"
                 disabled={busy || !business?.store_url}
                 onClick={rescan}
               >
@@ -666,6 +589,13 @@ const WebsiteReport = () => {
                           ))}
                         </ol>
                       </details>
+                    ) : null}
+
+                    {fix.research_basis ? (
+                      <p className="app-fix-card__research">
+                        <strong>The research: </strong>
+                        {fix.research_basis}
+                      </p>
                     ) : null}
 
                     <div className="mt-auto pt-3">
@@ -1137,26 +1067,9 @@ const WebsiteReport = () => {
           </section>
 
           <div className="mt-10 flex flex-wrap gap-3 border-t border-[var(--app-border)] pt-8">
-            {hasActionPlan ? (
-              <Link to={fixPlanPath} className="app-btn app-btn--primary">
-                Open fix plan
-              </Link>
-            ) : (
-              <button
-                type="button"
-                className="app-btn app-btn--primary"
-                disabled={planBusy || !priorityFixes.length}
-                onClick={createFixPlan}
-              >
-                {planBusy ? 'Creating...' : 'Create fix plan'}
-              </button>
-            )}
-            <Link to={coachPath} className="app-btn app-btn--secondary">
-              Ask AI coach about this report
-            </Link>
             <button
               type="button"
-              className="app-btn app-btn--ghost"
+              className="app-btn app-btn--primary"
               disabled={busy || !business?.store_url}
               onClick={rescan}
             >

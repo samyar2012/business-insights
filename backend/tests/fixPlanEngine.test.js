@@ -202,11 +202,169 @@ describe('fixPlanEngine unit clusters', () => {
     }
 
     const plan = buildFixPlan({ categoryDetails, uxFeatures: {}, capReasons: [], rubric: 'ecommerce_store', pages: [] })
-    const allText = plan.flatMap((item) => [...item.evidence, ...item.steps, item.title, item.why_it_matters])
+    const allText = plan.flatMap((item) => [
+      ...item.evidence,
+      ...item.steps,
+      item.title,
+      item.why_it_matters,
+      item.research_basis,
+    ])
     assert.ok(
-      allText.every((text) => !/API_KEY|process\.env/i.test(text)),
+      allText.every((text) => !text || !/API_KEY|process\.env/i.test(text)),
       'no fix-plan text should reference internal API keys or env vars — the business owner cannot act on those',
     )
+  })
+
+  it('grounds each fix in attributed UX/conversion research that varies by business model, not a flat generic label', () => {
+    const trustCategoryDetails = {
+      safety_trust: categoryDetail({
+        score: 6,
+        max: 20,
+        problems: ['No phone number or email found on crawled pages.'],
+      }),
+      technical_functionality: categoryDetail({ score: 13, max: 15 }),
+      ux_ui_visual: categoryDetail({ score: 20, max: 25 }),
+      offer_business_fit: categoryDetail({ score: 15, max: 20 }),
+      customer_attraction: categoryDetail({ score: 12, max: 20 }),
+    }
+
+    const ecommercePlan = buildFixPlan({
+      categoryDetails: trustCategoryDetails,
+      uxFeatures: {},
+      capReasons: [],
+      rubric: 'ecommerce_store',
+      pages: [],
+    })
+    const servicePlan = buildFixPlan({
+      categoryDetails: trustCategoryDetails,
+      uxFeatures: {},
+      capReasons: [],
+      rubric: 'local_service_business',
+      pages: [],
+    })
+
+    const ecommerceTrust = ecommercePlan.find((item) => item.id === 'missing_contact_trust')
+    const serviceTrust = servicePlan.find((item) => item.id === 'missing_contact_trust')
+
+    assert.ok(ecommerceTrust && serviceTrust, 'expected a trust fix for both business models')
+    assert.ok(
+      ecommerceTrust.research_basis && ecommerceTrust.research_basis.length > 30,
+      'research basis should be a real, substantive sentence, not a label',
+    )
+    assert.ok(
+      !/^(critical|high|medium|low)$/i.test(ecommerceTrust.research_basis.trim()),
+      'research basis must not collapse into a bare priority label',
+    )
+    assert.notEqual(
+      ecommerceTrust.research_basis,
+      serviceTrust.research_basis,
+      'the research grounding should differ between an ecommerce store and a local service business',
+    )
+    assert.ok(
+      ecommerceTrust.steps.some((s) => /polic|checkout|badge/i.test(s)),
+      'ecommerce trust steps should mention ecommerce-specific proof signals',
+    )
+    assert.ok(
+      serviceTrust.steps.some((s) => /area|serve|phone/i.test(s)),
+      'local service trust steps should mention area/phone-specific proof signals',
+    )
+
+    for (const item of [...ecommercePlan, ...servicePlan]) {
+      if (item.research_basis) {
+        assert.ok(!/^(critical|high|medium|low)$/i.test(item.research_basis.trim()))
+      }
+    }
+  })
+
+  it('every research basis names a real, verifiable source - no vague "research shows" hand-waving', () => {
+    const categoryDetails = {
+      safety_trust: categoryDetail({
+        score: 4,
+        max: 20,
+        problems: [
+          'HTTPS was not detected — visitors may see security warnings.',
+          'No phone number or email found on crawled pages.',
+        ],
+      }),
+      technical_functionality: categoryDetail({
+        score: 4,
+        max: 15,
+        problems: ['Very little readable content on crawled pages.', 'No mobile viewport meta tag detected.'],
+      }),
+      ux_ui_visual: categoryDetail({
+        score: 10,
+        max: 25,
+        problems: ['Mobile layout overflow or horizontal scrolling detected.'],
+      }),
+      offer_business_fit: categoryDetail({
+        score: 5,
+        max: 20,
+        problems: ['No reliable product cards, catalog layout, or shop navigation were found.'],
+      }),
+      customer_attraction: categoryDetail({
+        score: 6,
+        max: 20,
+        problems: [
+          'No testimonial or review proof visible to new visitors.',
+          'Weak SEO title/meta/heading clarity for search visitors.',
+        ],
+      }),
+    }
+
+    const plan = buildFixPlan({ categoryDetails, uxFeatures: {}, capReasons: [], rubric: 'ecommerce_store', pages: [] })
+    const namedSource =
+      /Baymard|Nielsen Norman|Stanford|Google|Think with Google|BrightLocal|Sistrix|Data & Marketing Association/
+
+    for (const item of plan) {
+      if (!item.research_basis) continue
+      assert.ok(
+        namedSource.test(item.research_basis),
+        `research basis for ${item.id} must name a real, searchable source, got: "${item.research_basis}"`,
+      )
+      assert.ok(
+        !/research (shows|consistently shows|finds)[^-]*$/i.test(item.research_basis) || namedSource.test(item.research_basis),
+        `research basis for ${item.id} must not be unattributed hand-waving`,
+      )
+    }
+    // The plan overall should carry concrete, verifiable numbers, not just prose.
+    const withStats = plan.filter((item) => item.research_basis && /\d/.test(item.research_basis))
+    assert.ok(withStats.length >= 2, 'at least two fixes should cite a concrete published number')
+  })
+
+  it('caps design/visual-polish fixes at one so the plan stays focused on attracting customers', () => {
+    const categoryDetails = {
+      safety_trust: categoryDetail({ score: 18, max: 20 }),
+      technical_functionality: categoryDetail({ score: 13, max: 15 }),
+      ux_ui_visual: categoryDetail({
+        score: 12,
+        max: 25,
+        problems: ['Primary nav links look overcrowded above the fold.'],
+      }),
+      offer_business_fit: categoryDetail({ score: 16, max: 20 }),
+      customer_attraction: categoryDetail({
+        score: 8,
+        max: 20,
+        problems: [
+          'Overall visual appeal drags down how easy it is to scan the page.',
+          'Images look misaligned across the homepage grid.',
+          'No testimonial or review proof visible to new visitors.',
+        ],
+      }),
+    }
+
+    const plan = buildFixPlan({ categoryDetails, uxFeatures: {}, capReasons: [], rubric: 'local_service_business', pages: [] })
+    const designIds = new Set(['nav_clutter', 'visual_polish', 'misaligned_images'])
+    const designFixes = plan.filter((item) => designIds.has(item.id))
+
+    assert.ok(designFixes.length <= 1, `expected at most one design fix, got ${designFixes.map((f) => f.id).join(', ')}`)
+    // The trust/proof fix (a customer-attraction fix) must still be present and ranked above design polish.
+    const trustFix = plan.find((item) => item.id === 'missing_contact_trust')
+    assert.ok(trustFix, 'customer-attraction trust fix should survive')
+    if (designFixes.length === 1) {
+      const designIndex = plan.findIndex((item) => designIds.has(item.id))
+      const trustIndex = plan.findIndex((item) => item.id === 'missing_contact_trust')
+      assert.ok(trustIndex < designIndex, 'trust/proof work should be sequenced before design polish')
+    }
   })
 
   it('surfaces a benchmark-gap fix when the site trails same-model competitors', () => {

@@ -1916,6 +1916,21 @@ select.app-field option {
   color: var(--app-text-secondary);
 }
 
+.app-fix-card__research {
+  margin-top: 0.5rem;
+  border-radius: 0.625rem;
+  border: 1px dashed var(--app-border);
+  padding: 0.5rem 0.625rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--app-text-muted);
+}
+
+.app-fix-card__research strong {
+  color: var(--app-text-secondary);
+  font-weight: 600;
+}
+
 .app-report-technical {
   border-top: 1px solid var(--app-border);
 }

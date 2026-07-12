@@ -68,6 +68,204 @@ const DEFAULT_CTA_STEPS = [
   'Make your phone number or contact link visible as a backup action.',
 ]
 
+// Business-model-specific trust/proof steps. Which proof signals matter (reviews, policies,
+// service area, portfolio credibility) genuinely differs by business type, so this is not the
+// same generic checklist for every site.
+const TRUST_STEPS_BY_RUBRIC = {
+  ecommerce_store: [
+    'Add a visible phone number and email in the header and footer.',
+    'Publish shipping, returns, and privacy policies and link them from the footer and checkout.',
+    'Show customer reviews or star ratings near the product grid and on product pages.',
+    'Add recognizable trust badges (secure checkout, payment logos) near the buy button.',
+  ],
+  online_plus_offline_store: [
+    'Show your store address, hours, and phone number near the top of the homepage.',
+    'Add a "Get directions" or map link for the physical location.',
+    'Add customer reviews or ratings, especially pulled from Google/Maps.',
+    'Publish any relevant in-store or online return policy.',
+  ],
+  online_plus_physical_service: [
+    'Add a clickable phone number in the header.',
+    'State the cities or areas you serve so local visitors know you cover them.',
+    'Add reviews or testimonials from past clients near your services section.',
+    'Add a short About section naming who runs the business.',
+  ],
+  local_service_business: [
+    'Add a clickable phone number in the header.',
+    'State the cities or areas you serve so local visitors know you cover them.',
+    'Add reviews or testimonials from past clients near your services section.',
+    'Add a short About section naming who runs the business.',
+  ],
+  online_gallery_physical_service: [
+    'Add a visible contact or consultation-request method near your portfolio.',
+    'Add client testimonials or before/after proof near your strongest work.',
+    'Add a short About or artist statement so visitors know who they would be hiring.',
+  ],
+  content_business: [
+    'Add an About page or section explaining who writes or runs the content.',
+    'Link active social or newsletter profiles to reinforce legitimacy.',
+    'Add reader testimonials, subscriber counts, or press mentions if you have them.',
+  ],
+  blog: [
+    'Add an About page or section explaining who writes the blog.',
+    'Link active social or newsletter profiles to reinforce legitimacy.',
+    'Add reader testimonials or notable mentions if you have them.',
+  ],
+  listing: [
+    'Add clear contact or response information to the listing.',
+    'Add reviews or ratings to the listing if the platform supports them.',
+    'Respond quickly to inquiries to keep the listing marked as responsive.',
+  ],
+}
+const DEFAULT_TRUST_STEPS = [
+  'Add a visible phone number and email in the header and footer.',
+  'Publish privacy, shipping, and return policies (where relevant) and link them from the footer.',
+  'Add customer reviews, testimonials, or ratings near your main offer.',
+  'Link at least one active social profile to reinforce legitimacy.',
+  'Add a short About section stating who runs the business.',
+]
+
+// Business-model-specific content-depth steps. What "add more content" should actually mean
+// differs sharply between a product catalog, a service page, and a blog.
+const CONTENT_STEPS_BY_RUBRIC = {
+  ecommerce_store: [
+    'Write product descriptions that explain materials, sizing, or use cases, not just a title and price.',
+    'Add category or collection pages that group related products.',
+    'Add an FAQ or shipping/returns section that answers common buyer questions.',
+  ],
+  online_plus_offline_store: [
+    'Add a short section on what makes your store worth visiting or ordering from.',
+    'List your product categories or bestsellers with enough detail to act on.',
+    'Add an FAQ covering shipping, pickup, or in-store availability.',
+  ],
+  online_plus_physical_service: [
+    'Add a services section describing what is included and typical pricing or ranges.',
+    'Add a short "what to expect" or process section.',
+    'Add an FAQ answering common questions before someone books.',
+  ],
+  local_service_business: [
+    'Add a services section describing what is included and typical pricing or ranges.',
+    'Add a short "what to expect" or process section.',
+    'Add an FAQ answering common questions before someone books.',
+  ],
+  online_gallery_physical_service: [
+    'Add descriptions to portfolio pieces (materials, process, timeline).',
+    'Add an FAQ about commissioning, booking, or pricing.',
+  ],
+  content_business: [
+    'Publish additional articles or expand thin ones with more depth.',
+    'Add an About or "start here" page so new readers know where to begin.',
+  ],
+  blog: [
+    'Publish additional posts or expand thin ones with more depth.',
+    'Add category or "start here" navigation so readers know what to click next.',
+  ],
+  listing: [
+    'Expand the listing description with the details buyers actually ask about.',
+    'Add more photos or specifics that answer common buyer questions.',
+  ],
+}
+const DEFAULT_CONTENT_STEPS = [
+  'Expand the homepage with a clear description of what you offer and who it is for.',
+  'Add supporting detail: process, materials, service area, or FAQs.',
+  'Break the additional copy into short sections with headings.',
+]
+
+// Research grounding: every entry names a specific, published, verifiable study and (where the
+// study gives one) its actual number. Rules for this map:
+//   1. Only cite findings that can be found by searching the source name + the stat
+//      (e.g. "Baymard cart abandonment 70%", "Google SOASTA bounce 32%", "Stanford web
+//      credibility 46%", "Sistrix first result 28% clicks").
+//   2. Never invent a percentage or attribute a claim to a source that did not publish it.
+//   3. Picked per (fix category, business model) so an online store gets ecommerce research and
+//      a local service business gets local-consumer research, not the same recycled sentence.
+const RESEARCH_BASIS = {
+  safety: {
+    default:
+      'Google Safe Browsing puts a full-screen red warning in front of flagged sites in Chrome, Firefox, and Safari - until the flag is cleared, that warning intercepts visitors before your page can load at all.',
+  },
+  functionality: {
+    default:
+      'Google/SOASTA research on 900,000+ mobile landing pages found bounce probability rises 32% as load time goes from 1 to 3 seconds, and Google reports 53% of mobile visits are abandoned when a page takes over 3 seconds to load.',
+  },
+  mobile: {
+    default:
+      'Google reports 53% of mobile visits are abandoned when a page takes over 3 seconds to load, and since mobile-first indexing Google ranks sites primarily by their mobile version - a broken phone layout costs both visitors and search rankings.',
+  },
+  business_fit: {
+    ecommerce_store:
+      "Nielsen Norman Group's page-visit research ('How Long Do Users Stay on Web Pages?') found most visitors leave within 10-20 seconds unless the value is clear - for a store, that means what you sell and roughly what it costs must be visible in that window.",
+    online_plus_offline_store:
+      "Think with Google's local search research found 76% of people who search for something nearby on their phone visit a related business within a day - but only when the offer, hours, and location are easy to find on the site.",
+    online_plus_physical_service:
+      "Nielsen Norman Group's page-visit research found most visitors leave within 10-20 seconds unless the value is clear - for a service business, that means the service, the area you cover, and how to book must be visible almost immediately.",
+    local_service_business:
+      "Nielsen Norman Group's page-visit research found most visitors leave within 10-20 seconds unless the value is clear - for a service business, that means the service, the area you cover, and how to book must be visible almost immediately.",
+    online_gallery_physical_service:
+      "Nielsen Norman Group's page-visit research found most visitors leave within 10-20 seconds - for a portfolio business, your strongest work and how to commission it have to land inside that window.",
+    content_business:
+      "Nielsen Norman Group's page-visit research found most visitors leave within 10-20 seconds unless the value is clear - readers decide in that window whether your niche matches what they came for.",
+    blog:
+      "Nielsen Norman Group's page-visit research found most visitors leave within 10-20 seconds unless the value is clear - readers decide in that window whether your niche matches what they came for.",
+    listing:
+      "Baymard Institute's product-page research finds shoppers judge a listing on photos and concrete specifics - listings missing them get skipped, not given the benefit of the doubt.",
+    default:
+      "Nielsen Norman Group's page-visit research ('How Long Do Users Stay on Web Pages?') found most visitors leave within 10-20 seconds unless the page communicates clear value in that window.",
+  },
+  customer_attraction: {
+    ecommerce_store:
+      "Baymard Institute's running average across ~50 cart-abandonment studies puts typical abandonment near 70% - their checkout surveys list an unclear path to purchase and not trusting the site among the top reasons shoppers give up.",
+    online_plus_offline_store:
+      "Think with Google's local search research found 76% of people who search for something nearby on their phone visit a related business within a day - an obvious 'shop online or visit us' action is what converts that intent.",
+    online_plus_physical_service:
+      "BrightLocal's annual Local Consumer Review Survey finds nearly all consumers read online reviews for local businesses and most have a minimum star rating they will consider - reviews plus an obvious way to call or book decide who gets contacted.",
+    local_service_business:
+      "BrightLocal's annual Local Consumer Review Survey finds nearly all consumers read online reviews for local businesses and most have a minimum star rating they will consider - reviews plus an obvious way to call or book decide who gets contacted.",
+    online_gallery_physical_service:
+      "Nielsen Norman Group's eye-tracking research shows visitors scan rather than read - an inquiry action placed next to your strongest work gets seen; one buried below it does not.",
+    content_business:
+      'The Data & Marketing Association measures email marketing at roughly a 42:1 return per unit spent - which is why one clear subscribe action beats any styling change for turning readers into a returning audience.',
+    blog:
+      'The Data & Marketing Association measures email marketing at roughly a 42:1 return per unit spent - which is why an above-the-fold email signup, repeated after posts, beats any styling change for audience growth.',
+    listing:
+      "Baymard Institute's product-page research finds shoppers rely on photos, pricing, and concrete specifics to judge an offer - listings missing them are skipped, not forgiven.",
+    default:
+      "Baymard Institute's conversion research consistently finds one clear, repeated next step outperforms pages with competing or missing calls to action.",
+  },
+  trust: {
+    ecommerce_store:
+      "In Baymard Institute's checkout surveys, roughly 1 in 5 US online shoppers report abandoning an order specifically because they didn't trust the site with their credit card information - visible contact details, policies, and reviews are the direct fix for that objection.",
+    online_plus_physical_service:
+      "BrightLocal's annual Local Consumer Review Survey finds nearly all consumers read online reviews before choosing a local business - missing reviews, contact details, or an identifiable owner sends them to a competitor who has them.",
+    local_service_business:
+      "BrightLocal's annual Local Consumer Review Survey finds nearly all consumers read online reviews before choosing a local business - missing reviews, contact details, or an identifiable owner sends them to a competitor who has them.",
+    default:
+      "Stanford's Web Credibility Research (the largest academic study of how people judge websites, 2,600+ participants) found people decide whether to trust a site within moments, based heavily on visible contact information, outside proof, and professionalism.",
+  },
+  content: {
+    default:
+      "Google's own search documentation explicitly targets 'thin content with little or no added value' for filtering, and its helpful-content system rewards pages with substantive first-hand detail - thin pages get filtered out of results before customers ever see them.",
+  },
+  seo: {
+    default:
+      "Sistrix's analysis of over 80 million search clicks found the first organic result takes roughly 28% of clicks with a steep drop-off below it - and title/description quality measurably shifts click-through even at the same ranking position.",
+  },
+  ux_ui: {
+    default:
+      "Stanford's Web Credibility Research found 46% of consumers assess a site's credibility from its visual design, and Nielsen Norman Group's eye-tracking studies show visitors read only about 20% of the words on a page - presentation problems cost trust before your offer is read.",
+  },
+  overall: {
+    default:
+      "Nielsen Norman Group's page-visit research ('How Long Do Users Stay on Web Pages?') found most visitors decide to stay or leave within the first 10-20 seconds - this issue hits that first-impression window for every single visitor.",
+  },
+}
+
+function researchBasisFor(category, rubric) {
+  const entry = RESEARCH_BASIS[category]
+  if (!entry) return null
+  return entry[rubric] || entry.default || null
+}
+
 const CATCHALL_TITLES = {
   safety_trust: 'Shore up remaining trust and safety gaps.',
   technical_functionality: 'Resolve remaining technical crawl issues.',
@@ -386,7 +584,7 @@ function runWeakCta(events, ctx) {
   }
 }
 
-function runMissingTrust(events) {
+function runMissingTrust(events, ctx) {
   const matched = claim(
     events,
     ['safety_trust', 'customer_attraction', 'offer_business_fit'],
@@ -399,38 +597,28 @@ function runMissingTrust(events) {
     category: 'trust',
     why_it_matters:
       'New visitors decide whether to trust a business within seconds - missing contact details, policies, or proof makes that decision harder and increases bounce before visitors ever reach your offer.',
-    steps: [
-      'Add a visible phone number and email in the header and footer.',
-      'Publish privacy, shipping, and return policies (where relevant) and link them from the footer.',
-      'Add customer reviews, testimonials, or ratings near your main offer.',
-      'Link at least one active social profile to reinforce legitimacy.',
-      'Add a short About section stating who runs the business.',
-    ],
+    steps: TRUST_STEPS_BY_RUBRIC[ctx.rubric] || DEFAULT_TRUST_STEPS,
     affected: ['safety_trust', 'customer_attraction'],
     difficulty: 'easy',
     matched,
   }
 }
 
-function runThinContent(events) {
+function runThinContent(events, ctx) {
   const matched = claim(
     events,
     ['technical_functionality', 'customer_attraction', 'offer_business_fit'],
     /very little readable content|thin homepage content|content depth is too thin|few article pages or posts/i,
   )
   if (!matched.length) return null
+  const steps = dedupe([...(CONTENT_STEPS_BY_RUBRIC[ctx.rubric] || DEFAULT_CONTENT_STEPS), 'Rescan after publishing the additional content.'])
   return {
     id: 'thin_content',
     title: 'Add more substantive content to key pages.',
     category: 'content',
     why_it_matters:
       'Thin pages give visitors and search engines almost nothing to evaluate the business on, which hurts both first impressions and organic discovery.',
-    steps: [
-      'Expand the homepage with a clear description of what you offer and who it is for.',
-      'Add supporting detail: process, materials, service area, or FAQs.',
-      'Break the additional copy into short sections with headings.',
-      'Rescan after publishing the additional content.',
-    ],
+    steps,
     affected: ['technical_functionality', 'customer_attraction'],
     difficulty: 'medium',
     matched,
@@ -733,6 +921,7 @@ function finalizeItem(raw, ctx) {
   const affected = dedupe(raw.affected || [])
   const priority = raw.forcedPriority || priorityFromGap(ctx.categoryDetails, affected)
   const lift = estimateLift(affected, ctx.categoryDetails, raw.matched.length)
+  const research = researchBasisFor(raw.category, ctx.rubric)
   return {
     id: raw.id,
     title: raw.title,
@@ -746,6 +935,7 @@ function finalizeItem(raw, ctx) {
     difficulty: raw.difficulty || 'medium',
     source: 'analyzer',
     related_pages: relatedPagesFor(raw.category, ctx.pages),
+    research_basis: research ? sanitize([research])[0] || null : null,
     _tier: tierIndexFor(raw.id),
   }
 }
@@ -806,8 +996,19 @@ function buildFixPlan(input = {}) {
   const benchmarkItem = runBenchmarkGap(benchmarkComparison, categoryDetails, rubric)
   if (benchmarkItem) rawItems.push(benchmarkItem)
 
-  const finalized = rawItems.map((raw) => finalizeItem(raw, ctx))
+  let finalized = rawItems.map((raw) => finalizeItem(raw, ctx))
   finalized.sort(compareFixItems)
+
+  // The plan should be dominated by fixes that attract and convert customers, not design
+  // polish. Allow at most one visual-polish item (the strongest one); fold the evidence from
+  // any others into it so nothing found by the audit is silently dropped.
+  const polishTier = tierIndexFor('visual_polish')
+  const polishItems = finalized.filter((item) => item._tier === polishTier)
+  if (polishItems.length > 1) {
+    const [keep, ...rest] = polishItems
+    keep.evidence = dedupe([...keep.evidence, ...rest.flatMap((r) => r.evidence)]).slice(0, 4)
+    finalized = finalized.filter((item) => item._tier !== polishTier || item === keep)
+  }
 
   const sequenced = finalized.slice(0, 9)
   let previousTier = null

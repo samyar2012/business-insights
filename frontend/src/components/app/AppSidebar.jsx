@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useSidebar } from '../../context/SidebarContext'
 import PlanAccountSection from './PlanAccountSection'
-import ToolIcon from '../../components/app/ToolIcon'
-import { TOOL_CATALOG } from '../../pages/tools/toolConfig'
 
 const Chevron = ({ open }) => (
   <svg
@@ -27,20 +25,7 @@ const workspaceItems = [
   { label: 'Load project', to: '/app/workspace/load', icon: 'L' },
 ]
 
-const toolItems = [
-  { label: 'Overview', to: '/app/tools', icon: 'T' },
-  ...TOOL_CATALOG.map((tool) => ({
-    label: tool.title,
-    to: tool.to,
-    icon: <ToolIcon name={tool.icon} className="h-4 w-4" />,
-  })),
-]
-
-const topLinks = [
-  { label: 'Dashboard', to: '/app', icon: 'D' },
-  { label: 'Scans', to: '/app/scans', icon: 'S' },
-  { label: 'Action Plan', to: '/app/action-plan', icon: 'P' },
-]
+const topLinks = [{ label: 'Dashboard', to: '/app', icon: 'D' }]
 
 const bottomLinks = [
   { label: 'Businesses', to: '/app/businesses', icon: 'B' },
@@ -48,9 +33,6 @@ const bottomLinks = [
 ]
 
 const pathMatches = (pathname, to) => {
-  if (to === '/app/tools') return pathname === '/app/tools'
-  if (to === '/app/scans') return pathname === '/app/scans' || pathname.startsWith('/app/scans/')
-  if (to === '/app/action-plan') return pathname === '/app/action-plan'
   if (to === '/app') return pathname === '/app'
   return pathname === to || pathname.startsWith(`${to}/`)
 }
@@ -187,14 +169,6 @@ const AppSidebar = () => {
               pathname={pathname}
               collapsed={effectiveCollapsed}
               defaultOpen
-              onNavigate={handleNavigate}
-            />
-
-            <NavDropdown
-              label="Tools"
-              items={toolItems}
-              pathname={pathname}
-              collapsed={effectiveCollapsed}
               onNavigate={handleNavigate}
             />
 

@@ -143,6 +143,52 @@ Risks always resolve to full sentences; if a category has no problems and there 
 warnings, the list falls back to the single explicit sentence `"No major risks detected from
 this crawl."` — never a bare priority label like "Medium impact."
 
+## 3b. Research grounding: why a fix matters, per business type
+
+A flat `why_it_matters` sentence explains the fix but not *why the underlying customer behavior
+is true*, and what actually drives attraction/conversion genuinely differs by business type (an
+online store lives and dies on cart abandonment; a local service business lives and dies on
+phone/booking friction; a gallery/portfolio business lives and dies on inquiry-to-work proximity).
+
+Each finalized fix item now also carries a `research_basis` string (`RESEARCH_BASIS` /
+`researchBasisFor()` in `fixPlanEngine.js`). Every entry names a specific published study and,
+where the study gives one, its actual number — each of these can be verified with a web search
+of the source name plus the stat:
+
+| Source | Finding used | Search check |
+| --- | --- | --- |
+| Baymard Institute | Running average across ~50 studies puts cart abandonment near 70%; ~1 in 5 US shoppers have abandoned checkout because they didn't trust the site with card details | "Baymard cart abandonment rate", "Baymard didn't trust the site with credit card" |
+| Google/SOASTA (2017) | Bounce probability rises 32% as mobile load time goes 1s → 3s (900k+ landing pages) | "Google SOASTA bounce rate 32%" |
+| Google | 53% of mobile visits abandoned when a page takes over 3 seconds; mobile-first indexing ranks the mobile version | "Google 53% mobile 3 seconds" |
+| Think with Google | 76% of people who search for something nearby on their phone visit a related business within a day | "Think with Google 76% nearby search visit" |
+| Nielsen Norman Group | Most visitors leave within 10–20 seconds unless value is clear; eye-tracking shows users read only ~20% of words on a page | "NNG how long do users stay on web pages", "Nielsen users read 20 percent" |
+| Stanford Web Credibility Research (Fogg et al., 2,600+ participants) | 46% of consumers assessed site credibility from visual design; trust judged within moments from contact info and outside proof | "Stanford web credibility study 46%" |
+| BrightLocal Local Consumer Review Survey (annual) | Nearly all consumers read online reviews for local businesses; most have a minimum star rating they will consider | "BrightLocal local consumer review survey" |
+| Sistrix (80M+ clicks) | First organic result takes ~28% of clicks with steep drop-off | "Sistrix first position 28% CTR" |
+| Data & Marketing Association | Email marketing returns roughly 42:1 per unit spent | "DMA email ROI 42" |
+| Google search documentation | "Thin content with little or no added value" is explicitly filtered; helpful-content system rewards substantive first-hand detail | Google Search Central docs |
+
+The basis is picked per `(category, business rubric)` pair, so an ecommerce site's "missing
+trust signals" fix cites Baymard's payment-trust abandonment number while a local service
+business's version cites BrightLocal's review-reading behavior — not the same recycled sentence.
+Rule: never invent a percentage or attribute a claim to a source that did not publish it.
+
+**Design fixes are capped.** The plan is meant to grow the business, not restyle it: at most one
+visual-polish item (`nav_clutter` / `visual_polish` / `misaligned_images`) survives into the
+final plan (the strongest one, with the others' evidence folded into it), and it is always
+sequenced after conversion/trust work.
+
+The trust-signal (`missing_contact_trust`) and content-depth (`thin_content`) clusters also gained
+business-model-specific `steps` (`TRUST_STEPS_BY_RUBRIC`, `CONTENT_STEPS_BY_RUBRIC`) so "add proof"
+means reviews + shipping policy for a store, reviews + service-area statement for a local service
+business, and portfolio credibility + an artist statement for a gallery business, instead of one
+shared checklist for every business type.
+
+Covered by `"grounds each fix in attributed UX/conversion research that varies by business
+model, not a flat generic label"` in `backend/tests/fixPlanEngine.test.js`, which asserts the
+research basis differs between an ecommerce store and a local service business fixture, is a
+substantive sentence (not a priority label), and that rubric-specific steps actually differ.
+
 ## 4. What intentionally was not changed
 
 - Analyzer scoring itself (`categoryScorers.js`, `businessModelRubrics.js`, `scoreCaps.js`,
