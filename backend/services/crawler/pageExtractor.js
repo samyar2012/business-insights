@@ -583,30 +583,240 @@ function buildExtractionMeta(
   }
 }
 
+const CONTACT_CTA_PATTERN =
+  /\b(?:call|contact|book|schedule|estimate|quote|consultation|get\s+in\s+touch|reach\s+us|request\s+(?:a\s+)?(?:quote|estimate|callback)|speak\s+(?:with|to)|talk\s+to\s+us)\b/i
+const CONTACT_HREF_PATTERN = /contact|get[-_\s]?in[-_\s]?touch|reach[-_\s]?us|book(?:ing)?|schedule|quote|estimate|appoint/i
+const PHONE_TEXT_PATTERN =
+  /(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}\b/g
+const REVIEW_FALSE_POSITIVE =
+  /review\s+(?:our|the)\s+(?:privacy|terms|policy|cookie)|policy\s+review|under\s+review/i
+
+function elementPlacement($, el) {
+  const node = $(el)
+  if (node.closest('header, [role="banner"], .site-header, #header, .navbar, .nav-bar').length) {
+    return 'header'
+  }
+  if (node.closest('footer, [role="contentinfo"], .site-footer, #footer').length) {
+    return 'footer'
+  }
+  if (node.closest('main, [role="main"], .hero, .banner, #hero, .above-fold').length) {
+    return 'hero'
+  }
+  return 'body'
+}
+
+function bestPlacement(placements) {
+  if (placements.has('header') || placements.has('hero')) return placements.has('header') ? 'header' : 'hero'
+  if (placements.has('body')) return 'body'
+  if (placements.has('footer')) return 'footer'
+  return 'unknown'
+}
+
 function extractEmailsAndContacts($) {
   const emails = new Set()
   const phones = new Set()
+  const contactLinks = new Set()
+  const contactCtas = new Set()
+  const phoneMethods = new Set()
+  const placements = new Set()
+  let hasMailto = false
+  let hasTel = false
+  let hasTextPhone = false
+  let hasContactForm = false
 
   $('a[href^="mailto:"]').each((_, el) => {
     const href = $(el).attr('href') || ''
-    const email = href.replace(/^mailto:/i, '').split('?')[0]
-    if (email) emails.add(email)
+    const email = href.replace(/^mailto:/i, '').split('?')[0].trim()
+    if (email) {
+      emails.add(email)
+      hasMailto = true
+      placements.add(elementPlacement($, el))
+    }
   })
 
   $('a[href^="tel:"]').each((_, el) => {
     const href = $(el).attr('href') || ''
-    const phone = href.replace(/^tel:/i, '')
-    if (phone) phones.add(phone)
+    const phone = href.replace(/^tel:/i, '').trim()
+    if (phone) {
+      phones.add(phone)
+      hasTel = true
+      phoneMethods.add('tel')
+      placements.add(elementPlacement($, el))
+    }
   })
 
   const text = cleanText($('body').text())
   const emailMatches = text.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) || []
   emailMatches.slice(0, 5).forEach((e) => emails.add(e))
 
+  const phoneMatches = text.match(PHONE_TEXT_PATTERN) || []
+  for (const match of phoneMatches.slice(0, 5)) {
+    const digits = match.replace(/\D/g, '')
+    if (digits.length >= 7 && digits.length <= 15) {
+      phones.add(match.trim())
+      hasTextPhone = true
+      phoneMethods.add('text')
+    }
+  }
+
+  // Prefer placement from the region that actually contains the phone/email text
+  $('header, [role="banner"], .site-header, #header, footer, [role="contentinfo"], .site-footer, #footer, main, [role="main"], .hero').each(
+    (_, el) => {
+      const regionText = cleanText($(el).text())
+      const regionPlacement = elementPlacement($, el)
+      if (PHONE_TEXT_PATTERN.test(regionText) || /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.test(regionText)) {
+        placements.add(regionPlacement)
+      }
+      // reset lastIndex for global regex reuse
+      PHONE_TEXT_PATTERN.lastIndex = 0
+    },
+  )
+
+  $('a[href]').each((_, el) => {
+    const href = ($(el).attr('href') || '').trim()
+    const label = cleanText($(el).text())
+    if (CONTACT_HREF_PATTERN.test(href) || CONTACT_HREF_PATTERN.test(label)) {
+      contactLinks.add(href.startsWith('http') || href.startsWith('/') ? href : label || href)
+      placements.add(elementPlacement($, el))
+    }
+    if (CONTACT_CTA_PATTERN.test(label) && label.length <= 48) {
+      contactCtas.add(label)
+      placements.add(elementPlacement($, el))
+    }
+  })
+
+  $('button').each((_, el) => {
+    const label = cleanText($(el).text())
+    if (CONTACT_CTA_PATTERN.test(label) && label.length <= 48) {
+      contactCtas.add(label)
+      placements.add(elementPlacement($, el))
+    }
+  })
+
+  $('form').each((_, el) => {
+    const form = $(el)
+    const hasEmailInput = form.find('input[type="email"], input[name*="email" i], input[id*="email" i]').length > 0
+    const hasPhoneInput = form.find('input[type="tel"], input[name*="phone" i], input[id*="phone" i]').length > 0
+    const hasMessage = form.find('textarea, input[name*="message" i]').length > 0
+    const action = (form.attr('action') || '').toLowerCase()
+    const formText = cleanText(form.text()).toLowerCase()
+    const looksLikeContact =
+      hasEmailInput ||
+      hasPhoneInput ||
+      hasMessage ||
+      /contact|inquiry|enquire|quote|estimate|book/i.test(action) ||
+      /contact|send message|get in touch|request/i.test(formText)
+    if (looksLikeContact) {
+      hasContactForm = true
+      placements.add(elementPlacement($, el))
+    }
+  })
+
   return {
     emails: [...emails],
     phones: [...phones],
-    contact_links: [],
+    contact_links: [...contactLinks].slice(0, 10),
+    contact_ctas: [...contactCtas].slice(0, 10),
+    phone_methods: [...phoneMethods],
+    has_mailto: hasMailto,
+    has_tel: hasTel,
+    has_text_phone: hasTextPhone,
+    has_contact_form: hasContactForm,
+    has_contact_page_link: contactLinks.size > 0,
+    has_contact_cta: contactCtas.size > 0,
+    contact_placement: bestPlacement(placements),
+  }
+}
+
+function extractReviewSignals($, extractedText, jsonLd, socialLinks = []) {
+  const evidence = []
+  let hasReviewSchema = false
+  let hasReviewWidget = false
+  let hasTestimonialBlock = false
+  let hasStarRating = false
+  let keywordHit = false
+
+  const walkLd = (nodes) => {
+    const list = Array.isArray(nodes) ? nodes : nodes ? [nodes] : []
+    for (const node of list) {
+      if (!node || typeof node !== 'object') continue
+      const type = node['@type']
+      const types = (Array.isArray(type) ? type : [type]).map((t) => String(t || '').toLowerCase())
+      if (types.some((t) => ['review', 'aggregaterating', 'rating'].includes(t))) {
+        hasReviewSchema = true
+        evidence.push({ type: 'schema', method: 'json_ld', confidence: 'high' })
+      }
+      if (node.aggregateRating || node.reviewRating || node.review) {
+        hasReviewSchema = true
+        evidence.push({ type: 'schema', method: 'json_ld_field', confidence: 'high' })
+      }
+      if (Array.isArray(node['@graph'])) walkLd(node['@graph'])
+    }
+  }
+  walkLd(jsonLd)
+
+  const widgetHosts =
+    /trustpilot|yelp\.com|google\.com\/maps|g\.page|birdeye|podium|grade\.us|sitejabber|reviews?\./i
+  $('iframe[src], script[src], a[href]').each((_, el) => {
+    const src = $(el).attr('src') || $(el).attr('href') || ''
+    if (widgetHosts.test(src)) {
+      hasReviewWidget = true
+      evidence.push({ type: 'widget', method: 'embed_or_link', confidence: 'high' })
+    }
+  })
+  for (const link of socialLinks) {
+    if (widgetHosts.test(String(link))) {
+      hasReviewWidget = true
+      evidence.push({ type: 'widget', method: 'social_host', confidence: 'medium' })
+    }
+  }
+
+  const testimonialSelectors =
+    '[class*="testimonial" i], [id*="testimonial" i], [class*="review" i], [id*="review" i], blockquote'
+  $(testimonialSelectors).each((_, el) => {
+    const text = cleanText($(el).text())
+    if (!text || text.length < 24) return
+    if (REVIEW_FALSE_POSITIVE.test(text)) return
+    if (/testimonial|review|customer|client|rated|stars|★|⭐/i.test(text) || $(el).is('blockquote')) {
+      hasTestimonialBlock = true
+      evidence.push({
+        type: 'testimonial_block',
+        method: 'markup',
+        snippet: text.slice(0, 120),
+        confidence: 'high',
+      })
+    }
+  })
+
+  if (/[★⭐]|stars?\b|rated\s+\d(?:\.\d)?\s*\/\s*5|\d(?:\.\d)?\s*out of\s*5/i.test(extractedText)) {
+    hasStarRating = true
+    evidence.push({ type: 'stars', method: 'text', confidence: 'medium' })
+  }
+
+  if (!REVIEW_FALSE_POSITIVE.test(extractedText)) {
+    if (/\b(?:testimonial|customer\s+reviews?|client\s+reviews?|what\s+our\s+customers\s+say)\b/i.test(extractedText)) {
+      keywordHit = true
+      evidence.push({ type: 'keyword', method: 'text', confidence: 'low' })
+    } else if (/\breviews?\b/i.test(extractedText)) {
+      keywordHit = true
+      evidence.push({ type: 'keyword', method: 'text_weak', confidence: 'low' })
+    }
+  }
+
+  const strength = hasReviewSchema || hasReviewWidget || hasTestimonialBlock
+    ? 'strong'
+    : hasStarRating || keywordHit
+      ? 'medium'
+      : 'none'
+
+  return {
+    review_indicators: strength !== 'none',
+    review_strength: strength,
+    has_review_schema: hasReviewSchema,
+    has_review_widget: hasReviewWidget,
+    has_testimonial_block: hasTestimonialBlock,
+    has_star_rating: hasStarRating,
+    review_evidence: evidence.slice(0, 8),
   }
 }
 
@@ -649,7 +859,11 @@ function extractCtas($) {
   $('a, button').each((_, el) => {
     const text = cleanText($(el).text())
     if (!text || text.length > 40) return
-    if (/buy|shop|order|subscribe|book|get started|add to cart|learn more/i.test(text)) {
+    if (
+      /buy|shop|order|subscribe|book|get started|add to cart|learn more|call|contact|schedule|estimate|quote|consultation/i.test(
+        text,
+      )
+    ) {
       ctas.push(text)
     }
   })
@@ -717,7 +931,7 @@ function extractPage(html, pageUrl, allowedHostname) {
   const prices = extractPrices(extractedText)
   const ctas = extractCtas($)
   const policies = extractPolicyIndicators(extractedText, links.internal_links)
-  const reviewIndicators = /review|testimonial|rated|stars|trustpilot/i.test(extractedText)
+  const reviewSignals = extractReviewSignals($, extractedText, jsonLd, links.social_links)
   const newsletterIndicators = /newsletter|subscribe|join our list|email list/i.test(extractedText)
   const pageHints = classifyPageHints($, rawHtml, pageUrl, products, platform, links.navigation_labels)
   const extractionMeta = buildExtractionMeta(
@@ -740,6 +954,16 @@ function extractPage(html, pageUrl, allowedHostname) {
     navigation_labels: links.navigation_labels,
     emails: contacts.emails,
     phones: contacts.phones,
+    contact_links: contacts.contact_links,
+    contact_ctas: contacts.contact_ctas,
+    phone_methods: contacts.phone_methods,
+    has_mailto: contacts.has_mailto,
+    has_tel: contacts.has_tel,
+    has_text_phone: contacts.has_text_phone,
+    has_contact_form: contacts.has_contact_form,
+    has_contact_page_link: contacts.has_contact_page_link,
+    has_contact_cta: contacts.has_contact_cta,
+    contact_placement: contacts.contact_placement,
     products,
     product_names: products.map((p) => p.name),
     prices,
@@ -748,7 +972,13 @@ function extractPage(html, pageUrl, allowedHostname) {
     open_graph: openGraph,
     platform,
     policies,
-    review_indicators: reviewIndicators,
+    review_indicators: reviewSignals.review_indicators,
+    review_strength: reviewSignals.review_strength,
+    has_review_schema: reviewSignals.has_review_schema,
+    has_review_widget: reviewSignals.has_review_widget,
+    has_testimonial_block: reviewSignals.has_testimonial_block,
+    has_star_rating: reviewSignals.has_star_rating,
+    review_evidence: reviewSignals.review_evidence,
     newsletter_indicators: newsletterIndicators,
     headings,
     has_mobile_viewport: Boolean($('meta[name="viewport"]').attr('content')),

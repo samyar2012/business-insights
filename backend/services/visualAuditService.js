@@ -89,10 +89,42 @@ async function collectViewportMetrics(page, meta = {}) {
       const pageHeight = Math.max(doc.scrollHeight, body?.scrollHeight || 0)
       const viewportWidth = window.innerWidth
       const viewportH = window.innerHeight
-      const overflowPx = Math.max(0, doc.scrollWidth - viewportWidth)
+        const overflowPx = Math.max(0, doc.scrollWidth - viewportWidth)
       const horizontalOverflow = overflowPx > 24
       const overflowSeverity =
         overflowPx <= 24 ? 'none' : overflowPx <= 80 ? 'minor' : 'major'
+
+      const overflowOffenders = []
+      if (horizontalOverflow) {
+        const candidates = document.querySelectorAll('body *')
+        for (const el of candidates) {
+          if (overflowOffenders.length >= 5) break
+          try {
+            const rect = el.getBoundingClientRect()
+            if (rect.width <= viewportWidth + 24) continue
+            const style = window.getComputedStyle(el)
+            if (style.display === 'none' || style.visibility === 'hidden') continue
+            const tag = el.tagName ? el.tagName.toLowerCase() : 'el'
+            const id = el.id ? `#${el.id}` : ''
+            const cls = el.className && typeof el.className === 'string'
+              ? `.${el.className.trim().split(/\s+/).slice(0, 2).join('.')}`
+              : ''
+            const selector = `${tag}${id}${cls}`.slice(0, 120)
+            const text = (el.innerText || el.getAttribute('aria-label') || '')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .slice(0, 80)
+            overflowOffenders.push({
+              selector,
+              text: text || null,
+              width_px: Math.round(rect.width),
+              issue_type: 'element_wider_than_viewport',
+            })
+          } catch {
+            // ignore measurement errors on individual nodes
+          }
+        }
+      }
 
       const hasMobileViewport = Boolean(
         document.querySelector('meta[name="viewport"][content*="width"]'),
@@ -566,6 +598,7 @@ async function collectViewportMetrics(page, meta = {}) {
         horizontal_overflow: horizontalOverflow,
         overflow_px: overflowPx,
         overflow_severity: overflowSeverity,
+        overflow_offenders: overflowOffenders,
         has_mobile_viewport: hasMobileViewport,
         image_count: document.querySelectorAll('img').length,
         text_block_lengths: textBlocks.slice(0, 40),
@@ -797,6 +830,10 @@ async function runVisualAudit(url, options = {}) {
         horizontal_overflow_mobile: mobileMetrics.horizontal_overflow,
         overflow_severity_desktop: desktopMetrics.overflow_severity,
         overflow_severity_mobile: mobileMetrics.overflow_severity,
+        overflow_px_desktop: desktopMetrics.overflow_px,
+        overflow_px_mobile: mobileMetrics.overflow_px,
+        overflow_offenders_mobile: mobileMetrics.overflow_offenders || [],
+        overflow_offenders_desktop: desktopMetrics.overflow_offenders || [],
         has_mobile_viewport:
           desktopMetrics.has_mobile_viewport || mobileMetrics.has_mobile_viewport,
         image_count: Math.max(desktopMetrics.image_count, mobileMetrics.image_count),

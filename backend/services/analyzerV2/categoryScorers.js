@@ -5,6 +5,11 @@ const { extractUxFeatures, buildUxFeatureExplanations, mapVisualScoreToCategoryP
 const { pointsForStrength, strengthFromBoolean, strengthFromCount, combineStrengths } = require('./signalStrength')
 const { scoreOfferBusinessFit } = require('./businessModelRubrics')
 const { CATEGORY_WEIGHTS } = require('./scoringWeights')
+const {
+  assessContactEvidence,
+  assessReviewEvidence,
+  assessMobileOverflow,
+} = require('./evidenceDetectors')
 
 function clamp(value, max) {
   return Math.max(0, Math.min(max, Math.round(value)))
@@ -153,12 +158,26 @@ function computeVisitorAppealDownsides(uxFeatures) {
   }
 
   const overflowSeverity = uxFeatures.signals?.overflow_severity_mobile
-  const mobileOverflow = uxFeatures.signals?.horizontal_overflow_mobile
-  if (overflowSeverity === 'major' || mobileOverflow) {
+  const overflowAssessment = assessMobileOverflow({ uxFeatures })
+  if (overflowAssessment.is_severe) {
     addPenalty(
       'mobile_layout',
       'Mobile layout usability',
-      overflowSeverity === 'major' ? 2 : 1,
+      2,
+      overflowAssessment.problem || 'Horizontal scrolling or overflow on mobile frustrates visitors.',
+    )
+  } else if (overflowAssessment.claim === 'possible_overflow') {
+    addPenalty(
+      'mobile_layout',
+      'Mobile layout usability',
+      1,
+      overflowAssessment.problem || 'Possible mobile layout issue to verify.',
+    )
+  } else if (overflowSeverity === 'major') {
+    addPenalty(
+      'mobile_layout',
+      'Mobile layout usability',
+      2,
       'Horizontal scrolling or overflow on mobile frustrates visitors.',
     )
   }
@@ -235,12 +254,13 @@ function finalizeCategory(detail, max, confidenceFactors = []) {
   return detail
 }
 
-function scoreSafetyTrust({ aggregated, pages, safetyResult, crawlHealth, rubric }) {
+function scoreSafetyTrust({ aggregated, pages, safetyResult, crawlHealth, rubric, signals }) {
   const max = CATEGORY_WEIGHTS.safety_trust
   const detail = emptyCategoryDetail(max)
   const result = safetyResult || unknownResult()
   const confidenceFactors = []
   let points = 0
+  const opsSignals = signals || detectOperationalSignals(pages, aggregated)
 
   const httpsStrength = strengthFromBoolean(aggregated.trust_signals?.https)
   const httpsPoints = pointsForStrength(httpsStrength, 4)
@@ -283,25 +303,59 @@ function scoreSafetyTrust({ aggregated, pages, safetyResult, crawlHealth, rubric
     confidenceFactors.push(result.configured ? 55 : 45)
   }
 
-  const hasEmail = (aggregated.contact_signals?.emails || []).length > 0
-  const hasPhone = (aggregated.contact_signals?.phones || []).length > 0
-  const contactStrength = combineStrengths([
-    strengthFromBoolean(hasPhone, { strongWhen: true }),
-    strengthFromBoolean(hasEmail),
-  ])
+  const contact = assessContactEvidence({ aggregated, pages, signals: opsSignals })
+  const contactStrength =
+    contact.claim === 'contact_visible'
+      ? contact.strength
+      : contact.claim === 'contact_weak_placement' || contact.claim === 'contact_path_only'
+        ? 'weak'
+        : contact.has_any_contact_path
+          ? 'weak'
+          : 'none'
   const contactPoints = pointsForStrength(contactStrength, 4)
   points += contactPoints
-  if (contactStrength !== 'none') {
+  if (contact.claim === 'contact_visible') {
     detail.strengths.push('Contact information (phone or email) is discoverable.')
     detail.evidence.push({
       signal: 'contact',
-      strength: contactStrength,
+      strength: contact.strength,
       label: 'Contact info',
-      detail: `Phones=${hasPhone}, emails=${hasEmail}.`,
+      detail: `Phones=${contact.has_phone}, emails=${contact.has_email}.`,
+      proof: contact.evidence.slice(0, 4),
+      confidence: 'high',
     })
-  } else {
-    detail.problems.push('No phone number or email found on crawled pages.')
-    detail.recommended_fixes.push('Add phone and email in header, footer, and contact page.')
+  } else if (contact.claim === 'contact_weak_placement' || contact.claim === 'contact_path_only') {
+    detail.strengths.push('A contact path exists, but it may not be prominent enough.')
+    if (contact.problem) detail.problems.push(contact.problem)
+    if (contact.fix) detail.recommended_fixes.push(contact.fix)
+    detail.evidence.push({
+      signal: 'contact',
+      strength: 'weak',
+      label: 'Contact path weakly placed',
+      detail: contact.problem,
+      proof: contact.evidence.slice(0, 4),
+      confidence: 'medium',
+    })
+  } else if (contact.claim === 'no_contact_high_confidence') {
+    detail.problems.push(contact.problem)
+    detail.recommended_fixes.push(contact.fix)
+    detail.evidence.push({
+      signal: 'contact',
+      strength: 'none',
+      label: 'No contact found',
+      detail: contact.problem,
+      confidence: 'high',
+    })
+  } else if (contact.problem) {
+    detail.problems.push(contact.problem)
+    if (contact.fix) detail.recommended_fixes.push(contact.fix)
+    detail.evidence.push({
+      signal: 'contact',
+      strength: 'none',
+      label: 'Contact unclear',
+      detail: contact.problem,
+      confidence: contact.absence_confidence || 'low',
+    })
   }
 
   const policyRelevant =
@@ -339,11 +393,33 @@ function scoreSafetyTrust({ aggregated, pages, safetyResult, crawlHealth, rubric
     detail.problems.push('Business name or identity is unclear from crawled content.')
   }
 
-  const reviewStrength = strengthFromBoolean(aggregated.trust_signals?.review_indicators)
+  const reviews = assessReviewEvidence({ aggregated, pages, signals: opsSignals })
+  const reviewStrength = reviews.strength
   points += pointsForStrength(reviewStrength, 3)
-  if (reviewStrength !== 'none') {
+  if (reviewStrength === 'strong') {
     detail.strengths.push('Reviews or testimonials build visitor trust.')
-    detail.evidence.push({ signal: 'reviews', strength: reviewStrength, label: 'Social proof', detail: 'Review language detected.' })
+    detail.evidence.push({
+      signal: 'reviews',
+      strength: reviewStrength,
+      label: 'Social proof',
+      detail: 'Structured review or testimonial evidence detected.',
+      proof: reviews.evidence.slice(0, 4),
+      confidence: 'high',
+    })
+  } else if (reviewStrength === 'medium' || reviewStrength === 'weak') {
+    detail.strengths.push('Some review or rating signals were detected.')
+    if (reviews.problem) {
+      detail.problems.push(reviews.problem)
+      detail.recommended_fixes.push(reviews.fix)
+    }
+    detail.evidence.push({
+      signal: 'reviews',
+      strength: reviewStrength,
+      label: 'Social proof',
+      detail: reviews.problem || 'Review language detected.',
+      proof: reviews.evidence.slice(0, 4),
+      confidence: reviewStrength === 'medium' ? 'medium' : 'low',
+    })
   }
 
   const socialStrength =
@@ -522,13 +598,38 @@ function scoreUxUiVisual({ pages, aggregated, uxFeatures, visualAudit, rubric, s
     detail.strengths.push(features.readability_strengths[0])
   }
 
-  const mobileOverflow =
-    features.signals?.horizontal_overflow_mobile ||
-    features.signals?.overflow_severity_mobile === 'major' ||
-    features.layout_balance_score < 55
-  if (mobileOverflow) {
-    detail.problems.push('Mobile layout overflow or horizontal scrolling detected.')
-    detail.recommended_fixes.push('Fix mobile CSS overflow and test on a narrow viewport.')
+  const overflow = assessMobileOverflow({ uxFeatures: features })
+  if (overflow.claim === 'severe_overflow') {
+    detail.problems.push(overflow.problem)
+    detail.recommended_fixes.push(overflow.fix)
+    detail.evidence.push({
+      signal: 'mobile_overflow',
+      strength: 'strong',
+      label: 'Mobile overflow',
+      detail: overflow.problem,
+      proof: overflow.proof,
+      confidence: overflow.confidence,
+    })
+  } else if (overflow.claim === 'possible_overflow') {
+    detail.problems.push(overflow.problem)
+    detail.recommended_fixes.push(overflow.fix)
+    detail.evidence.push({
+      signal: 'mobile_overflow',
+      strength: 'weak',
+      label: 'Possible layout issue',
+      detail: overflow.problem,
+      proof: overflow.proof,
+      confidence: 'low',
+    })
+  } else if (overflow.claim === 'weak_layout_balance') {
+    detail.problems.push(overflow.problem)
+    detail.evidence.push({
+      signal: 'layout_balance',
+      strength: 'weak',
+      label: 'Layout balance',
+      detail: overflow.problem,
+      confidence: 'low',
+    })
   }
 
   if ((features.primary_nav_link_count || features.nav_link_count || 0) > 6) {
@@ -565,23 +666,30 @@ function scoreCustomerAttraction({ aggregated, pages, signals, rubric, uxFeature
     return safeEarned
   }
 
-  const proofStrength = combineStrengths([
-    strengthFromBoolean(aggregated.trust_signals?.review_indicators),
-    strengthFromBoolean(signals.has_testimonials),
-  ])
+  const reviews = assessReviewEvidence({ aggregated, pages, signals })
+  const proofStrength = reviews.strength
   const proofPts = pointsForStrength(proofStrength, 3)
   points += addBreakdown(
     'trust_proof',
     'Trust proof (reviews/testimonials)',
     proofPts,
     3,
-    proofStrength !== 'none' ? 'Review or testimonial language detected.' : 'No review proof found.',
+    proofStrength !== 'none' ? 'Review or testimonial evidence detected.' : 'No clear review proof found.',
   )
-  if (proofPts > 0) {
+  if (proofStrength === 'strong') {
     detail.strengths.push('Reviews or testimonials answer “why trust this business?”')
-  } else {
-    detail.problems.push('No testimonial or review proof visible to new visitors.')
-    detail.recommended_fixes.push('Add reviews, ratings, or client testimonials near your main offer.')
+  } else if (proofStrength === 'medium' || proofStrength === 'weak') {
+    detail.strengths.push('Some review or rating signals are present.')
+    if (reviews.problem) {
+      detail.problems.push(reviews.problem)
+      detail.recommended_fixes.push(reviews.fix)
+    }
+  } else if (reviews.claim === 'no_reviews_high_confidence') {
+    detail.problems.push(reviews.problem)
+    detail.recommended_fixes.push(reviews.fix)
+  } else if (reviews.problem) {
+    // Low-confidence absence: soft wording only, do not push a hard "add reviews" top fix
+    detail.problems.push(reviews.problem)
   }
 
   const offerStrength = combineStrengths([

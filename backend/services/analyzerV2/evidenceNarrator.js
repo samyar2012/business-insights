@@ -79,7 +79,47 @@ const REWRITE_RISKS = new Map([
   [
     'No phone number or email found on crawled pages.',
     () =>
-      'No phone number or email was found on any crawled page, so visitors who want to ask a question before buying have no way to reach the business.',
+      'No phone number or email was found on crawled pages with high confidence, so visitors who want to ask a question may struggle to reach the business.',
+  ],
+  [
+    'No phone, email, contact form, or clear contact CTA was found across crawled pages.',
+    () =>
+      'No phone, email, contact form, or clear contact CTA was found across crawled pages, so visitors who want to ask a question may struggle to reach the business.',
+  ],
+  [
+    'Contact path exists but may be hard for visitors to notice.',
+    () =>
+      'A contact path exists, but it may be easy to miss — making phone, email, or a contact CTA more visible in the header usually helps visitors take the next step.',
+  ],
+  [
+    'Contact details were not clearly detected in crawled HTML; verify phone, email, or a contact form are visible.',
+    () =>
+      'Contact details were not clearly detected in the crawl — verify that a phone number, email, or contact form is easy for visitors to find.',
+  ],
+  [
+    'No on-page reviews, testimonials, or rating markup was detected on crawled pages.',
+    () =>
+      'No on-page reviews, testimonials, or rating markup was detected, so new visitors lack social proof near the offer.',
+  ],
+  [
+    'Review or testimonial proof was not clearly detected; verify ratings or quotes are visible to visitors.',
+    () =>
+      'Review or testimonial proof was not clearly detected — verify ratings or customer quotes are visible near your main offer.',
+  ],
+  [
+    'Review or rating signals exist but may need clearer placement or source attribution.',
+    () =>
+      'Review signals exist, but clearer placement and source attribution near the main offer would make that proof easier to trust.',
+  ],
+  [
+    'Severe mobile layout overflow detected.',
+    () =>
+      'Severe horizontal overflow was measured on a mobile viewport, which can make the site feel broken on phones.',
+  ],
+  [
+    'Possible mobile layout issue to verify.',
+    () =>
+      'A possible mobile layout issue was flagged with lower confidence — verify on a phone-width viewport before treating it as a top fix.',
   ],
   [
     'Homepage failed to load or returned an error.',

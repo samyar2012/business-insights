@@ -135,7 +135,20 @@ function detectOperationalSignals(pages, aggregated) {
     has_hours:
       /business hours|store hours|open (mon|tue|wed|thu|fri)|monday|tuesday|closed sunday/i.test(lower),
     has_map_directions: /get directions|google maps|find us|directions to/i.test(lower),
-    has_contact_page: pages.some((p) => p.page_type === 'contact'),
+    has_contact_page:
+      pages.some((p) => p.page_type === 'contact') ||
+      Boolean(aggregated.contact_signals?.has_contact_page_link),
+    has_contact_form: Boolean(aggregated.contact_signals?.has_contact_form),
+    has_contact_cta:
+      Boolean(aggregated.contact_signals?.has_contact_cta) ||
+      /\b(?:call|contact|book|schedule|estimate|quote|consultation)\b/i.test(blob),
+    has_testimonials:
+      Boolean(aggregated.trust_signals?.has_strong_reviews) ||
+      aggregated.trust_signals?.review_strength === 'strong' ||
+      pages.some((p) => {
+        const data = pageData(p)
+        return data.has_testimonial_block || data.has_review_schema || data.has_review_widget
+      }),
     has_service_area:
       /\bserving\b|service area|serving the|we serve|coverage area|areas we serve/i.test(lower),
     has_quote_cta:

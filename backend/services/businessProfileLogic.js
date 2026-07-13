@@ -99,16 +99,29 @@ function aggregatePages(pages) {
   const social = new Set()
   const emails = new Set()
   const phones = new Set()
+  const contactLinks = new Set()
+  const contactCtas = new Set()
+  const contactPlacements = new Set()
   const prices = new Set()
   const ctas = new Set()
   const navLabels = new Set()
   const policies = { shipping: false, returns: false, privacy: false, terms: false }
   const pageClassificationHints = []
   const pageClassificationIndicators = new Set()
+  const reviewEvidence = []
 
   let platform = 'unknown'
   let reviewIndicators = false
+  let reviewStrength = 'none'
+  let hasStrongReviews = false
+  let hasStarRating = false
   let newsletterIndicators = false
+  let hasMailto = false
+  let hasTel = false
+  let hasTextPhone = false
+  let hasContactForm = false
+  let hasContactPageLink = false
+  let hasContactCta = false
   let totalText = 0
   let https = false
   let jsRenderedPages = 0
@@ -148,6 +161,15 @@ function aggregatePages(pages) {
     ;(data.social_links || []).forEach((s) => social.add(s))
     ;(data.emails || []).forEach((e) => emails.add(e))
     ;(data.phones || []).forEach((p) => phones.add(p))
+    ;(data.contact_links || []).forEach((l) => contactLinks.add(l))
+    ;(data.contact_ctas || []).forEach((c) => contactCtas.add(c))
+    if (data.has_mailto) hasMailto = true
+    if (data.has_tel) hasTel = true
+    if (data.has_text_phone) hasTextPhone = true
+    if (data.has_contact_form) hasContactForm = true
+    if (data.has_contact_page_link || page.page_type === 'contact') hasContactPageLink = true
+    if (data.has_contact_cta) hasContactCta = true
+    if (data.contact_placement) contactPlacements.add(data.contact_placement)
     ;(data.prices || []).forEach((p) => prices.add(p))
     ;(data.ctas || []).forEach((c) => ctas.add(c))
     ;(data.navigation_labels || []).forEach((n) => navLabels.add(n))
@@ -159,6 +181,16 @@ function aggregatePages(pages) {
     }
     if (data.platform && data.platform !== 'unknown') platform = data.platform
     if (data.review_indicators) reviewIndicators = true
+    if (data.has_review_schema || data.has_review_widget || data.has_testimonial_block) {
+      hasStrongReviews = true
+    }
+    if (data.has_star_rating) hasStarRating = true
+    if (data.review_strength === 'strong') reviewStrength = 'strong'
+    else if (data.review_strength === 'medium' && reviewStrength !== 'strong') reviewStrength = 'medium'
+    else if (data.review_indicators && reviewStrength === 'none') reviewStrength = 'weak'
+    ;(data.review_evidence || []).forEach((item) => {
+      reviewEvidence.push({ ...item, page_url: item.page_url || page.final_url || page.url || null })
+    })
     if (data.newsletter_indicators) newsletterIndicators = true
 
     const meta = data.extraction_meta || {}
@@ -212,11 +244,27 @@ function aggregatePages(pages) {
     high_confidence_products: highConfidenceProducts,
     services: [...services].slice(0, 15),
     social_channels: [...social],
-    contact_signals: { emails: [...emails], phones: [...phones] },
+    contact_signals: {
+      emails: [...emails],
+      phones: [...phones],
+      contact_links: [...contactLinks].slice(0, 10),
+      contact_ctas: [...contactCtas].slice(0, 10),
+      has_mailto: hasMailto,
+      has_tel: hasTel,
+      has_text_phone: hasTextPhone,
+      has_contact_form: hasContactForm,
+      has_contact_page_link: hasContactPageLink,
+      has_contact_cta: hasContactCta,
+      placements: [...contactPlacements].filter((p) => p && p !== 'unknown'),
+    },
     pricing_signals: [...prices].slice(0, 20),
     policy_signals: policies,
     trust_signals: {
-      review_indicators: reviewIndicators,
+      review_indicators: reviewIndicators || hasStrongReviews || hasStarRating,
+      review_strength: hasStrongReviews ? 'strong' : reviewStrength,
+      has_strong_reviews: hasStrongReviews,
+      has_star_rating: hasStarRating,
+      review_evidence: reviewEvidence.slice(0, 12),
       https,
       policy_count: Object.values(policies).filter(Boolean).length,
     },

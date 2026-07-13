@@ -224,6 +224,8 @@ function extractUxFeatures({
       horizontal_overflow_desktop: visualAudit?.summary?.horizontal_overflow_desktop,
       horizontal_overflow_mobile: visualAudit?.summary?.horizontal_overflow_mobile,
       overflow_severity_mobile: visualAudit?.summary?.overflow_severity_mobile,
+      overflow_px_mobile: visualAudit?.summary?.overflow_px_mobile,
+      overflow_offenders_mobile: visualAudit?.summary?.overflow_offenders_mobile || [],
       image_count: visualResult.scoring_inputs.image_count,
       nav_above_fold: visualResult.scoring_inputs.nav_link_count >= 2,
       cta_count: visualResult.scoring_inputs.cta_above_fold_count,

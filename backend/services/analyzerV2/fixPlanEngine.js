@@ -543,31 +543,74 @@ function runNoConversionPath(events) {
   }
 }
 
-function runMobileOverflow(events) {
-  const matched = claim(
+function runMobileOverflow(events, ctx) {
+  const severe = claim(
     events,
     ['overall', 'ux_ui_visual', 'technical_functionality', 'customer_attraction'],
-    /overflow|horizontal scroll/i,
+    /severe mobile layout overflow|mobile layout overflow detected: content width exceeds viewport/i,
   )
-  if (!matched.length) return null
-  return {
-    id: 'mobile_overflow',
-    title: 'Fix mobile layout overflow and horizontal scrolling.',
-    category: 'mobile',
-    why_it_matters:
-      'Horizontal scrolling or overflowing content on phones makes the site feel broken, which drives mobile visitors away before they ever see your offer.',
-    steps: [
-      'Test the homepage on a real phone or a 375px-wide browser emulator.',
-      'Find elements wider than the viewport (fixed-width images, tables, or containers).',
-      'Add responsive widths (max-width: 100%) to the affected elements.',
-      'Re-test at 375px and 414px widths to confirm the scrolling is gone.',
-      'Rescan your website once the overflow is fixed.',
-    ],
-    affected: ['ux_ui_visual'],
-    difficulty: 'hard',
-    forcedPriority: 'high',
-    matched,
+  const possible = claim(
+    events,
+    ['overall', 'ux_ui_visual', 'technical_functionality', 'customer_attraction'],
+    /possible mobile layout issue|minor mobile horizontal overflow/i,
+  )
+  const overflowProof = ctx.uxFeatures?.signals?.overflow_offenders_mobile || []
+  const overflowPx = ctx.uxFeatures?.signals?.overflow_px_mobile
+  const severity = ctx.uxFeatures?.signals?.overflow_severity_mobile
+
+  if (severe.length || (severity === 'major' && (overflowPx == null || overflowPx > 80))) {
+    const matched = severe.length
+      ? severe
+      : [{ text: `Severe mobile overflow measured${overflowPx != null ? ` (~${Math.round(overflowPx)}px)` : ''}.` }]
+    if (overflowProof.length) {
+      matched.push({
+        text: `Overflowing element: ${overflowProof[0].selector || 'unknown'}${overflowProof[0].text ? ` (“${overflowProof[0].text}”)` : ''}`,
+      })
+    }
+    return {
+      id: 'mobile_overflow',
+      title: 'Fix mobile layout overflow and horizontal scrolling.',
+      category: 'mobile',
+      why_it_matters:
+        'Horizontal scrolling or overflowing content on phones makes the site feel broken, which drives mobile visitors away before they ever see your offer.',
+      steps: [
+        'Test the homepage on a real phone or a 375px-wide browser emulator.',
+        'Find elements wider than the viewport (fixed-width images, tables, or containers).',
+        'Add responsive widths (max-width: 100%) to the affected elements.',
+        'Re-test at 375px and 414px widths to confirm the scrolling is gone.',
+        'Rescan your website once the overflow is fixed.',
+      ],
+      affected: ['ux_ui_visual'],
+      difficulty: 'hard',
+      forcedPriority: 'high',
+      confidence: overflowProof.length ? 'high' : 'medium',
+      matched,
+    }
   }
+
+  if (possible.length || severity === 'minor') {
+    return {
+      id: 'mobile_overflow_verify',
+      title: 'Verify a possible mobile layout issue.',
+      category: 'mobile',
+      why_it_matters:
+        'A possible overflow was flagged with lower confidence. Confirm it on a real phone before investing in a layout rewrite.',
+      steps: [
+        'Open the flagged page at ~390px width and check for horizontal scrolling.',
+        'If scrolling appears, identify the widest element and constrain it with max-width: 100%.',
+        'If no scrolling appears, no action is needed — rescan to clear the soft warning.',
+      ],
+      affected: ['ux_ui_visual'],
+      difficulty: 'medium',
+      forcedPriority: 'low',
+      confidence: 'low',
+      matched: possible.length
+        ? possible
+        : [{ text: `Possible mobile overflow to verify${overflowPx != null ? ` (~${Math.round(overflowPx)}px)` : ''}.` }],
+    }
+  }
+
+  return null
 }
 
 function runMobileReadability(events) {
@@ -624,23 +667,71 @@ function runWeakCta(events, ctx) {
 }
 
 function runMissingTrust(events, ctx) {
-  const matched = claim(
+  const absoluteMissing = claim(
     events,
     ['safety_trust', 'customer_attraction', 'offer_business_fit'],
-    /no phone number or email found|expected ecommerce policies|business name or identity is unclear|no testimonial or review proof|no customer reviews or testimonials|no reviews or local proof|no phone number or contact page detected|no review or testimonial proof|no shipping or returns policy signals found/i,
+    /no phone, email, contact form, or clear contact cta was found|no phone number or email found on crawled pages|expected ecommerce policies|business name or identity is unclear|no on-page reviews, testimonials, or rating markup|no testimonial or review proof visible|no customer reviews or testimonials|no reviews or local proof|no phone number or contact page detected|no review or testimonial proof|no shipping or returns policy signals found/i,
   )
-  if (!matched.length) return null
-  return {
-    id: 'missing_contact_trust',
-    title: 'Add stronger trust and proof signals.',
-    category: 'trust',
-    why_it_matters:
-      'New visitors decide whether to trust a business within seconds - missing contact details, policies, or proof makes that decision harder and increases bounce before visitors ever reach your offer.',
-    steps: TRUST_STEPS_BY_RUBRIC[ctx.rubric] || DEFAULT_TRUST_STEPS,
-    affected: ['safety_trust', 'customer_attraction'],
-    difficulty: 'easy',
-    matched,
+  const softContact = claim(
+    events,
+    ['safety_trust', 'customer_attraction'],
+    /contact path exists but may be hard|contact details were not clearly detected|a contact path exists \(form/i,
+  )
+  const softReviews = claim(
+    events,
+    ['safety_trust', 'customer_attraction'],
+    /review or rating signals exist but may need|possible review language was detected|review or testimonial proof was not clearly detected/i,
+  )
+
+  if (absoluteMissing.length) {
+    return {
+      id: 'missing_contact_trust',
+      title: 'Add stronger trust and proof signals.',
+      category: 'trust',
+      why_it_matters:
+        'New visitors decide whether to trust a business within seconds - missing contact details, policies, or proof makes that decision harder and increases bounce before visitors ever reach your offer.',
+      steps: TRUST_STEPS_BY_RUBRIC[ctx.rubric] || DEFAULT_TRUST_STEPS,
+      affected: ['safety_trust', 'customer_attraction'],
+      difficulty: 'easy',
+      confidence: 'high',
+      matched: absoluteMissing,
+    }
   }
+
+  if (softContact.length || softReviews.length) {
+    const matched = [...softContact, ...softReviews]
+    const isPlacement = softContact.some((e) => /hard for visitors to notice|weakly|contact path exists/i.test(e.text))
+    const isReviewPlacement = softReviews.some((e) => /placement|attribution|possible review language/i.test(e.text))
+    return {
+      id: 'strengthen_trust_visibility',
+      title: isReviewPlacement && !isPlacement
+        ? 'Improve review visibility and attribution.'
+        : isPlacement && !isReviewPlacement
+          ? 'Make the contact path more visible.'
+          : 'Strengthen trust signal visibility.',
+      category: 'trust',
+      why_it_matters:
+        'Trust signals that exist but are hard to notice still leave first-time visitors unsure. Clearer placement usually converts better than adding brand-new content.',
+      steps: isReviewPlacement
+        ? [
+            'Move your strongest review or testimonial near the primary offer above the fold.',
+            'Name the source (Google, customers, platform) next to each quote or rating.',
+            'Keep at least one fresh review visible on the homepage.',
+          ]
+        : [
+            'Place a clickable phone number or email in the header.',
+            'Repeat a clear Contact / Book / Quote CTA above the fold.',
+            'Keep footer contact details as a backup, not the only path.',
+          ],
+      affected: ['safety_trust', 'customer_attraction'],
+      difficulty: 'easy',
+      forcedPriority: 'medium',
+      confidence: 'medium',
+      matched,
+    }
+  }
+
+  return null
 }
 
 function runThinContent(events, ctx) {
@@ -918,6 +1009,11 @@ const TIER_SEQUENCE = [
     next: 'Unlocked now - with the basics secure, fix mobile next so the rest of your fixes are actually visible.',
   },
   {
+    ids: ['mobile_overflow_verify', 'strengthen_trust_visibility'],
+    first: 'Start here - these are lower-confidence improvements worth verifying before a full rebuild.',
+    next: 'Unlocked now - verify these softer findings once the critical blockers are handled.',
+  },
+  {
     ids: ['weak_cta', 'missing_contact_trust', 'unclear_offer'],
     first: 'Do this first - without one clear next step, visitors read the page and leave instead of converting.',
     next: 'Unlocked now - visitors can safely reach and read the site, so give them an obvious way to act next.',
@@ -972,6 +1068,7 @@ function finalizeItem(raw, ctx) {
     affected_scores: affected,
     priority,
     difficulty: raw.difficulty || 'medium',
+    confidence: raw.confidence || (raw.matched?.length >= 2 ? 'medium' : 'medium'),
     source: 'analyzer',
     related_pages: relatedPagesFor(raw.category, ctx.pages),
     research_basis: research ? sanitize([research])[0] || null : null,
@@ -1080,10 +1177,16 @@ function buildRetainAndOperateItems({
   let rank = nextRankStart
   const trustProblems = categoryDetails?.safety_trust?.problems || []
   const attractionProblems = categoryDetails?.customer_attraction?.problems || []
+  const reviewStrength = aggregated?.trust_signals?.review_strength
+  const hasStrongReviews =
+    Boolean(aggregated?.trust_signals?.has_strong_reviews) || reviewStrength === 'strong'
+  const absoluteReviewMissing = [...trustProblems, ...attractionProblems].some((line) =>
+    /no on-page reviews, testimonials, or rating markup was detected/i.test(line),
+  )
   const reviewsMissing =
-    !aggregated?.trust_signals?.review_indicators ||
-    trustProblems.some((line) => /review|testimonial/i.test(line)) ||
-    attractionProblems.some((line) => /review|testimonial/i.test(line))
+    !hasStrongReviews &&
+    absoluteReviewMissing &&
+    !aggregated?.trust_signals?.review_indicators
   if (reviewsMissing && !existingIds.has('retain_reviews_loop')) {
     items.push({
       id: 'retain_reviews_loop',
@@ -1091,11 +1194,13 @@ function buildRetainAndOperateItems({
       pillar: 'retain',
       title: 'Build a review and referral follow-up loop.',
       category: 'trust',
+      confidence: 'medium',
       why_it_matters:
         'Retention and referrals start right after a successful customer interaction. A consistent review and referral loop compounds trust and lowers customer acquisition cost over time.',
       evidence: sanitize([
         trustProblems.find((line) => /review|testimonial/i.test(line)) ||
-          'The analyzer found weak or missing review proof on key pages.',
+          attractionProblems.find((line) => /review|testimonial/i.test(line)) ||
+          'No on-page review markup was detected with high confidence.',
       ]),
       steps: [
         'Create a same-day follow-up template asking for a review after each completed order or service.',
@@ -1117,10 +1222,17 @@ function buildRetainAndOperateItems({
     })
   }
 
-  const hasPhone = Boolean(aggregated?.contact_signals?.phones?.length)
-  const hasEmail = Boolean(aggregated?.contact_signals?.emails?.length)
-  const missingResponseOps = !hasPhone || !hasEmail
-  const policyCount = Number(aggregated?.policy_signals?.policy_count || 0)
+  const contact = aggregated?.contact_signals || {}
+  const hasPhone = Boolean(contact.phones?.length || contact.has_tel || contact.has_text_phone)
+  const hasEmail = Boolean(contact.emails?.length || contact.has_mailto)
+  const hasContactPath =
+    hasPhone ||
+    hasEmail ||
+    contact.has_contact_form ||
+    contact.has_contact_page_link ||
+    contact.has_contact_cta
+  const missingResponseOps = !hasContactPath
+  const policyCount = Number(aggregated?.policy_signals?.policy_count || aggregated?.trust_signals?.policy_count || 0)
   const policyWeak = ['ecommerce_store', 'online_plus_offline_store'].includes(rubric)
     ? policyCount < 2
     : false
@@ -1131,11 +1243,12 @@ function buildRetainAndOperateItems({
       pillar: 'operate',
       title: 'Set a response-speed and service-handling playbook.',
       category: 'functionality',
+      confidence: missingResponseOps ? 'high' : 'medium',
       why_it_matters:
         'Growth stalls when the business cannot respond quickly and consistently to incoming demand. A clear response playbook protects conversion gains as lead volume grows.',
       evidence: sanitize([
-        !hasPhone || !hasEmail
-          ? 'The analyzer found limited visible contact routes for rapid response.'
+        missingResponseOps
+          ? 'No clear contact path (phone, email, form, or contact CTA) was detected for rapid response.'
           : null,
         policyWeak
           ? 'Policy coverage appears thin for a business model that needs clear fulfillment or return expectations.'

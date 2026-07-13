@@ -27,6 +27,7 @@ const { buildBenchmarkComparison, humanEquivalentFromOverall } = require('./benc
 const { buildUxFeatureSnapshot } = require('../uxFeatureExtractor')
 const { buildFixPlan, buildGrowthPlan } = require('./fixPlanEngine')
 const { buildEvidenceStrengths, buildEvidenceRisks } = require('./evidenceNarrator')
+const { assessMobileOverflow } = require('./evidenceDetectors')
 
 function computeConfidenceScore({ pages, visualAudit, safetyResult, aggregated, crawlHealth, benchmark }) {
   let score = 35
@@ -76,6 +77,7 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
       safetyResult,
       crawlHealth,
       rubric,
+      signals,
     }),
     technical_functionality: scoreTechnicalFunctionality({
       aggregated,
@@ -127,10 +129,11 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
 
   const noReadableContent =
     (aggregated.content_signals?.total_text_length || 0) < 120 && pages.length > 0
-  const severeMobileOverflow =
-    uxFeatures?.signals?.overflow_severity_mobile === 'major' ||
-    uxFeatures?.signals?.horizontal_overflow_mobile ||
-    (uxFeatures?.layout_balance_score != null && uxFeatures.layout_balance_score < 45)
+  const overflowAssessment = assessMobileOverflow({
+    uxFeatures,
+    visualAudit: options.visualAudit,
+  })
+  const severeMobileOverflow = overflowAssessment.should_cap_score
   const severeBusinessMismatch = detectSevereBusinessMismatch(rubric, aggregated, mismatchWarnings)
   const noConversionPath = detectNoConversionPath(signals, rubric)
   const safetyStatus =
