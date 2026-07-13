@@ -101,7 +101,7 @@ function computeVisitorAppealDownsides(uxFeatures) {
         'layout_cleanliness',
         'Layout cleanliness',
         3,
-        `Layout balance ${layout}/100 — cluttered, misaligned, or hard to scan.`,
+        `Layout balance ${layout}/100 — sections feel crowded or poorly spaced.`,
       )
     } else if (layout < 52) {
       addPenalty(
@@ -166,21 +166,18 @@ function computeVisitorAppealDownsides(uxFeatures) {
       2,
       overflowAssessment.problem || 'Horizontal scrolling or overflow on mobile frustrates visitors.',
     )
-  } else if (overflowAssessment.claim === 'possible_overflow') {
+  } else if (
+    overflowAssessment.claim === 'possible_overflow' &&
+    uxFeatures.signals?.horizontal_overflow_mobile === true
+  ) {
     addPenalty(
       'mobile_layout',
       'Mobile layout usability',
       1,
       overflowAssessment.problem || 'Possible mobile layout issue to verify.',
     )
-  } else if (overflowSeverity === 'major') {
-    addPenalty(
-      'mobile_layout',
-      'Mobile layout usability',
-      2,
-      'Horizontal scrolling or overflow on mobile frustrates visitors.',
-    )
   }
+  // Do not penalize "overflow" from layout_balance alone, and never when audit says no overflow.
 
   const primaryNav = uxFeatures.primary_nav_link_count ?? uxFeatures.signals?.primary_nav_link_count
   if (Number.isFinite(primaryNav) && primaryNav > PRIMARY_NAV_OVERCROWD_THRESHOLD) {
@@ -192,8 +189,13 @@ function computeVisitorAppealDownsides(uxFeatures) {
     )
   }
 
+  const misalignConfidence =
+    uxFeatures.visual_evidence_summary?.misalignment_confidence ??
+    uxFeatures.signals?.misalignment_confidence ??
+    0
   const misaligned = uxFeatures.misaligned_image_count ?? 0
-  if (misaligned >= 3) {
+  // Never flag alignment when visual evidence confidence is 0 / missing
+  if (misaligned >= 3 && Number(misalignConfidence) > 0) {
     addPenalty(
       'misaligned_images',
       'Image alignment',
@@ -205,7 +207,8 @@ function computeVisitorAppealDownsides(uxFeatures) {
   const layoutProblems = uxFeatures.layout_problems || []
   const visualProblems = uxFeatures.visual_problems || []
   const severeLayoutNotes = [...layoutProblems, ...visualProblems].filter((note) =>
-    /overflow|crowd|clutter|outdated|unpolished|misaligned|dense|hard to scan|hard to read/i.test(note),
+    /crowd|clutter|outdated|unpolished|dense|hard to scan|hard to read/i.test(note) &&
+    !/overflow|horizontal scroll/i.test(note),
   )
   if (severeLayoutNotes.length >= 3 && total < 3) {
     addPenalty(
@@ -603,7 +606,7 @@ function scoreUxUiVisual({ pages, aggregated, uxFeatures, visualAudit, rubric, s
     detail.strengths.push(features.readability_strengths[0])
   }
 
-  const overflow = assessMobileOverflow({ uxFeatures: features })
+  const overflow = assessMobileOverflow({ uxFeatures: features, visualAudit })
   if (overflow.claim === 'severe_overflow') {
     detail.problems.push(overflow.problem)
     detail.recommended_fixes.push(overflow.fix)
@@ -615,7 +618,10 @@ function scoreUxUiVisual({ pages, aggregated, uxFeatures, visualAudit, rubric, s
       proof: overflow.proof,
       confidence: overflow.confidence,
     })
-  } else if (overflow.claim === 'possible_overflow') {
+  } else if (
+    overflow.claim === 'possible_overflow' &&
+    features.signals?.horizontal_overflow_mobile === true
+  ) {
     detail.problems.push(overflow.problem)
     detail.recommended_fixes.push(overflow.fix)
     detail.evidence.push({
@@ -626,16 +632,8 @@ function scoreUxUiVisual({ pages, aggregated, uxFeatures, visualAudit, rubric, s
       proof: overflow.proof,
       confidence: 'low',
     })
-  } else if (overflow.claim === 'weak_layout_balance') {
-    detail.problems.push(overflow.problem)
-    detail.evidence.push({
-      signal: 'layout_balance',
-      strength: 'weak',
-      label: 'Layout balance',
-      detail: overflow.problem,
-      confidence: 'low',
-    })
   }
+  // Never emit overflow claims from layout_balance_score alone
 
   if ((features.primary_nav_link_count || features.nav_link_count || 0) > 6) {
     detail.problems.push('Top navigation has many primary links and may feel overcrowded.')
@@ -811,11 +809,16 @@ function scoreCustomerAttraction({ aggregated, pages, signals, rubric, uxFeature
   }
 
   const downsides = computeVisitorAppealDownsides(uxFeatures)
+  const overflowAssessment = assessMobileOverflow({ uxFeatures })
   for (const penalty of downsides.items) {
     breakdown.push(penalty)
     detail.problems.push(`${penalty.label}: ${penalty.note}`)
-    if (/layout|overflow|clutter|misaligned/i.test(penalty.label)) {
-      detail.recommended_fixes.push('Simplify layout, fix mobile overflow, and align images to a clear grid.')
+    if (penalty.key === 'mobile_layout' && overflowAssessment.is_severe) {
+      detail.recommended_fixes.push('Fix mobile CSS overflow and test on a narrow viewport.')
+    } else if (penalty.key === 'misaligned_images') {
+      detail.recommended_fixes.push('Align images to a consistent grid and crop to matching aspect ratios.')
+    } else if (penalty.key === 'layout_cleanliness' || /clutter/i.test(penalty.label)) {
+      detail.recommended_fixes.push('Simplify spacing and section structure so the page is easier to scan.')
     } else if (/readability|pleasantness/i.test(penalty.label)) {
       detail.recommended_fixes.push('Shorten paragraphs, improve contrast, and add subheadings for easier reading.')
     } else if (/appeal|polish|appearance/i.test(penalty.label)) {

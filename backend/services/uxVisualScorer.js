@@ -555,6 +555,7 @@ function scoreLayoutBalance(ctx) {
     conversionPathScore,
     visualEvidenceIssues,
     highMobileTextDensity,
+    alignmentConfidence,
   } = ctx
   const model = resolveCanonicalBusinessModel(businessModel) || businessModel
   const isEcommerce = ECOMMERCE_MODELS.has(model)
@@ -568,7 +569,7 @@ function scoreLayoutBalance(ctx) {
   const layoutFitRatio =
     imageCount > 0 ? layoutFittedImageCount / imageCount : layoutFittedImageCount > 0 ? 1 : 0
 
-  if (mobileOverflowSeverity === 'major' && (ctx.overflowPxMobile == null || ctx.overflowPxMobile > 80) && (ctx.overflowOffendersMobile || []).length > 0) {
+  if (mobileOverflowSeverity === 'major' && mobileOverflow === true && (ctx.overflowPxMobile == null || ctx.overflowPxMobile > 80) && (ctx.overflowOffendersMobile || []).length > 0) {
     score -= 32
     problems.push(
       `Severe mobile layout overflow detected (~${Math.round(ctx.overflowPxMobile || 0)}px): content width exceeds viewport.`,
@@ -581,21 +582,18 @@ function scoreLayoutBalance(ctx) {
       offenders: (ctx.overflowOffendersMobile || []).slice(0, 3),
       confidence: 'high',
     })
-  } else if (mobileOverflowSeverity === 'major' || mobileOverflow) {
-    score -= 10
+  } else if (mobileOverflow === true && (mobileOverflowSeverity === 'major' || mobileOverflowSeverity === 'minor')) {
+    score -= 8
     problems.push('Possible mobile layout issue to verify — overflow was measured without strong element-level proof.')
     evidence.push({
       type: 'overflow',
       viewport: 'mobile',
-      severity: mobileOverflowSeverity || 'major',
+      severity: mobileOverflowSeverity || 'minor',
       overflow_px: ctx.overflowPxMobile,
       confidence: 'low',
     })
-  } else if (mobileOverflowSeverity === 'minor') {
-    score -= 6
-    problems.push('Minor mobile horizontal overflow detected.')
-    evidence.push({ type: 'overflow', viewport: 'mobile', severity: 'minor', confidence: 'low' })
   }
+  // Never treat layout_balance or false horizontal_overflow as overflow
 
   if (desktopOverflowSeverity === 'major' || desktopOverflow) {
     score -= 18
@@ -613,10 +611,6 @@ function scoreLayoutBalance(ctx) {
     score -= 2
   }
 
-  const highConfidenceAlignment = (visualEvidenceIssues || []).filter(
-    (issue) => issue.category === 'image_alignment' && issue.confidence >= HIGH_CONFIDENCE,
-  )
-
   if (textDensity > 0.0035 && effectiveSections < 2 && highMobileTextDensity) {
     score -= 14
     const densityIssue = (visualEvidenceIssues || []).find((issue) => issue.category === 'mobile_text_density')
@@ -627,10 +621,17 @@ function scoreLayoutBalance(ctx) {
     }
   }
 
-  if (imageCount >= 3 && layoutFitRatio < 0.3 && !isEcommerce) {
+  const alignmentIssues = (visualEvidenceIssues || []).filter(
+    (issue) => issue.category === 'image_alignment' && issue.confidence >= MEDIUM_CONFIDENCE,
+  )
+  const highConfidenceAlignment = alignmentIssues.filter((issue) => issue.confidence >= HIGH_CONFIDENCE)
+  // If alignment confidence is explicitly 0 / missing, do not invent alignment problems from counts alone
+  const alignmentConfidenceOk = Number(alignmentConfidence || 0) > 0 || highConfidenceAlignment.length > 0
+
+  if (imageCount >= 3 && layoutFitRatio < 0.3 && !isEcommerce && alignmentConfidenceOk) {
     score -= 16
     problems.push('Images look scattered or poorly placed relative to the layout grid.')
-    evidence.push({ type: 'image_layout_fit', ratio: layoutFitRatio })
+    evidence.push({ type: 'image_layout_fit', ratio: layoutFitRatio, confidence: alignmentConfidence || 0 })
   } else if (!isEcommerce && imageCount >= 2 && highConfidenceAlignment.length > 0) {
     score -= 12
     problems.push(highConfidenceAlignment[0].message)

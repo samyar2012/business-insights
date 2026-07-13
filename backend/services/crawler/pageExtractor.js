@@ -646,18 +646,28 @@ function extractEmailsAndContacts($) {
   })
 
   const text = cleanText($('body').text())
-  const normalizedText = text.replace(/[\u00A0\u202F\u2007\u2060]/g, ' ')
+  const normalizedText = text
+    .replace(/[\u00A0\u202F\u2007\u2060]/g, ' ')
+    .replace(/[\u2010-\u2015\u2212]/g, '-') // unicode dashes → ASCII hyphen
   const emailMatches = normalizedText.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) || []
   emailMatches.slice(0, 5).forEach((e) => emails.add(e))
 
   const phoneMatches = normalizedText.match(PHONE_TEXT_PATTERN) || []
-  for (const match of phoneMatches.slice(0, 5)) {
+  for (const match of phoneMatches.slice(0, 8)) {
     const digits = match.replace(/\D/g, '')
     if (digits.length >= 7 && digits.length <= 15) {
       phones.add(match.trim())
       hasTextPhone = true
       phoneMethods.add('text')
     }
+  }
+
+  // Digits separated only by spaces/dots (common in headers): 310 923 1028
+  const spacedPhone = normalizedText.match(/\b(\d{3})\s+(\d{3})\s+(\d{4})\b/g) || []
+  for (const match of spacedPhone.slice(0, 5)) {
+    phones.add(match.trim())
+    hasTextPhone = true
+    phoneMethods.add('text')
   }
 
   // Prefer placement from the region that actually contains the phone/email text
@@ -926,6 +936,35 @@ function extractPage(html, pageUrl, allowedHostname) {
   const links = extractLinks($, pageUrl, allowedHostname)
   const contacts = extractEmailsAndContacts($)
   const jsonLd = extractJsonLd(cheerio.load(rawHtml))
+  // Schema.org telephone / email often present even when not linked with tel:/mailto:
+  const collectLdContact = (nodes) => {
+    const list = Array.isArray(nodes) ? nodes : nodes ? [nodes] : []
+    for (const node of list) {
+      if (!node || typeof node !== 'object') continue
+      const tel = node.telephone || node.phone
+      if (tel) {
+        const value = String(tel).trim()
+        if (value) {
+          contacts.phones.push(value)
+          contacts.has_text_phone = true
+          if (!contacts.phone_methods.includes('schema')) contacts.phone_methods.push('schema')
+        }
+      }
+      const email = node.email
+      if (email) {
+        const value = String(email).trim()
+        if (value) {
+          contacts.emails.push(value)
+          contacts.has_mailto = contacts.has_mailto || false
+        }
+      }
+      if (node.contactPoint) collectLdContact(node.contactPoint)
+      if (Array.isArray(node['@graph'])) collectLdContact(node['@graph'])
+    }
+  }
+  collectLdContact(jsonLd)
+  contacts.phones = [...new Set(contacts.phones)]
+  contacts.emails = [...new Set(contacts.emails)]
   const openGraph = extractOpenGraph($)
   const platform = detectPlatform($, rawHtml, pageUrl)
 

@@ -504,16 +504,23 @@ function runBusinessModelMismatch(events, ctx) {
   if (!matched.length) return null
 
   const aggregated = ctx?.aggregated || {}
+  const pages = ctx?.pages || []
+  const pageText = pages.map((p) => String(p.extracted_text || '')).join(' ')
+  const ctaBlob = (aggregated.content_signals?.ctas || []).join(' ')
   const hasServiceConversion =
     Boolean(aggregated.contact_signals?.phones?.length) ||
     Boolean(aggregated.contact_signals?.has_tel) ||
+    Boolean(aggregated.contact_signals?.has_text_phone) ||
     Boolean(aggregated.contact_signals?.has_contact_cta) ||
-    /quote|consultation|estimate|book|schedule/i.test(
-      (aggregated.content_signals?.ctas || []).join(' '),
-    ) ||
-    (aggregated.services || []).length > 0
+    Boolean(aggregated.trust_signals?.review_indicators) ||
+    (aggregated.services || []).length > 0 ||
+    /quote|consultation|estimate|book now|schedule|free in-home|in-home consult|request (a )?consult/i.test(
+      `${ctaBlob} ${pageText}`,
+    )
+
+  // Hybrid product+service sites (blinds, shades, cleaning, etc.) are not mismatches
   if (
-    ['online_plus_physical_service', 'local_service_business', 'online_gallery_physical_service'].includes(
+    ['online_plus_physical_service', 'local_service_business', 'online_gallery_physical_service', 'online_plus_offline_store'].includes(
       ctx?.rubric,
     ) &&
     hasServiceConversion
@@ -564,6 +571,16 @@ function runNoConversionPath(events) {
 }
 
 function runMobileOverflow(events, ctx) {
+  const signals = ctx.uxFeatures?.signals || {}
+  // Hard contradiction gate: visual audit said no overflow → never recommend overflow fixes
+  if (
+    signals.horizontal_overflow_mobile === false ||
+    signals.overflow_severity_mobile === 'none' ||
+    signals.overflow_px_mobile === 0
+  ) {
+    return null
+  }
+
   const severe = claim(
     events,
     ['overall', 'ux_ui_visual', 'technical_functionality', 'customer_attraction'],
@@ -572,11 +589,15 @@ function runMobileOverflow(events, ctx) {
   const possible = claim(
     events,
     ['overall', 'ux_ui_visual', 'technical_functionality', 'customer_attraction'],
-    /possible mobile layout issue|minor mobile horizontal overflow|overflow was measured without strong element-level proof/i,
+    /possible mobile layout issue|minor mobile horizontal overflow/i,
   )
-  const overflowProof = ctx.uxFeatures?.signals?.overflow_offenders_mobile || []
-  const overflowPx = ctx.uxFeatures?.signals?.overflow_px_mobile
-  const severity = ctx.uxFeatures?.signals?.overflow_severity_mobile
+  const overflowProof = signals.overflow_offenders_mobile || []
+  const overflowPx = signals.overflow_px_mobile
+  const severity = signals.overflow_severity_mobile
+  const horizontal = signals.horizontal_overflow_mobile === true
+
+  // Require measured horizontal overflow — never invent from layout_balance or severity alone
+  if (!horizontal) return null
 
   if (severe.length && overflowProof.length && severity === 'major') {
     const matched = [...severe]
@@ -605,7 +626,7 @@ function runMobileOverflow(events, ctx) {
     }
   }
 
-  if (severe.length || possible.length || severity === 'minor' || severity === 'major') {
+  if (possible.length || severity === 'minor' || (severity === 'major' && !overflowProof.length)) {
     return {
       id: 'mobile_overflow_verify',
       title: 'Verify a possible mobile layout issue.',
@@ -621,10 +642,8 @@ function runMobileOverflow(events, ctx) {
       difficulty: 'medium',
       forcedPriority: 'low',
       confidence: 'low',
-      matched: (possible.length ? possible : severe).length
-        ? possible.length
-          ? possible
-          : severe
+      matched: possible.length
+        ? possible
         : [{ text: `Possible mobile overflow to verify${overflowPx != null ? ` (~${Math.round(overflowPx)}px)` : ''}.` }],
     }
   }
@@ -884,9 +903,12 @@ function runVisualPolish(events) {
   const matched = claim(
     events,
     ['customer_attraction'],
-    /overall visual appeal|layout cleanliness|polish & modern feel|how easy it is to scan|multiple layout red flags/i,
+    /overall visual appeal|polish & modern feel/i,
   )
   if (!matched.length) return null
+  // Require concrete scored penalty text — skip generic layout cleanliness filler
+  const concrete = matched.filter((e) => /visual appeal index|display polish|overall visual score/i.test(e.text))
+  if (!concrete.length) return null
   return {
     id: 'visual_polish',
     title: 'Refresh visual polish and layout cleanliness.',
@@ -901,12 +923,23 @@ function runVisualPolish(events) {
     ],
     affected: ['customer_attraction', 'ux_ui_visual'],
     difficulty: 'medium',
-    matched,
+    confidence: 'medium',
+    matched: concrete,
   }
 }
 
-function runMisalignedImages(events) {
-  const matched = claim(events, ['customer_attraction'], /image alignment|images look misaligned/i)
+function runMisalignedImages(events, ctx) {
+  const alignConfidence =
+    ctx?.uxFeatures?.visual_evidence_summary?.misalignment_confidence ??
+    ctx?.uxFeatures?.signals?.misalignment_confidence ??
+    0
+  if (!(Number(alignConfidence) > 0)) return null
+
+  const matched = claim(
+    events,
+    ['customer_attraction'],
+    /^image alignment:|images look misaligned or poorly fitted/i,
+  )
   if (!matched.length) return null
   return {
     id: 'misaligned_images',
@@ -922,6 +955,7 @@ function runMisalignedImages(events) {
     ],
     affected: ['customer_attraction'],
     difficulty: 'medium',
+    confidence: Number(alignConfidence) >= 0.6 ? 'high' : 'medium',
     matched,
   }
 }
@@ -1108,23 +1142,48 @@ function passesEvidenceGate(item, ctx = {}) {
   if (!item.why_it_matters || !Array.isArray(item.steps) || item.steps.length === 0) return false
   if (!item.confidence) return false
 
-  // Low-confidence findings may only appear as explicit verify items
+  // Drop filler / unverified soft items from the customer-facing roadmap
+  if (/^pillar_backfill_/i.test(item.id || '')) return false
+  if (item.id === 'operate_response_playbook' && item.confidence !== 'high') return false
   if (item.confidence === 'low' && !/verify|_verify$/i.test(item.id || '')) return false
 
+  const signals = ctx.uxFeatures?.signals || {}
   const strengths = collectStrengthBlob(ctx.categoryDetails)
   const evidenceBlob = item.evidence.join(' | ')
   const titleBlob = `${item.title} ${item.why_it_matters}`
 
-  // Never recommend "no phone/contact" when strengths/evidence show contact exists
+  // Visual audit contradiction: never keep overflow actions when audit says no overflow
+  if (/overflow|horizontal scroll/i.test(`${item.id} ${titleBlob} ${evidenceBlob}`)) {
+    if (
+      signals.horizontal_overflow_mobile === false ||
+      signals.overflow_severity_mobile === 'none' ||
+      signals.overflow_px_mobile === 0
+    ) {
+      return false
+    }
+    if (item.id === 'mobile_overflow' && item.confidence !== 'high') return false
+    if (item.id === 'mobile_overflow' && !(signals.overflow_offenders_mobile || []).length) return false
+  }
+
+  // Image alignment contradiction: confidence 0 means drop
+  if (/misaligned_images|image alignment|poorly fitted images/i.test(`${item.id} ${titleBlob}`)) {
+    const alignConfidence =
+      ctx.uxFeatures?.visual_evidence_summary?.misalignment_confidence ??
+      signals.misalignment_confidence ??
+      0
+    if (!(Number(alignConfidence) > 0)) return false
+  }
+
+  // Never recommend "no phone/contact" when contact proof exists
   if (/no phone|no contact|missing contact|add stronger trust/i.test(titleBlob)) {
     if (
       /contact information .*discoverable|phone number is visible|clickable phone|phones=true|tel_link|visual_tel|visual_text/i.test(
         `${strengths} ${evidenceBlob}`,
       ) ||
       (ctx.aggregated?.contact_signals?.phones || []).length > 0 ||
-      ctx.aggregated?.contact_signals?.has_tel
+      ctx.aggregated?.contact_signals?.has_tel ||
+      ctx.aggregated?.contact_signals?.has_text_phone
     ) {
-      // Allow soft visibility items; block absolute absence claims
       if (/no phone|no contact found|across crawled pages/i.test(evidenceBlob)) return false
     }
   }
@@ -1142,8 +1201,13 @@ function passesEvidenceGate(item, ctx = {}) {
     }
   }
 
-  // Never top-rank mobile overflow without element proof
-  if (item.id === 'mobile_overflow' && item.confidence !== 'high') return false
+  // Business model mismatch contradicted by hybrid service conversion signals
+  if (item.id === 'business_model_mismatch') {
+    const blob = `${(ctx.aggregated?.content_signals?.ctas || []).join(' ')} ${(ctx.pages || [])
+      .map((p) => p.extracted_text || '')
+      .join(' ')}`
+    if (/quote|consultation|estimate|book now|schedule|free in-home/i.test(blob)) return false
+  }
 
   return true
 }
@@ -1419,11 +1483,16 @@ function buildGrowthPlan(input = {}) {
     nextRankStart: growthFromFixes.length + 1,
   })
 
-  const merged = [...growthFromFixes, ...extraItems].slice(0, 12)
-  const withCoverage = ensurePillarCoverage(merged, rubric)
+  const merged = [...growthFromFixes, ...extraItems]
+    .filter((item) => item.confidence && item.confidence !== 'low')
+    .filter((item) => !/^pillar_backfill_/i.test(item.id || ''))
+    .slice(0, 12)
+  // Do not backfill empty pillars with generic filler — only keep evidence-backed items
+  const withCoverage = merged
 
   return withCoverage.map((item, index) => {
     const rank = index + 1
+    const confidence = item.confidence || 'medium'
     const normalized = {
       ...item,
       rank,
@@ -1431,7 +1500,7 @@ function buildGrowthPlan(input = {}) {
       action: item.title,
       reason: item.why_it_matters,
       expected_impact: item.expected_score_lift || item.expected_business_outcome,
-      confidence: item.confidence || 'medium',
+      confidence,
     }
     return {
       ...normalized,

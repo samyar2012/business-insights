@@ -531,9 +531,10 @@ function assessMobileOverflow({ uxFeatures = {}, visualAudit = null } = {}) {
     summary.overflow_px_mobile ??
     mobileMetrics.overflow_px ??
     null
-  const horizontal =
-    severity === 'major' ||
-    (signals.horizontal_overflow_mobile === true && severity !== 'none' && severity !== 'minor')
+  const horizontalFlag =
+    signals.horizontal_overflow_mobile ??
+    summary.horizontal_overflow_mobile ??
+    mobileMetrics.horizontal_overflow
 
   const offenders =
     signals.overflow_offenders_mobile ||
@@ -548,22 +549,10 @@ function assessMobileOverflow({ uxFeatures = {}, visualAudit = null } = {}) {
     null
 
   const viewport = { width: 390, height: 844 }
-  const hasMeasuredOverflow =
-    Number.isFinite(overflowPx) ||
-    severity === 'major' ||
-    severity === 'minor' ||
-    Boolean(signals.horizontal_overflow_mobile) ||
-    Boolean(summary.horizontal_overflow_mobile)
 
-  const layoutOnlyWeak =
-    !hasMeasuredOverflow &&
-    uxFeatures.layout_balance_score != null &&
-    uxFeatures.layout_balance_score < 55
-
-  let confidence = 'none'
-  let claim = 'no_overflow'
-  let problem = null
-  let fix = null
+  // Explicit visual-audit contradiction: never invent overflow when the audit says false/none
+  const auditDeniesOverflow =
+    horizontalFlag === false || severity === 'none' || overflowPx === 0
 
   const proof = {
     page_url: pageUrl,
@@ -575,28 +564,39 @@ function assessMobileOverflow({ uxFeatures = {}, visualAudit = null } = {}) {
     confidence: 'none',
   }
 
-  if (severity === 'major' && (overflowPx == null || overflowPx > 80) && offenders.length > 0) {
+  if (auditDeniesOverflow) {
+    return {
+      claim: 'no_overflow',
+      confidence: 'none',
+      problem: null,
+      fix: null,
+      severity: 'none',
+      overflow_px: overflowPx,
+      is_severe: false,
+      should_cap_score: false,
+      should_top_fix: false,
+      proof: { ...proof, confidence: 'none', contradicted_by_visual_audit: true },
+    }
+  }
+
+  let confidence = 'none'
+  let claim = 'no_overflow'
+  let problem = null
+  let fix = null
+
+  // Only claim overflow when the audit measured horizontal overflow
+  if (horizontalFlag === true && severity === 'major' && (overflowPx == null || overflowPx > 80) && offenders.length > 0) {
     confidence = 'high'
     claim = 'severe_overflow'
     problem = `Severe mobile layout overflow detected${overflowPx != null ? ` (~${Math.round(overflowPx)}px)` : ''}.`
     fix = 'Fix elements wider than the mobile viewport and retest at ~390px width.'
-  } else if (severity === 'major' && (overflowPx == null || overflowPx > 80)) {
-    // Measured major overflow but no element-level proof — do not treat as top fix
-    confidence = 'low'
-    claim = 'possible_overflow'
-    problem = `Possible mobile layout issue to verify${overflowPx != null ? ` (~${Math.round(overflowPx)}px overflow)` : ''} — element-level proof was not captured.`
-    fix = 'Check the homepage on a phone-width viewport and fix any element that forces horizontal scrolling.'
-  } else if (severity === 'minor' || (signals.horizontal_overflow_mobile && severity !== 'major')) {
+  } else if (horizontalFlag === true && (severity === 'major' || severity === 'minor')) {
     confidence = 'low'
     claim = 'possible_overflow'
     problem = `Possible mobile layout issue to verify${overflowPx != null ? ` (~${Math.round(overflowPx)}px overflow)` : ''}.`
     fix = 'Check the homepage on a phone-width viewport and fix any element that forces horizontal scrolling.'
-  } else if (layoutOnlyWeak) {
-    confidence = 'low'
-    claim = 'weak_layout_balance'
-    problem = 'Layout balance looks weak on the audited page; verify spacing and alignment on mobile.'
-    fix = 'Review mobile spacing and alignment; confirm there is no horizontal scrolling.'
   }
+  // Intentionally do NOT treat low layout_balance_score as overflow
 
   proof.confidence = confidence
 

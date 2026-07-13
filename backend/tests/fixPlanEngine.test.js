@@ -158,7 +158,7 @@ describe('fixPlanEngine unit clusters', () => {
       customer_attraction: categoryDetail({
         score: 15,
         max: 20,
-        problems: ['Images look misaligned across the homepage grid.'],
+        problems: ['Image alignment: 4 images look misaligned or poorly fitted to the layout.'],
       }),
     }
     const uxFeatures = {
@@ -166,6 +166,8 @@ describe('fixPlanEngine unit clusters', () => {
         'Largest text block is 1284 characters and lacks section breaks.',
         'Hero text is dense: largest above-fold block is 910 characters.',
       ],
+      visual_evidence_summary: { misalignment_confidence: 0.8 },
+      signals: { misalignment_confidence: 0.8 },
     }
 
     const plan = buildFixPlan({ categoryDetails, uxFeatures, capReasons: [], rubric: 'ecommerce_store', pages: [] })
@@ -184,6 +186,7 @@ describe('fixPlanEngine unit clusters', () => {
     for (const item of plan) {
       assert.ok(typeof item.unlock_reason === 'string' && item.unlock_reason.length > 10)
       assert.ok(!/^(critical|high|medium|low)$/i.test(item.unlock_reason.trim()))
+      assert.ok(item.confidence, `expected confidence on ${item.id}`)
     }
   })
 
@@ -541,7 +544,7 @@ describe('fixPlanEngine + evidenceNarrator integration via calculateAnalyzerV2Sc
     }
   })
 
-  it('includes all four growth pillars in the roadmap', () => {
+  it('includes evidence-backed growth steps with confidence labels (no empty pillar filler)', () => {
     const scores = calculateAnalyzerV2Scores(
       trustGapAggregated,
       { store_url: 'https://trustgap.example.com', business_model: 'ecommerce_store' },
@@ -552,12 +555,13 @@ describe('fixPlanEngine + evidenceNarrator integration via calculateAnalyzerV2Sc
         includeBenchmark: false,
       },
     )
-    const pillars = new Set(scores.growth_plan.map((item) => item.pillar))
-    assert.deepEqual(
-      [...pillars].sort(),
-      ['acquire', 'convert', 'operate', 'retain'],
-      'growth roadmap should explicitly cover all four growth pillars',
-    )
+    assert.ok(scores.growth_plan.length >= 1, 'expected at least one evidence-backed growth step')
+    for (const item of scores.growth_plan) {
+      assert.ok(item.confidence, `expected confidence on ${item.id}`)
+      assert.ok(['high', 'medium', 'low'].includes(item.confidence), item.confidence)
+      assert.equal(/^pillar_backfill_/i.test(item.id || ''), false)
+      assert.ok(item.evidence?.length >= 1, `expected evidence on ${item.id}`)
+    }
   })
 
   it('does not generate generic repeated roadmap todo items', () => {

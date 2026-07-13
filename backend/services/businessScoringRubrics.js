@@ -200,24 +200,28 @@ function detectMismatchWarnings(rubric, aggregated, business, options = {}) {
   const warnings = []
   const site = aggregated.site_classification?.classification || 'unknown'
   const ecommerceSites = ['shopify_dtc', 'single_brand_ecommerce']
-  const serviceSites = ['service']
   const marketplaceSites = ['marketplace']
 
-  // Hybrid service businesses often look like ecommerce (product grids, Shopify themes)
-  // while still being consultation/quote conversion businesses. Do not warn when strong
-  // service conversion signals are present.
+  const pageText = (options.pages || [])
+    .map((p) => String(p.extracted_text || ''))
+    .join(' ')
   const textBlob = [
     ...(aggregated.content_signals?.ctas || []),
     ...(aggregated.content_signals?.navigation_labels || []),
     ...(options.visualAudit?.summary?.contact_signals?.contact_cta_texts || []),
+    pageText.slice(0, 8000),
   ]
     .join(' ')
     .toLowerCase()
   const hasServiceConversion =
     Boolean(aggregated.contact_signals?.phones?.length) ||
     Boolean(aggregated.contact_signals?.has_tel) ||
+    Boolean(aggregated.contact_signals?.has_text_phone) ||
     Boolean(aggregated.contact_signals?.has_contact_cta) ||
-    /quote|consultation|estimate|book now|schedule|free in-home|request (a )?consult/i.test(textBlob) ||
+    Boolean(aggregated.trust_signals?.review_indicators) ||
+    /quote|consultation|estimate|book now|schedule|free in-home|in-home consult|request (a )?consult|get a free estimate/i.test(
+      textBlob,
+    ) ||
     (aggregated.services || []).length > 0
 
   if (rubric === 'ecommerce_store' && marketplaceSites.includes(site)) {

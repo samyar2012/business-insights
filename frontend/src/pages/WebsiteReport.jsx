@@ -616,6 +616,11 @@ const WebsiteReport = () => {
                     <p className="mt-3 text-sm font-semibold leading-snug text-[var(--app-text)]">
                       {fix.title || fix.action}
                     </p>
+                    {fix.confidence ? (
+                      <p className="mt-1 text-xs capitalize text-[var(--app-text-muted)]">
+                        Evidence confidence: {fix.confidence}
+                      </p>
+                    ) : null}
                     {fix.reason ? (
                       <p className="mt-1.5 text-xs leading-relaxed text-[var(--app-text-secondary)]">{fix.reason}</p>
                     ) : null}

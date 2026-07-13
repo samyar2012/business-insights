@@ -80,6 +80,7 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
 
   const mismatchWarnings = detectMismatchWarnings(rubric, aggregated, business, {
     visualAudit: options.visualAudit,
+    pages,
   })
   const { crawlHealth, signals, uxFeatures } = buildScoringContext(aggregated, business, pages, {
     ...options,

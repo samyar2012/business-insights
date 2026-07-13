@@ -455,20 +455,73 @@ describe('evidence-based analyzer: mobile overflow', () => {
     assert.equal(/severe mobile layout overflow/i.test(uxProblems), false)
   })
 
-  it('treats minor overflow as possible issue, not a top severe cap', () => {
-    const overflow = assessMobileOverflow({
-      uxFeatures: {
-        signals: {
-          horizontal_overflow_mobile: true,
-          overflow_severity_mobile: 'minor',
-          overflow_px_mobile: 40,
+  it('does not invent overflow roadmap actions when visual audit says no overflow', () => {
+    const plan = buildFixPlan({
+      categoryDetails: {
+        safety_trust: { score: 18, max: 20, problems: [], evidence: [], strengths: [] },
+        technical_functionality: { score: 14, max: 15, problems: [], evidence: [], strengths: [] },
+        ux_ui_visual: {
+          score: 12,
+          max: 25,
+          problems: ['Layout cleanliness: Layout balance 40/100 — sections feel crowded or poorly spaced.'],
+          evidence: [],
+          strengths: [],
+        },
+        offer_business_fit: { score: 16, max: 20, problems: [], evidence: [], strengths: [] },
+        customer_attraction: {
+          score: 10,
+          max: 20,
+          problems: ['Layout cleanliness: Layout balance 40/100 — sections feel crowded or poorly spaced.'],
+          evidence: [],
+          strengths: [],
+          recommended_fixes: ['Simplify layout, fix mobile overflow, and align images to a clear grid.'],
         },
       },
+      uxFeatures: {
+        layout_balance_score: 40,
+        signals: {
+          horizontal_overflow_mobile: false,
+          overflow_severity_mobile: 'none',
+          overflow_px_mobile: 0,
+          overflow_offenders_mobile: [],
+        },
+        visual_evidence_summary: { misalignment_confidence: 0 },
+      },
+      capReasons: [],
+      rubric: 'local_service_business',
+      pages: [{ page_type: 'homepage', final_url: 'https://example-business.test/', title: 'Home' }],
+      aggregated: { contact_signals: { phones: ['310 923 1028'], has_text_phone: true } },
     })
-    assert.equal(overflow.claim, 'possible_overflow')
-    assert.equal(overflow.should_cap_score, false)
-    assert.equal(overflow.should_top_fix, false)
-    assert.match(overflow.problem, /possible mobile layout issue/i)
+    assert.equal(plan.some((i) => /overflow/i.test(i.id) || /overflow/i.test(i.title)), false)
+    assert.equal(plan.every((i) => i.confidence), true)
+  })
+
+  it('does not invent image-alignment actions when misalignment confidence is 0', () => {
+    const plan = buildFixPlan({
+      categoryDetails: {
+        safety_trust: { score: 18, max: 20, problems: [], evidence: [], strengths: [] },
+        technical_functionality: { score: 14, max: 15, problems: [], evidence: [], strengths: [] },
+        ux_ui_visual: { score: 18, max: 25, problems: [], evidence: [], strengths: [] },
+        offer_business_fit: { score: 16, max: 20, problems: [], evidence: [], strengths: [] },
+        customer_attraction: {
+          score: 12,
+          max: 20,
+          problems: ['Image alignment: 4 images look misaligned or poorly fitted to the layout.'],
+          evidence: [],
+          strengths: [],
+        },
+      },
+      uxFeatures: {
+        misaligned_image_count: 4,
+        signals: { horizontal_overflow_mobile: false, overflow_severity_mobile: 'none' },
+        visual_evidence_summary: { misalignment_confidence: 0 },
+      },
+      capReasons: [],
+      rubric: 'ecommerce_store',
+      pages: [],
+      aggregated: {},
+    })
+    assert.equal(plan.some((i) => i.id === 'misaligned_images'), false)
   })
 })
 
