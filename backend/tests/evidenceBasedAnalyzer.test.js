@@ -320,14 +320,116 @@ describe('evidence-based analyzer: mobile overflow', () => {
     })
     assert.equal(overflow.is_severe, true)
     assert.equal(overflow.should_cap_score, true)
+    assert.equal(overflow.confidence, 'high')
     assert.ok(overflow.proof.scroll_width_overflow_px === 160)
     assert.ok(overflow.proof.offenders.length >= 1)
-    assert.ok(overflow.confidence === 'high' || overflow.confidence === 'medium')
 
     const scores = analyzePages(pages, 'local_service_business', PAGE_REAL_OVERFLOW_AUDIT)
     assert.ok(scores.score_caps_applied.includes('mobile_overflow_cap_70'))
     const uxProblems = scores.category_details.ux_ui_visual.problems.join(' | ')
     assert.match(uxProblems, /severe mobile layout overflow/i)
+  })
+
+  it('does not treat major overflow without offenders as a score cap or top fix', () => {
+    const overflow = assessMobileOverflow({
+      uxFeatures: {
+        signals: {
+          horizontal_overflow_mobile: true,
+          overflow_severity_mobile: 'major',
+          overflow_px_mobile: 160,
+          overflow_offenders_mobile: [],
+        },
+      },
+    })
+    assert.equal(overflow.should_cap_score, false)
+    assert.equal(overflow.should_top_fix, false)
+    assert.equal(overflow.claim, 'possible_overflow')
+    assert.equal(overflow.confidence, 'low')
+  })
+
+  it('uses rendered visual contact instead of claiming no phone found', () => {
+    const pages = [
+      pageFromHtml(`<!doctype html><html><body><h1>Service Co</h1><p>We install custom window treatments.</p>
+<a href="/book">Book Now</a></body></html>`),
+    ]
+    const visualAudit = {
+      ok: true,
+      url: `${BASE}/`,
+      summary: {
+        contact_signals: {
+          phones: ['310 923 1028'],
+          emails: [],
+          has_tel_link: false,
+          has_mailto_link: false,
+          has_text_phone: true,
+          contact_cta_texts: ['Book Now'],
+        },
+        horizontal_overflow_mobile: false,
+        overflow_severity_mobile: 'none',
+      },
+    }
+    const contact = assessContactEvidence({
+      pages,
+      aggregated: aggregatePages(pages),
+      signals: {},
+      visualAudit,
+    })
+    assert.equal(contact.has_phone, true)
+    assert.notEqual(contact.claim, 'no_contact_high_confidence')
+    assert.ok(
+      contact.claim === 'contact_weak_placement' || contact.claim === 'contact_visible',
+      contact.claim,
+    )
+    if (contact.claim === 'contact_weak_placement') {
+      assert.match(contact.fix, /clickable|more visible/i)
+    }
+
+    const scores = analyzePages(pages, 'online_plus_physical_service', visualAudit)
+    const problems = [
+      ...(scores.category_details.safety_trust.problems || []),
+      ...(scores.category_details.offer_business_fit.problems || []),
+    ].join(' | ')
+    assert.equal(/no phone number or email found|no phone, email, contact form/i.test(problems), false)
+    assert.equal(scores.score_caps_applied.includes('business_model_mismatch_cap_65'), false)
+
+    for (const item of scores.growth_plan || []) {
+      assert.ok(item.confidence, `growth item ${item.id} must have confidence`)
+      assert.equal(
+        /no phone number or email found/i.test(`${item.title} ${(item.evidence || []).join(' ')}`),
+        false,
+      )
+    }
+  })
+
+  it('does not flag hybrid consultation businesses as severe model mismatch', () => {
+    const pages = [
+      pageFromHtml(`<!doctype html><html><body>
+<header><a href="tel:8005551212">800-555-1212</a><a href="/consult">Free consultation</a></header>
+<main><h1>Custom blinds</h1><p>Book Now for a free in-home consultation. 4.7 out of 5 based on 15,067 reviews.</p>
+<a href="/products/roller-shades">Roller Shades</a></main></body></html>`),
+    ]
+    const aggregated = aggregatePages(pages)
+    aggregated.platform = 'Shopify'
+    aggregated.site_classification = { classification: 'shopify_dtc', confidence: 80 }
+    aggregated.content_signals = {
+      ...(aggregated.content_signals || {}),
+      ctas: ['Book Now', 'Free consultation'],
+    }
+    const scores = calculateAnalyzerV2Scores(
+      aggregated,
+      { store_url: BASE, business_model: 'online_plus_physical_service' },
+      pages,
+      {
+        safetyResult: { status: 'safe', configured: true, threats: [], message: 'Safe.' },
+        crawlMeta: { homepage_fetch_ok: true, pages_crawled: 1 },
+        includeBenchmark: false,
+      },
+    )
+    assert.equal(scores.score_caps_applied.includes('business_model_mismatch_cap_65'), false)
+    assert.equal(
+      (scores.growth_plan || []).some((i) => i.id === 'business_model_mismatch'),
+      false,
+    )
   })
 
   it('does not claim severe overflow when audit shows none', () => {

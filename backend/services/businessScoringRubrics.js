@@ -196,12 +196,29 @@ function detectOperationalSignals(pages, aggregated) {
   }
 }
 
-function detectMismatchWarnings(rubric, aggregated, business) {
+function detectMismatchWarnings(rubric, aggregated, business, options = {}) {
   const warnings = []
   const site = aggregated.site_classification?.classification || 'unknown'
   const ecommerceSites = ['shopify_dtc', 'single_brand_ecommerce']
   const serviceSites = ['service']
   const marketplaceSites = ['marketplace']
+
+  // Hybrid service businesses often look like ecommerce (product grids, Shopify themes)
+  // while still being consultation/quote conversion businesses. Do not warn when strong
+  // service conversion signals are present.
+  const textBlob = [
+    ...(aggregated.content_signals?.ctas || []),
+    ...(aggregated.content_signals?.navigation_labels || []),
+    ...(options.visualAudit?.summary?.contact_signals?.contact_cta_texts || []),
+  ]
+    .join(' ')
+    .toLowerCase()
+  const hasServiceConversion =
+    Boolean(aggregated.contact_signals?.phones?.length) ||
+    Boolean(aggregated.contact_signals?.has_tel) ||
+    Boolean(aggregated.contact_signals?.has_contact_cta) ||
+    /quote|consultation|estimate|book now|schedule|free in-home|request (a )?consult/i.test(textBlob) ||
+    (aggregated.services || []).length > 0
 
   if (rubric === 'ecommerce_store' && marketplaceSites.includes(site)) {
     warnings.push(
@@ -209,8 +226,11 @@ function detectMismatchWarnings(rubric, aggregated, business) {
     )
   }
   if (
-    ['online_plus_physical_service', 'local_service_business'].includes(rubric) &&
-    ecommerceSites.includes(site)
+    ['online_plus_physical_service', 'local_service_business', 'online_gallery_physical_service'].includes(
+      rubric,
+    ) &&
+    ecommerceSites.includes(site) &&
+    !hasServiceConversion
   ) {
     warnings.push(
       'Onboarding says service business, but the crawler detected Shopify/ecommerce storefront patterns.',
@@ -221,7 +241,7 @@ function detectMismatchWarnings(rubric, aggregated, business) {
       'Onboarding says marketplace listing, but the crawler detected a direct brand storefront.',
     )
   }
-  if (rubric === 'content_business' && ecommerceSites.includes(site)) {
+  if (rubric === 'content_business' && ecommerceSites.includes(site) && !hasServiceConversion) {
     warnings.push(
       'Onboarding says content/social business, but the crawler found strong ecommerce storefront signals.',
     )

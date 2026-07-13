@@ -92,6 +92,11 @@ const REWRITE_RISKS = new Map([
       'A contact path exists, but it may be easy to miss — making phone, email, or a contact CTA more visible in the header usually helps visitors take the next step.',
   ],
   [
+    'A phone number is visible but may not be clickable or prominent enough.',
+    () =>
+      'A phone number is visible, but making it a clickable tel: link in the header usually helps visitors take the next step faster.',
+  ],
+  [
     'Contact details were not clearly detected in crawled HTML; verify phone, email, or a contact form are visible.',
     () =>
       'Contact details were not clearly detected in the crawl — verify that a phone number, email, or contact form is easy for visitors to find.',

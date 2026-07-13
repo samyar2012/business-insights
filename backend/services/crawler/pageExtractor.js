@@ -646,10 +646,11 @@ function extractEmailsAndContacts($) {
   })
 
   const text = cleanText($('body').text())
-  const emailMatches = text.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) || []
+  const normalizedText = text.replace(/[\u00A0\u202F\u2007\u2060]/g, ' ')
+  const emailMatches = normalizedText.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) || []
   emailMatches.slice(0, 5).forEach((e) => emails.add(e))
 
-  const phoneMatches = text.match(PHONE_TEXT_PATTERN) || []
+  const phoneMatches = normalizedText.match(PHONE_TEXT_PATTERN) || []
   for (const match of phoneMatches.slice(0, 5)) {
     const digits = match.replace(/\D/g, '')
     if (digits.length >= 7 && digits.length <= 15) {
@@ -788,13 +789,21 @@ function extractReviewSignals($, extractedText, jsonLd, socialLinks = []) {
     }
   })
 
-  if (/[★⭐]|stars?\b|rated\s+\d(?:\.\d)?\s*\/\s*5|\d(?:\.\d)?\s*out of\s*5/i.test(extractedText)) {
+  if (/[★⭐]|stars?\b|rated\s+\d(?:\.\d)?\s*\/\s*5|\d(?:\.\d)?\s*out of\s*5|\bover\s+\d[\d,]*\s*5[- ]star\s+reviews?\b/i.test(extractedText)) {
     hasStarRating = true
     evidence.push({ type: 'stars', method: 'text', confidence: 'medium' })
   }
 
   if (!REVIEW_FALSE_POSITIVE.test(extractedText)) {
-    if (/\b(?:testimonial|customer\s+reviews?|client\s+reviews?|what\s+our\s+customers\s+say)\b/i.test(extractedText)) {
+    if (
+      /\b\d(?:\.\d)?\s*out of\s*5\b.*\b\d[\d,]*\s*reviews?\b|\bover\s+\d[\d,]*\s*5[- ]star\s+reviews?\b/i.test(
+        extractedText,
+      )
+    ) {
+      keywordHit = true
+      hasStarRating = true
+      evidence.push({ type: 'rating_volume', method: 'text', confidence: 'high' })
+    } else if (/\b(?:testimonial|customer\s+reviews?|client\s+reviews?|what\s+our\s+customers\s+say)\b/i.test(extractedText)) {
       keywordHit = true
       evidence.push({ type: 'keyword', method: 'text', confidence: 'low' })
     } else if (/\breviews?\b/i.test(extractedText)) {
@@ -803,11 +812,12 @@ function extractReviewSignals($, extractedText, jsonLd, socialLinks = []) {
     }
   }
 
-  const strength = hasReviewSchema || hasReviewWidget || hasTestimonialBlock
-    ? 'strong'
-    : hasStarRating || keywordHit
-      ? 'medium'
-      : 'none'
+  const strength =
+    hasReviewSchema || hasReviewWidget || hasTestimonialBlock || (hasStarRating && keywordHit)
+      ? 'strong'
+      : hasStarRating || keywordHit
+        ? 'medium'
+        : 'none'
 
   return {
     review_indicators: strength !== 'none',

@@ -63,11 +63,35 @@ function mapLegacyFields(categoryDetails) {
 
 function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
   const rubric = resolveScoringRubric(business, aggregated)
-  const mismatchWarnings = detectMismatchWarnings(rubric, aggregated, business)
+  // Merge rendered-page contact into aggregated signals before scoring/mismatch checks
+  const visualContact = options.visualAudit?.summary?.contact_signals
+  if (visualContact && aggregated) {
+    const contact = { ...(aggregated.contact_signals || {}) }
+    contact.phones = [...new Set([...(contact.phones || []), ...(visualContact.phones || [])])]
+    contact.emails = [...new Set([...(contact.emails || []), ...(visualContact.emails || [])])]
+    contact.has_tel = Boolean(contact.has_tel || visualContact.has_tel_link)
+    contact.has_mailto = Boolean(contact.has_mailto || visualContact.has_mailto_link)
+    contact.has_text_phone = Boolean(contact.has_text_phone || visualContact.has_text_phone)
+    contact.has_contact_cta = Boolean(
+      contact.has_contact_cta || (visualContact.contact_cta_texts || []).length,
+    )
+    aggregated = { ...aggregated, contact_signals: contact }
+  }
+
+  const mismatchWarnings = detectMismatchWarnings(rubric, aggregated, business, {
+    visualAudit: options.visualAudit,
+  })
   const { crawlHealth, signals, uxFeatures } = buildScoringContext(aggregated, business, pages, {
     ...options,
     rubric,
   })
+  // Keep operational phone signal aligned with rendered + crawled contact
+  if (aggregated.contact_signals?.phones?.length || aggregated.contact_signals?.has_tel) {
+    signals.has_phone = true
+  }
+  if (aggregated.contact_signals?.has_contact_cta) {
+    signals.has_contact_cta = true
+  }
   const safetyResult = options.safetyResult || null
 
   const categoryDetails = {
@@ -78,6 +102,7 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
       crawlHealth,
       rubric,
       signals,
+      visualAudit: options.visualAudit,
     }),
     technical_functionality: scoreTechnicalFunctionality({
       aggregated,
@@ -179,6 +204,7 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     rubric,
     pages,
     benchmarkComparison,
+    aggregated,
   })
   const growth_plan = buildGrowthPlan({
     categoryDetails,

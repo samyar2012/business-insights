@@ -272,6 +272,10 @@ async function collectViewportMetrics(page, meta = {}) {
       textCandidates.sort((a, b) => b.score - a.score)
 
       const clickable = []
+      const renderedPhones = new Set()
+      const renderedEmails = new Set()
+      const phoneTextRe =
+        /(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}\b/g
       document.querySelectorAll('a, button, [role="button"], input[type="submit"]').forEach((el) => {
         if (!isVisible(el)) return
         const rect = el.getBoundingClientRect()
@@ -280,24 +284,59 @@ async function collectViewportMetrics(page, meta = {}) {
           .trim()
           .slice(0, 120)
         const aria = el.getAttribute('aria-label') || ''
+        const href = (el.getAttribute('href') || '').trim()
         const inPromoBar = Boolean(
           el.closest('[class*="announcement" i], [class*="promo" i], [class*="marquee" i], [class*="slideshow" i]'),
         )
         const inNav = Boolean(el.closest('nav, header nav, [role="navigation"]'))
+        if (/^tel:/i.test(href)) {
+          const phone = href.replace(/^tel:/i, '').trim()
+          if (phone) renderedPhones.add(phone)
+        }
+        if (/^mailto:/i.test(href)) {
+          const email = href.replace(/^mailto:/i, '').split('?')[0].trim()
+          if (email) renderedEmails.add(email)
+        }
+        const phoneFromText = text.match(phoneTextRe)
+        if (phoneFromText) phoneFromText.forEach((p) => renderedPhones.add(p.trim()))
+        phoneTextRe.lastIndex = 0
         clickable.push({
           tag: el.tagName.toLowerCase(),
           text,
+          href: href.slice(0, 200) || null,
           top: Math.round(rect.top),
           above_fold: rect.top < viewportH && rect.bottom > 0,
           is_cta: (ctaPattern.test(text) || ctaPattern.test(aria)) && !(inNav && el.tagName === 'A'),
           is_promo: inPromoBar,
           in_nav: inNav,
+          is_tel: /^tel:/i.test(href),
+          is_mailto: /^mailto:/i.test(href),
         })
       })
 
       const ctaElements = clickable.filter((item) => item.is_cta && item.text.length > 1)
 
       const bodyText = (body?.innerText || '').replace(/\s+/g, ' ').trim()
+      const bodyPhones = bodyText.match(phoneTextRe) || []
+      bodyPhones.slice(0, 5).forEach((p) => renderedPhones.add(p.trim()))
+      phoneTextRe.lastIndex = 0
+      const bodyEmails = bodyText.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) || []
+      bodyEmails.slice(0, 3).forEach((e) => renderedEmails.add(e))
+
+      const contactSignals = {
+        phones: [...renderedPhones].slice(0, 8),
+        emails: [...renderedEmails].slice(0, 5),
+        has_tel_link: clickable.some((item) => item.is_tel),
+        has_mailto_link: clickable.some((item) => item.is_mailto),
+        has_text_phone: renderedPhones.size > 0,
+        contact_cta_texts: ctaElements
+          .filter((item) =>
+            /call|contact|book|schedule|estimate|quote|consultation|get in touch/i.test(item.text),
+          )
+          .map((item) => item.text)
+          .slice(0, 8),
+      }
+
       const templateDebtSignals = []
       if (/made with squarespace/i.test(bodyText)) templateDebtSignals.push('squarespace_template_footer')
       if (/123 demo st|\(555\)555-5555|555-555-5555/i.test(bodyText)) {
@@ -611,6 +650,7 @@ async function collectViewportMetrics(page, meta = {}) {
         hero_text_candidates: textCandidates.slice(0, 12),
         clickable_elements: clickable.slice(0, 40),
         cta_elements: ctaElements.slice(0, 15),
+        contact_signals: contactSignals,
         cta_above_fold: ctaElements.some((item) => item.above_fold),
         nav_elements: navElements.slice(0, 30),
         primary_nav_elements: primaryNavElements.slice(0, 12),
@@ -834,6 +874,35 @@ async function runVisualAudit(url, options = {}) {
         overflow_px_mobile: mobileMetrics.overflow_px,
         overflow_offenders_mobile: mobileMetrics.overflow_offenders || [],
         overflow_offenders_desktop: desktopMetrics.overflow_offenders || [],
+        contact_signals: {
+          phones: [
+            ...new Set([
+              ...(desktopMetrics.contact_signals?.phones || []),
+              ...(mobileMetrics.contact_signals?.phones || []),
+            ]),
+          ].slice(0, 8),
+          emails: [
+            ...new Set([
+              ...(desktopMetrics.contact_signals?.emails || []),
+              ...(mobileMetrics.contact_signals?.emails || []),
+            ]),
+          ].slice(0, 5),
+          has_tel_link: Boolean(
+            desktopMetrics.contact_signals?.has_tel_link || mobileMetrics.contact_signals?.has_tel_link,
+          ),
+          has_mailto_link: Boolean(
+            desktopMetrics.contact_signals?.has_mailto_link || mobileMetrics.contact_signals?.has_mailto_link,
+          ),
+          has_text_phone: Boolean(
+            desktopMetrics.contact_signals?.has_text_phone || mobileMetrics.contact_signals?.has_text_phone,
+          ),
+          contact_cta_texts: [
+            ...new Set([
+              ...(desktopMetrics.contact_signals?.contact_cta_texts || []),
+              ...(mobileMetrics.contact_signals?.contact_cta_texts || []),
+            ]),
+          ].slice(0, 8),
+        },
         has_mobile_viewport:
           desktopMetrics.has_mobile_viewport || mobileMetrics.has_mobile_viewport,
         image_count: Math.max(desktopMetrics.image_count, mobileMetrics.image_count),

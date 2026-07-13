@@ -568,14 +568,33 @@ function scoreLayoutBalance(ctx) {
   const layoutFitRatio =
     imageCount > 0 ? layoutFittedImageCount / imageCount : layoutFittedImageCount > 0 ? 1 : 0
 
-  if (mobileOverflowSeverity === 'major' || mobileOverflow) {
+  if (mobileOverflowSeverity === 'major' && (ctx.overflowPxMobile == null || ctx.overflowPxMobile > 80) && (ctx.overflowOffendersMobile || []).length > 0) {
     score -= 32
-    problems.push('Mobile layout overflow detected: content width exceeds viewport.')
-    evidence.push({ type: 'overflow', viewport: 'mobile', severity: mobileOverflowSeverity || 'major' })
+    problems.push(
+      `Severe mobile layout overflow detected (~${Math.round(ctx.overflowPxMobile || 0)}px): content width exceeds viewport.`,
+    )
+    evidence.push({
+      type: 'overflow',
+      viewport: 'mobile',
+      severity: 'major',
+      overflow_px: ctx.overflowPxMobile,
+      offenders: (ctx.overflowOffendersMobile || []).slice(0, 3),
+      confidence: 'high',
+    })
+  } else if (mobileOverflowSeverity === 'major' || mobileOverflow) {
+    score -= 10
+    problems.push('Possible mobile layout issue to verify — overflow was measured without strong element-level proof.')
+    evidence.push({
+      type: 'overflow',
+      viewport: 'mobile',
+      severity: mobileOverflowSeverity || 'major',
+      overflow_px: ctx.overflowPxMobile,
+      confidence: 'low',
+    })
   } else if (mobileOverflowSeverity === 'minor') {
-    score -= 12
+    score -= 6
     problems.push('Minor mobile horizontal overflow detected.')
-    evidence.push({ type: 'overflow', viewport: 'mobile', severity: 'minor' })
+    evidence.push({ type: 'overflow', viewport: 'mobile', severity: 'minor', confidence: 'low' })
   }
 
   if (desktopOverflowSeverity === 'major' || desktopOverflow) {
@@ -1116,6 +1135,8 @@ function buildVisualUxScore(input = {}) {
     mobileOverflow: Boolean(summary.horizontal_overflow_mobile || mm.horizontal_overflow),
     mobileOverflowSeverity: summary.overflow_severity_mobile || mm.overflow_severity || 'none',
     desktopOverflowSeverity: summary.overflow_severity_desktop || dm.overflow_severity || 'none',
+    overflowPxMobile: summary.overflow_px_mobile ?? mm.overflow_px ?? null,
+    overflowOffendersMobile: summary.overflow_offenders_mobile || mm.overflow_offenders || [],
     ctaElements,
     phoneVisible,
     hasContactPage: signals.has_contact_page,

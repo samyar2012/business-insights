@@ -45,43 +45,100 @@ function normalizePhone(raw) {
   return digits
 }
 
+function normalizePhoneText(text) {
+  return String(text || '')
+    .replace(/[\u00A0\u202F\u2007\u2060]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function extractPhonesFromText(text) {
   const found = new Set()
-  const source = String(text || '')
-  const matches = source.match(
-    /(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}\b/g,
-  ) || []
+  const source = normalizePhoneText(text)
+  const matches =
+    source.match(/(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}\b/g) || []
   for (const m of matches) {
     const normalized = normalizePhone(m)
+    // Prefer real NANP-length numbers; still accept 7–15 digit internationals
     if (normalized) found.add(m.trim())
   }
   if (!found.size && PHONE_CONTEXT_RE.test(source)) {
-    const near = source.match(
-      /(?:call(?:\s+us)?|phone|tel)[:\s]+([+\d().\s-]{7,20})/i,
-    )
+    const near = source.match(/(?:call(?:\s+us)?|phone|tel)[:\s]+([+\d().\s-]{7,20})/i)
     if (near?.[1] && normalizePhone(near[1])) found.add(near[1].trim())
   }
   return [...found]
 }
 
-function assessContactEvidence({ pages = [], aggregated = {}, signals = {} } = {}) {
+function mergeVisualContact(visualAudit, emails, phones, evidence) {
+  const summary = visualAudit?.summary?.contact_signals || {}
+  const desktop = visualAudit?.desktop?.metrics?.contact_signals || {}
+  const mobile = visualAudit?.mobile?.metrics?.contact_signals || {}
+  const rendered = {
+    phones: [...new Set([...(summary.phones || []), ...(desktop.phones || []), ...(mobile.phones || [])])],
+    emails: [...new Set([...(summary.emails || []), ...(desktop.emails || []), ...(mobile.emails || [])])],
+    has_tel_link: Boolean(summary.has_tel_link || desktop.has_tel_link || mobile.has_tel_link),
+    has_mailto_link: Boolean(summary.has_mailto_link || desktop.has_mailto_link || mobile.has_mailto_link),
+    has_text_phone: Boolean(summary.has_text_phone || desktop.has_text_phone || mobile.has_text_phone),
+    contact_cta_texts: [
+      ...new Set([
+        ...(summary.contact_cta_texts || []),
+        ...(desktop.contact_cta_texts || []),
+        ...(mobile.contact_cta_texts || []),
+      ]),
+    ],
+  }
+
+  const pageUrl = visualAudit?.url || visualAudit?.page_url || null
+  for (const phone of rendered.phones) {
+    phones.add(phone)
+    evidence.push({
+      type: 'phone',
+      method: rendered.has_tel_link ? 'visual_tel' : 'visual_text',
+      value: phone,
+      page_url: pageUrl,
+      placement: 'rendered',
+      confidence: 'high',
+    })
+  }
+  for (const email of rendered.emails) {
+    emails.add(email)
+    evidence.push({
+      type: 'email',
+      method: rendered.has_mailto_link ? 'visual_mailto' : 'visual_text',
+      value: email,
+      page_url: pageUrl,
+      placement: 'rendered',
+      confidence: 'high',
+    })
+  }
+
+  return rendered
+}
+
+function assessContactEvidence({
+  pages = [],
+  aggregated = {},
+  signals = {},
+  visualAudit = null,
+} = {}) {
   const emails = new Set(aggregated.contact_signals?.emails || [])
   const phones = new Set(aggregated.contact_signals?.phones || [])
   const evidence = []
   const placements = new Set()
-  let hasMailto = false
-  let hasTel = false
-  let hasTextPhone = false
-  let hasContactForm = false
-  let hasContactPageLink = false
-  let hasContactCta = false
+  let hasMailto = Boolean(aggregated.contact_signals?.has_mailto)
+  let hasTel = Boolean(aggregated.contact_signals?.has_tel)
+  let hasTextPhone = Boolean(aggregated.contact_signals?.has_text_phone)
+  let hasContactForm = Boolean(aggregated.contact_signals?.has_contact_form)
+  let hasContactPageLink = Boolean(aggregated.contact_signals?.has_contact_page_link)
+  let hasContactCta = Boolean(aggregated.contact_signals?.has_contact_cta)
   let pagesWithContact = 0
   let crawlablePages = 0
+  let renderedPhoneNotClickable = false
 
   for (const page of pages) {
     const data = pageData(page)
     const url = page.final_url || page.url || null
-    const text = page.extracted_text || ''
+    const text = normalizePhoneText(page.extracted_text || '')
     if ((page.status_code || 200) >= 400) continue
     crawlablePages += 1
 
@@ -112,9 +169,6 @@ function assessContactEvidence({ pages = [], aggregated = {}, signals = {} } = {
       })
     }
 
-    if ((data.mailto_links || []).length || (data.emails || []).some(() => true)) {
-      // mailto tracked via emails; flag presence of clickable mailto separately when provided
-    }
     if (data.has_mailto) hasMailto = true
     if (data.has_tel) hasTel = true
     if (data.has_text_phone) hasTextPhone = true
@@ -153,10 +207,10 @@ function assessContactEvidence({ pages = [], aggregated = {}, signals = {} } = {
 
     if (data.contact_placement) placements.add(data.contact_placement)
 
-    // Fallback text scan when extractor did not enrich the page
-    if (!pageHasContact) {
-      const textPhones = extractPhonesFromText(text)
-      for (const phone of textPhones) {
+    // Always scan page text for phones — catch numbers missed by structured extraction
+    const textPhones = extractPhonesFromText(text)
+    for (const phone of textPhones) {
+      if (![...phones].some((p) => normalizePhone(p) === normalizePhone(phone))) {
         phones.add(phone)
         hasTextPhone = true
         pageHasContact = true
@@ -165,10 +219,12 @@ function assessContactEvidence({ pages = [], aggregated = {}, signals = {} } = {
           method: 'text_regex',
           value: phone,
           page_url: url,
-          placement: 'unknown',
+          placement: data.contact_placement || 'unknown',
           confidence: 'medium',
         })
       }
+    }
+    if (!pageHasContact) {
       const textEmails = text.match(EMAIL_RE) || []
       for (const email of textEmails.slice(0, 3)) {
         emails.add(email)
@@ -200,6 +256,15 @@ function assessContactEvidence({ pages = [], aggregated = {}, signals = {} } = {
     if (pageHasContact) pagesWithContact += 1
   }
 
+  const rendered = mergeVisualContact(visualAudit, emails, phones, evidence)
+  if (rendered.has_tel_link) hasTel = true
+  if (rendered.has_mailto_link) hasMailto = true
+  if (rendered.has_text_phone || rendered.phones.length) hasTextPhone = true
+  if (rendered.contact_cta_texts?.length) hasContactCta = true
+  if (rendered.phones.length && !rendered.has_tel_link && !hasTel) {
+    renderedPhoneNotClickable = true
+  }
+
   if (signals.has_phone) hasTextPhone = true
   if (signals.has_contact_page) hasContactPageLink = true
   if (signals.has_contact_form) hasContactForm = true
@@ -227,25 +292,20 @@ function assessContactEvidence({ pages = [], aggregated = {}, signals = {} } = {
 
   const weaklyPlaced =
     onlyFooter ||
+    renderedPhoneNotClickable ||
     (hasAnyContactPath && !hasDirectContact && hasAlternatePath) ||
-    (hasDirectContact &&
-      !hasTel &&
-      !hasMailto &&
-      hasTextPhone &&
-      onlyFooter)
+    (hasDirectContact && !hasTel && !hasMailto && hasTextPhone && onlyFooter)
 
-  // High-confidence absence: enough crawl coverage, no contact path of any kind
   const crawlCoverageOk = crawlablePages >= 2 || (crawlablePages >= 1 && pagesWithContact === 0)
   const jsHeavy = (aggregated.extraction_meta?.js_rendered_pages || 0) >= Math.max(1, crawlablePages)
   const sparse = (aggregated.content_signals?.total_text_length || 0) < 400
+  const visualOk = Boolean(visualAudit?.ok)
 
   let absenceConfidence = 'low'
-  if (!hasAnyContactPath && crawlCoverageOk && !jsHeavy && !sparse) {
-    absenceConfidence = crawlablePages >= 3 ? 'high' : 'medium'
+  if (!hasAnyContactPath && crawlCoverageOk && !jsHeavy && !sparse && (visualOk ? !rendered.phones.length : true)) {
+    absenceConfidence = crawlablePages >= 3 && visualOk ? 'high' : visualOk || crawlablePages >= 3 ? 'medium' : 'low'
   } else if (!hasAnyContactPath) {
     absenceConfidence = 'low'
-  } else if (weaklyPlaced) {
-    absenceConfidence = 'none'
   } else {
     absenceConfidence = 'none'
   }
@@ -258,16 +318,21 @@ function assessContactEvidence({ pages = [], aggregated = {}, signals = {} } = {
   if (hasDirectContact && !weaklyPlaced) {
     claim = 'contact_visible'
     strength = hasTel || hasMailto ? 'strong' : 'medium'
+  } else if (hasDirectContact && renderedPhoneNotClickable) {
+    claim = 'contact_weak_placement'
+    strength = 'weak'
+    problem = 'A phone number is visible but may not be clickable or prominent enough.'
+    fix = 'Make the phone number clickable (tel: link) and more visible in the header.'
   } else if (hasAnyContactPath && weaklyPlaced) {
     claim = 'contact_weak_placement'
     strength = 'weak'
     problem = 'Contact path exists but may be hard for visitors to notice.'
-    fix = 'Make the contact path more visible in the header or above the fold (phone, email, or clear contact CTA).'
+    fix = 'Make the contact path more visible in the header or above the fold (clickable phone, email, or clear contact CTA).'
   } else if (hasAlternatePath && !hasDirectContact) {
     claim = 'contact_path_only'
     strength = 'weak'
     problem = 'A contact path exists (form, page, or CTA), but no phone or email was clearly detected.'
-    fix = 'Add a visible phone number or email alongside your contact form or CTA.'
+    fix = 'Add a visible, clickable phone number or email alongside your contact form or CTA.'
   } else if (!hasAnyContactPath && absenceConfidence === 'high') {
     claim = 'no_contact_high_confidence'
     strength = 'none'
@@ -276,9 +341,9 @@ function assessContactEvidence({ pages = [], aggregated = {}, signals = {} } = {
   } else if (!hasAnyContactPath) {
     claim = 'no_contact_low_confidence'
     strength = 'none'
-    // Soft wording — do not claim absolute absence
-    problem = 'Contact details were not clearly detected in crawled HTML; verify phone, email, or a contact form are visible.'
-    fix = 'Confirm visitors can easily find a phone number, email, or contact form on key pages.'
+    problem =
+      'Contact details were not clearly detected in crawled HTML; verify phone, email, or a contact form are visible.'
+    fix = 'Confirm visitors can easily find a clickable phone number, email, or contact form on key pages.'
   }
 
   return {
@@ -294,6 +359,7 @@ function assessContactEvidence({ pages = [], aggregated = {}, signals = {} } = {
     has_any_contact_path: hasAnyContactPath,
     weakly_placed: weaklyPlaced,
     only_footer: onlyFooter,
+    rendered_phone_not_clickable: renderedPhoneNotClickable,
     claim,
     problem,
     fix,
@@ -370,6 +436,14 @@ function assessReviewEvidence({ pages = [], aggregated = {}, signals = {} } = {}
     if (FALSE_POSITIVE_REVIEW_RE.test(text)) {
       // ignore privacy-policy style "review" language
     } else if (
+      /\b\d(?:\.\d)?\s*out of\s*5\b.*\b\d[\d,]*\s*reviews?\b|\bover\s+\d[\d,]*\s*5[- ]star\s+reviews?\b|\b\d[\d,]*\+?\s*(?:5[- ]star\s+)?reviews?\b/i.test(
+        text,
+      )
+    ) {
+      starHits += 1
+      keywordHits += 1
+      evidence.push({ type: 'rating_volume', method: 'text', page_url: url, confidence: 'high' })
+    } else if (
       /\b(?:testimonial|customer\s+review|client\s+review|what\s+our\s+customers\s+say|rated\s+\d|stars?\b|★|⭐)\b/i.test(
         text,
       )
@@ -390,8 +464,8 @@ function assessReviewEvidence({ pages = [], aggregated = {}, signals = {} } = {}
     keywordHits += 1
   }
 
-  const strongProof = schemaHits > 0 || widgetHits > 0 || quoteBlockHits > 0
-  const mediumProof = strongProof || starHits > 0 || keywordHits >= 2
+  const strongProof = schemaHits > 0 || widgetHits > 0 || quoteBlockHits > 0 || starHits > 0
+  const mediumProof = strongProof || keywordHits >= 2
   const weakProof = mediumProof || keywordHits >= 1 || Boolean(aggregated.trust_signals?.review_indicators)
 
   let strength = 'none'
@@ -399,7 +473,7 @@ function assessReviewEvidence({ pages = [], aggregated = {}, signals = {} } = {}
   let problem = null
   let fix = null
 
-  if (strongProof) {
+  if (schemaHits > 0 || widgetHits > 0 || quoteBlockHits > 0 || (starHits > 0 && keywordHits > 0)) {
     strength = 'strong'
     claim = 'reviews_present'
   } else if (starHits > 0 || keywordHits >= 2) {
@@ -501,11 +575,17 @@ function assessMobileOverflow({ uxFeatures = {}, visualAudit = null } = {}) {
     confidence: 'none',
   }
 
-  if (severity === 'major' && (overflowPx == null || overflowPx > 80)) {
-    confidence = offenders?.length ? 'high' : 'medium'
+  if (severity === 'major' && (overflowPx == null || overflowPx > 80) && offenders.length > 0) {
+    confidence = 'high'
     claim = 'severe_overflow'
     problem = `Severe mobile layout overflow detected${overflowPx != null ? ` (~${Math.round(overflowPx)}px)` : ''}.`
     fix = 'Fix elements wider than the mobile viewport and retest at ~390px width.'
+  } else if (severity === 'major' && (overflowPx == null || overflowPx > 80)) {
+    // Measured major overflow but no element-level proof — do not treat as top fix
+    confidence = 'low'
+    claim = 'possible_overflow'
+    problem = `Possible mobile layout issue to verify${overflowPx != null ? ` (~${Math.round(overflowPx)}px overflow)` : ''} — element-level proof was not captured.`
+    fix = 'Check the homepage on a phone-width viewport and fix any element that forces horizontal scrolling.'
   } else if (severity === 'minor' || (signals.horizontal_overflow_mobile && severity !== 'major')) {
     confidence = 'low'
     claim = 'possible_overflow'
@@ -514,7 +594,6 @@ function assessMobileOverflow({ uxFeatures = {}, visualAudit = null } = {}) {
   } else if (layoutOnlyWeak) {
     confidence = 'low'
     claim = 'weak_layout_balance'
-    // Intentionally NOT labeled as overflow
     problem = 'Layout balance looks weak on the audited page; verify spacing and alignment on mobile.'
     fix = 'Review mobile spacing and alignment; confirm there is no horizontal scrolling.'
   }
@@ -529,8 +608,8 @@ function assessMobileOverflow({ uxFeatures = {}, visualAudit = null } = {}) {
     severity,
     overflow_px: overflowPx,
     is_severe: claim === 'severe_overflow',
-    should_cap_score: claim === 'severe_overflow' && (confidence === 'high' || confidence === 'medium'),
-    should_top_fix: claim === 'severe_overflow' && confidence !== 'low',
+    should_cap_score: claim === 'severe_overflow' && confidence === 'high',
+    should_top_fix: claim === 'severe_overflow' && confidence === 'high',
     proof,
   }
 }

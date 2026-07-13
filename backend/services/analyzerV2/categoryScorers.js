@@ -254,7 +254,7 @@ function finalizeCategory(detail, max, confidenceFactors = []) {
   return detail
 }
 
-function scoreSafetyTrust({ aggregated, pages, safetyResult, crawlHealth, rubric, signals }) {
+function scoreSafetyTrust({ aggregated, pages, safetyResult, crawlHealth, rubric, signals, visualAudit }) {
   const max = CATEGORY_WEIGHTS.safety_trust
   const detail = emptyCategoryDetail(max)
   const result = safetyResult || unknownResult()
@@ -303,7 +303,12 @@ function scoreSafetyTrust({ aggregated, pages, safetyResult, crawlHealth, rubric
     confidenceFactors.push(result.configured ? 55 : 45)
   }
 
-  const contact = assessContactEvidence({ aggregated, pages, signals: opsSignals })
+  const contact = assessContactEvidence({
+    aggregated,
+    pages,
+    signals: opsSignals,
+    visualAudit: visualAudit || null,
+  })
   const contactStrength =
     contact.claim === 'contact_visible'
       ? contact.strength

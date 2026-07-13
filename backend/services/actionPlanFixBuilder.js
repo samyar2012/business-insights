@@ -114,8 +114,12 @@ function resolvePageUrl(fix, scores = {}) {
 }
 
 function resolveConfidence(fix) {
-  if (fix.confidence) return fix.confidence
-  if (fix.id === 'mobile_overflow_verify') return 'low'
+  if (fix.confidence === 'high' || fix.confidence === 'medium' || fix.confidence === 'low') {
+    return fix.confidence
+  }
+  if (fix.id === 'mobile_overflow_verify' || /_verify$|pillar_backfill_/i.test(fix.id || '')) {
+    return 'low'
+  }
   if (fix.priority === 'low') return 'low'
   if ((fix.evidence || []).length >= 2) return 'medium'
   if (fix.forcedPriority === 'critical' || fix.priority === 'critical') return 'high'
@@ -128,31 +132,49 @@ function hasEnoughEvidence(fix) {
   const hasSteps = Array.isArray(fix.steps) && fix.steps.length > 0
   const confidence = resolveConfidence(fix)
 
-  // Low-confidence soft verifies are allowed only when explicitly marked and evidenced
+  if (!confidence) return false
   if (confidence === 'low') {
-    return snippets.length >= 1 && hasWhy && hasSteps
+    // Only keep explicit verify items at low confidence
+    return /verify|_verify$/i.test(fix.id || fix.title || '') && snippets.length >= 1 && hasWhy && hasSteps
   }
-
-  // Strong roadmap actions need concrete evidence + why + steps
   return snippets.length >= 1 && hasWhy && hasSteps
 }
 
-function isContradicted(fix) {
-  const blob = [
-    fix.title,
-    fix.action,
-    fix.why_it_matters,
-    ...(fix.steps || []),
-  ]
+function isContradicted(fix, scores = {}) {
+  const blob = [fix.title, fix.action, fix.why_it_matters, ...(fix.steps || [])]
     .filter(Boolean)
     .join(' ')
   const evidenceBlob = evidenceSnippets(fix).join(' ')
+  const strengths = Object.values(scores.category_details || {})
+    .flatMap((d) => d.strengths || [])
+    .join(' | ')
+  const contact = scores.contact_signals || scores?.ux_features?.signals || {}
+  const hasPhoneProof =
+    (scores?.category_details?.safety_trust?.strengths || []).some((s) => /contact/i.test(s)) ||
+    /phone|tel|contact information/i.test(strengths)
+
+  if (/no phone|no contact found|across crawled pages/i.test(`${blob} ${evidenceBlob}`) && hasPhoneProof) {
+    return true
+  }
+  if (
+    /resolve the business model mismatch/i.test(blob) &&
+    /quote|consultation|estimate|book now/i.test(
+      `${strengths} ${(scores.content_signals?.ctas || []).join(' ')}`,
+    )
+  ) {
+    return true
+  }
+  if (
+    /fix mobile layout overflow/i.test(blob) &&
+    !/overflowing element|~\d+px/i.test(evidenceBlob) &&
+    resolveConfidence(fix) !== 'high'
+  ) {
+    return true
+  }
 
   for (const rule of CONTRADICTION_PATTERNS) {
     if (!rule.action.test(blob)) continue
     if (rule.evidenceRequiresPositive && rule.evidenceDenies.test(evidenceBlob)) {
-      // Evidence mentioning contact/reviews while action says "add/missing" can be OK when
-      // evidence is the absence claim itself. Only contradict when evidence is clearly positive.
       const positiveProof =
         /detected|found|exists|present|visible|phone=true|emails=true|aggregaterating|testimonial_block|tel_link|mailto/i.test(
           evidenceBlob,
@@ -161,10 +183,11 @@ function isContradicted(fix) {
     }
   }
 
-  // Soften: if reviews are present strongly, skip "add reviews" retain loops
   if (
     /retain_reviews_loop|add reviews|add .*testimonials/i.test(`${fix.id || ''} ${blob}`) &&
-    /structured review|testimonial evidence|has_strong_reviews|review_strength.: .strong/i.test(evidenceBlob)
+    /structured review|testimonial evidence|has_strong_reviews|review_strength.: .strong|out of 5/i.test(
+      `${evidenceBlob} ${strengths}`,
+    )
   ) {
     return true
   }
@@ -172,11 +195,13 @@ function isContradicted(fix) {
   return false
 }
 
-function shouldIncludeFix(fix) {
+function shouldIncludeFix(fix, scores = {}) {
   if (!fix) return false
   if (LOW_CONFIDENCE_SKIP_IDS.has(fix.id)) return false
   if (!hasEnoughEvidence(fix)) return false
-  if (isContradicted(fix)) return false
+  if (isContradicted(fix, scores)) return false
+  // Pillar backfills are soft fillers — keep them out of the persisted action plan
+  if (/^pillar_backfill_/i.test(fix.id || '')) return false
   return true
 }
 
@@ -189,8 +214,6 @@ function normalizeFixesFromScores(scores = {}) {
   if (source?.length) {
     return source
       .map((fix) => {
-        // Legacy priority_fixes often only have action/reason — synthesize minimal evidence
-        // so the roadmap still works, while still dropping contradicted/empty engine items.
         const evidence = evidenceSnippets(fix)
         if (!evidence.length && (fix.action || fix.reason || fix.why_it_matters)) {
           return {
@@ -200,12 +223,12 @@ function normalizeFixesFromScores(scores = {}) {
             steps: Array.isArray(fix.steps) && fix.steps.length
               ? fix.steps
               : [fix.owner_action || fix.action || 'Review this finding on the live site.'].filter(Boolean),
-            confidence: fix.confidence || 'medium',
+            confidence: resolveConfidence(fix),
           }
         }
-        return fix
+        return { ...fix, confidence: resolveConfidence(fix) }
       })
-      .filter(shouldIncludeFix)
+      .filter((fix) => shouldIncludeFix(fix, scores))
       .map((fix, index) => ({
         ...fix,
         rank: fix.rank ?? index + 1,
@@ -251,7 +274,7 @@ function buildFixMetadata(fix, { business_id, scan_id, scores } = {}) {
     evidence: snippets.slice(0, 6),
     evidence_snippet: snippets[0] || null,
     page_url: pageUrl,
-    confidence,
+    confidence: confidence || 'medium',
     why_it_matters: fix.why_it_matters || fix.reason || null,
     steps: Array.isArray(fix.steps) ? fix.steps.slice(0, 6) : [],
     expected_score_lift: fix.expected_score_lift || null,

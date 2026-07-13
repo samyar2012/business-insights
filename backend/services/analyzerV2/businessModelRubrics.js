@@ -115,17 +115,43 @@ function removeContradictoryOfferProblems(result, offerSignals, catalog) {
     catalog.hasWeakCatalog ||
     catalog.productCount >= 1
 
-  if (!hasOfferExplanation) return
+  if (hasOfferExplanation) {
+    result.problems = result.problems.filter(
+      (problem) =>
+        !/no clear product lines|service pages|shop categories|service explanation is thin|service categories/i.test(
+          problem,
+        ),
+    )
+    result.recommended_fixes = result.recommended_fixes.filter(
+      (fix) => !/shop categories or service pages|describe services, process/i.test(fix),
+    )
+  }
 
-  result.problems = result.problems.filter(
-    (problem) =>
-      !/no clear product lines|service pages|shop categories|service explanation is thin|service categories/i.test(
-        problem,
-      ),
-  )
-  result.recommended_fixes = result.recommended_fixes.filter(
-    (fix) => !/shop categories or service pages|describe services, process/i.test(fix),
-  )
+  // Do not claim missing gallery when catalog/grid imagery or portfolio language exists
+  if (
+    offerSignals.has_gallery ||
+    catalog.hasCatalogLayout ||
+    catalog.productGridCount >= 4 ||
+    catalog.productCount >= 2
+  ) {
+    result.problems = result.problems.filter(
+      (problem) => !/no gallery|portfolio|before\/after|before-after/i.test(problem),
+    )
+  }
+
+  // Do not claim missing phone/contact when phone or consultation path exists
+  if (
+    offerSignals.has_phone ||
+    offerSignals.has_contact_page ||
+    offerSignals.has_contact_form ||
+    offerSignals.has_quote_cta ||
+    offerSignals.has_booking_cta ||
+    offerSignals.has_consultation
+  ) {
+    result.problems = result.problems.filter(
+      (problem) => !/no phone number or contact page detected|no clear phone, contact page/i.test(problem),
+    )
+  }
 }
 
 function inferCatalogSignals(ctx) {
@@ -453,6 +479,8 @@ function scorePhysicalServiceOffer(ctx, max) {
   const contactStrength = combineStrengths([
     strengthFromBoolean(offer.has_phone),
     strengthFromBoolean(offer.has_contact_page),
+    strengthFromBoolean(offer.has_contact_form),
+    strengthFromBoolean(offer.has_quote_cta || offer.has_booking_cta || offer.has_consultation),
   ])
   addSignal(result, {
     id: 'contact',
@@ -460,9 +488,16 @@ function scorePhysicalServiceOffer(ctx, max) {
     points: pointsForStrength(contactStrength, 3),
     maxPoints: 3,
     label: 'Phone or contact page makes it easy to reach you.',
-    evidence: `Phone=${offer.has_phone}, contact page=${offer.has_contact_page}.`,
-    problem: contactStrength === 'none' ? 'No phone number or contact page detected.' : null,
-    fix: 'Put click-to-call phone number in the header.',
+    evidence: `Phone=${offer.has_phone}, contact page=${offer.has_contact_page}, form/CTA=${Boolean(offer.has_contact_form || offer.has_quote_cta)}.`,
+    problem:
+      contactStrength === 'none'
+        ? 'No clear phone, contact page, or consultation path was detected.'
+        : offer.has_phone
+          ? null
+          : 'Contact path exists but a clickable phone number may still improve conversion.',
+    fix: offer.has_phone
+      ? 'Make the phone number clickable and more visible in the header.'
+      : 'Put a click-to-call phone number in the header.',
   })
 
   removeContradictoryOfferProblems(result, offer, catalog)

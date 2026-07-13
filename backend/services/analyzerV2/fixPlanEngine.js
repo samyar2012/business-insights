@@ -499,9 +499,28 @@ function runHomepageDown(events) {
   }
 }
 
-function runBusinessModelMismatch(events) {
+function runBusinessModelMismatch(events, ctx) {
   const matched = claim(events, ['overall'], /business model badly mismatches/i)
   if (!matched.length) return null
+
+  const aggregated = ctx?.aggregated || {}
+  const hasServiceConversion =
+    Boolean(aggregated.contact_signals?.phones?.length) ||
+    Boolean(aggregated.contact_signals?.has_tel) ||
+    Boolean(aggregated.contact_signals?.has_contact_cta) ||
+    /quote|consultation|estimate|book|schedule/i.test(
+      (aggregated.content_signals?.ctas || []).join(' '),
+    ) ||
+    (aggregated.services || []).length > 0
+  if (
+    ['online_plus_physical_service', 'local_service_business', 'online_gallery_physical_service'].includes(
+      ctx?.rubric,
+    ) &&
+    hasServiceConversion
+  ) {
+    return null
+  }
+
   return {
     id: 'business_model_mismatch',
     title: 'Resolve the business model mismatch.',
@@ -516,7 +535,8 @@ function runBusinessModelMismatch(events) {
     ],
     affected: ['offer_business_fit'],
     difficulty: 'medium',
-    forcedPriority: 'critical',
+    forcedPriority: 'medium',
+    confidence: 'medium',
     matched,
   }
 }
@@ -547,26 +567,23 @@ function runMobileOverflow(events, ctx) {
   const severe = claim(
     events,
     ['overall', 'ux_ui_visual', 'technical_functionality', 'customer_attraction'],
-    /severe mobile layout overflow|mobile layout overflow detected: content width exceeds viewport/i,
+    /severe mobile layout overflow/i,
   )
   const possible = claim(
     events,
     ['overall', 'ux_ui_visual', 'technical_functionality', 'customer_attraction'],
-    /possible mobile layout issue|minor mobile horizontal overflow/i,
+    /possible mobile layout issue|minor mobile horizontal overflow|overflow was measured without strong element-level proof/i,
   )
   const overflowProof = ctx.uxFeatures?.signals?.overflow_offenders_mobile || []
   const overflowPx = ctx.uxFeatures?.signals?.overflow_px_mobile
   const severity = ctx.uxFeatures?.signals?.overflow_severity_mobile
 
-  if (severe.length || (severity === 'major' && (overflowPx == null || overflowPx > 80))) {
-    const matched = severe.length
-      ? severe
-      : [{ text: `Severe mobile overflow measured${overflowPx != null ? ` (~${Math.round(overflowPx)}px)` : ''}.` }]
-    if (overflowProof.length) {
-      matched.push({
-        text: `Overflowing element: ${overflowProof[0].selector || 'unknown'}${overflowProof[0].text ? ` (“${overflowProof[0].text}”)` : ''}`,
-      })
-    }
+  if (severe.length && overflowProof.length && severity === 'major') {
+    const matched = [...severe]
+    matched.push({
+      text: `Overflowing element: ${overflowProof[0].selector || 'unknown'}${overflowProof[0].text ? ` (“${overflowProof[0].text}”)` : ''}`,
+    })
+    if (overflowPx != null) matched.push({ text: `Measured overflow ~${Math.round(overflowPx)}px at mobile viewport.` })
     return {
       id: 'mobile_overflow',
       title: 'Fix mobile layout overflow and horizontal scrolling.',
@@ -575,7 +592,7 @@ function runMobileOverflow(events, ctx) {
         'Horizontal scrolling or overflowing content on phones makes the site feel broken, which drives mobile visitors away before they ever see your offer.',
       steps: [
         'Test the homepage on a real phone or a 375px-wide browser emulator.',
-        'Find elements wider than the viewport (fixed-width images, tables, or containers).',
+        `Inspect the overflowing element (${overflowProof[0].selector || 'widest container'}) and constrain its width.`,
         'Add responsive widths (max-width: 100%) to the affected elements.',
         'Re-test at 375px and 414px widths to confirm the scrolling is gone.',
         'Rescan your website once the overflow is fixed.',
@@ -583,18 +600,18 @@ function runMobileOverflow(events, ctx) {
       affected: ['ux_ui_visual'],
       difficulty: 'hard',
       forcedPriority: 'high',
-      confidence: overflowProof.length ? 'high' : 'medium',
+      confidence: 'high',
       matched,
     }
   }
 
-  if (possible.length || severity === 'minor') {
+  if (severe.length || possible.length || severity === 'minor' || severity === 'major') {
     return {
       id: 'mobile_overflow_verify',
       title: 'Verify a possible mobile layout issue.',
       category: 'mobile',
       why_it_matters:
-        'A possible overflow was flagged with lower confidence. Confirm it on a real phone before investing in a layout rewrite.',
+        'A possible overflow was flagged without strong element-level proof. Confirm it on a real phone before investing in a layout rewrite.',
       steps: [
         'Open the flagged page at ~390px width and check for horizontal scrolling.',
         'If scrolling appears, identify the widest element and constrain it with max-width: 100%.',
@@ -604,8 +621,10 @@ function runMobileOverflow(events, ctx) {
       difficulty: 'medium',
       forcedPriority: 'low',
       confidence: 'low',
-      matched: possible.length
-        ? possible
+      matched: (possible.length ? possible : severe).length
+        ? possible.length
+          ? possible
+          : severe
         : [{ text: `Possible mobile overflow to verify${overflowPx != null ? ` (~${Math.round(overflowPx)}px)` : ''}.` }],
     }
   }
@@ -1057,23 +1076,76 @@ function finalizeItem(raw, ctx) {
   const priority = raw.forcedPriority || priorityFromGap(ctx.categoryDetails, affected)
   const lift = estimateLift(affected, ctx.categoryDetails, raw.matched.length)
   const research = researchBasisFor(raw.category, ctx.rubric)
+  const confidence = raw.confidence || (priority === 'critical' || priority === 'high' ? 'medium' : 'medium')
   return {
     id: raw.id,
     title: raw.title,
     category: raw.category,
-    evidence: sanitize(dedupe(raw.matched.map((e) => e.text))).slice(0, 4),
+    evidence: sanitize(dedupe((raw.matched || []).map((e) => e.text))).slice(0, 4),
     why_it_matters: raw.why_it_matters,
     steps: sanitize(finalizeSteps(raw.steps)),
     expected_score_lift: lift.label,
     affected_scores: affected,
     priority,
     difficulty: raw.difficulty || 'medium',
-    confidence: raw.confidence || (raw.matched?.length >= 2 ? 'medium' : 'medium'),
+    confidence,
     source: 'analyzer',
     related_pages: relatedPagesFor(raw.category, ctx.pages),
     research_basis: research ? sanitize([research])[0] || null : null,
     _tier: tierIndexFor(raw.id),
   }
+}
+
+function collectStrengthBlob(categoryDetails = {}) {
+  return Object.values(categoryDetails)
+    .flatMap((detail) => [...(detail.strengths || []), ...(detail.evidence || []).map((e) => e.detail || e.label || '')])
+    .join(' | ')
+}
+
+function passesEvidenceGate(item, ctx = {}) {
+  if (!item) return false
+  if (!Array.isArray(item.evidence) || item.evidence.length === 0) return false
+  if (!item.why_it_matters || !Array.isArray(item.steps) || item.steps.length === 0) return false
+  if (!item.confidence) return false
+
+  // Low-confidence findings may only appear as explicit verify items
+  if (item.confidence === 'low' && !/verify|_verify$/i.test(item.id || '')) return false
+
+  const strengths = collectStrengthBlob(ctx.categoryDetails)
+  const evidenceBlob = item.evidence.join(' | ')
+  const titleBlob = `${item.title} ${item.why_it_matters}`
+
+  // Never recommend "no phone/contact" when strengths/evidence show contact exists
+  if (/no phone|no contact|missing contact|add stronger trust/i.test(titleBlob)) {
+    if (
+      /contact information .*discoverable|phone number is visible|clickable phone|phones=true|tel_link|visual_tel|visual_text/i.test(
+        `${strengths} ${evidenceBlob}`,
+      ) ||
+      (ctx.aggregated?.contact_signals?.phones || []).length > 0 ||
+      ctx.aggregated?.contact_signals?.has_tel
+    ) {
+      // Allow soft visibility items; block absolute absence claims
+      if (/no phone|no contact found|across crawled pages/i.test(evidenceBlob)) return false
+    }
+  }
+
+  // Never recommend add-reviews when review proof already exists
+  if (/add reviews|missing review|no on-page reviews/i.test(`${titleBlob} ${evidenceBlob}`)) {
+    if (
+      /reviews or testimonials|review or testimonial evidence|aggregaterating|testimonial|4\.\d out of 5|5-star reviews/i.test(
+        strengths,
+      ) ||
+      ctx.aggregated?.trust_signals?.has_strong_reviews ||
+      ctx.aggregated?.trust_signals?.review_strength === 'strong'
+    ) {
+      return false
+    }
+  }
+
+  // Never top-rank mobile overflow without element proof
+  if (item.id === 'mobile_overflow' && item.confidence !== 'high') return false
+
+  return true
 }
 
 function compareFixItems(a, b) {
@@ -1118,10 +1190,11 @@ function buildFixPlan(input = {}) {
   const capReasons = input.capReasons || []
   const rubric = input.rubric || 'ecommerce_store'
   const pages = input.pages || []
+  const aggregated = input.aggregated || {}
   const benchmarkComparison = input.benchmarkComparison || null
 
   const events = collectEvents({ categoryDetails, uxFeatures, capReasons })
-  const ctx = { rubric, categoryDetails, uxFeatures, pages }
+  const ctx = { rubric, categoryDetails, uxFeatures, pages, aggregated }
 
   const rawItems = []
   for (const runner of CLUSTER_RUNNERS) {
@@ -1132,7 +1205,7 @@ function buildFixPlan(input = {}) {
   const benchmarkItem = runBenchmarkGap(benchmarkComparison, categoryDetails, rubric)
   if (benchmarkItem) rawItems.push(benchmarkItem)
 
-  let finalized = rawItems.map((raw) => finalizeItem(raw, ctx))
+  let finalized = rawItems.map((raw) => finalizeItem(raw, ctx)).filter((item) => passesEvidenceGate(item, ctx))
   finalized.sort(compareFixItems)
 
   // The plan should be dominated by fixes that attract and convert customers, not design
@@ -1314,6 +1387,7 @@ function ensurePillarCoverage(plan, rubric) {
       expected_score_lift: null,
       affected_scores: [],
       difficulty: 'medium',
+      confidence: 'low',
       unlock_reason: 'Unlocked now - balanced growth requires consistent execution across all four pillars.',
       research_basis:
         "Nielsen Norman Group's usability guidance and Stanford credibility research both show that durable performance comes from consistent systems, not one-time changes.",
@@ -1357,6 +1431,7 @@ function buildGrowthPlan(input = {}) {
       action: item.title,
       reason: item.why_it_matters,
       expected_impact: item.expected_score_lift || item.expected_business_outcome,
+      confidence: item.confidence || 'medium',
     }
     return {
       ...normalized,
@@ -1371,4 +1446,5 @@ module.exports = {
   collectEvents,
   priorityFromGap,
   estimateLift,
+  passesEvidenceGate,
 }

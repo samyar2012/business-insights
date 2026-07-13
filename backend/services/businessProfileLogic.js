@@ -55,11 +55,31 @@ function classifySite(pages, aggregated) {
     classification = 'marketplace'
     confidence = 85
   } else if (shopifyVotes > 0 && aggregated.platform === 'Shopify') {
-    classification = 'shopify_dtc'
-    confidence = 80
+    // Product catalog themes are common for custom/service businesses (blinds, etc.)
+    const serviceLean =
+      serviceVotes > 0 ||
+      Boolean(aggregated.contact_signals?.has_contact_cta) ||
+      (aggregated.contact_signals?.phones || []).length > 0 ||
+      /quote|consultation|estimate|book/i.test((aggregated.content_signals?.ctas || []).join(' '))
+    if (serviceLean) {
+      classification = 'service'
+      confidence = 68
+    } else {
+      classification = 'shopify_dtc'
+      confidence = 80
+    }
   } else if (ecommerceVotes > 0 || aggregated.high_confidence_products.length >= 2) {
-    classification = 'single_brand_ecommerce'
-    confidence = 75
+    const serviceLean =
+      serviceVotes > 0 ||
+      Boolean(aggregated.contact_signals?.has_contact_cta) ||
+      /quote|consultation|estimate|book/i.test((aggregated.content_signals?.ctas || []).join(' '))
+    if (serviceLean && serviceVotes >= ecommerceVotes) {
+      classification = 'service'
+      confidence = 66
+    } else {
+      classification = 'single_brand_ecommerce'
+      confidence = 75
+    }
   } else if (serviceVotes > 0 && serviceVotes >= contentVotes) {
     classification = 'service'
     confidence = 70

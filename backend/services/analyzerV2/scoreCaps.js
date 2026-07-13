@@ -57,6 +57,27 @@ function applyScoreCaps(overallScore, context = {}) {
 
 function detectSevereBusinessMismatch(rubric, aggregated, mismatchWarnings = []) {
   if (!mismatchWarnings.length) return false
+
+  // Never treat hybrid catalog + consultation businesses as a severe mismatch when
+  // service conversion paths are clearly present.
+  const hasServiceConversion =
+    Boolean(aggregated?.contact_signals?.phones?.length) ||
+    Boolean(aggregated?.contact_signals?.has_tel) ||
+    Boolean(aggregated?.contact_signals?.has_contact_cta) ||
+    Boolean(aggregated?.trust_signals?.review_indicators) ||
+    (aggregated?.services || []).length > 0 ||
+    /quote|consultation|estimate|book|schedule/i.test(
+      (aggregated?.content_signals?.ctas || []).join(' '),
+    )
+  if (
+    ['online_plus_physical_service', 'local_service_business', 'online_gallery_physical_service'].includes(
+      rubric,
+    ) &&
+    hasServiceConversion
+  ) {
+    return false
+  }
+
   const site = aggregated.site_classification?.classification || 'unknown'
   const severePairs = [
     { rubric: 'ecommerce_store', sites: ['marketplace'] },
