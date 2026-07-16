@@ -206,6 +206,38 @@ function shouldIncludeFix(fix, scores = {}) {
 }
 
 function normalizeFixesFromScores(scores = {}) {
+  // Prefer Growth Move Writer output when present
+  if (Array.isArray(scores.growth_moves) && scores.growth_moves.length) {
+    return scores.growth_moves
+      .map((move, index) => ({
+        id: move.id,
+        rank: move.rank ?? index + 1,
+        priority: move.priority || (index < 3 ? 'high' : 'medium'),
+        category: move.category || (move.affected_scores || [])[0] || 'customer_attraction',
+        action: move.title,
+        title: move.title,
+        evidence: Array.isArray(move.evidence) ? move.evidence : [],
+        why_it_matters: move.why_it_matters || move.customer_problem,
+        customer_problem: move.customer_problem || null,
+        what_to_change: move.what_to_change || null,
+        steps: move.implementation_steps || move.steps || [],
+        expected_business_outcome: move.expected_outcome || move.expected_business_outcome || null,
+        how_to_verify: move.how_to_verify || null,
+        expected_score_lift: move.expected_score_lift || null,
+        affected_scores: move.affected_scores || [],
+        confidence: resolveConfidence(move),
+        difficulty: move.difficulty || 'medium',
+        pillar: move.pillar || null,
+        tier: move.tier || (index < 3 ? 'primary' : 'secondary'),
+        related_pages: move.related_pages || [],
+        research_basis: move.research_basis || null,
+        ask_ai_prompt: move.ask_ai_prompt || null,
+        source_fix_ids: move.source_fix_ids || [move.id].filter(Boolean),
+        unlock_reason: move.unlock_reason || null,
+      }))
+      .filter((fix) => shouldIncludeFix(fix, scores))
+  }
+
   const source = scores.growth_plan?.length
     ? scores.growth_plan
     : scores.fix_plan?.length
@@ -232,6 +264,7 @@ function normalizeFixesFromScores(scores = {}) {
       .map((fix, index) => ({
         ...fix,
         rank: fix.rank ?? index + 1,
+        tier: fix.tier || (index < 3 ? 'primary' : 'secondary'),
       }))
   }
   return (scores.recommended_actions || []).map((action, index) => ({
@@ -245,6 +278,7 @@ function normalizeFixesFromScores(scores = {}) {
     why_it_matters: String(action),
     steps: [String(action)],
     confidence: 'low',
+    tier: index < 3 ? 'primary' : 'secondary',
   }))
 }
 
@@ -256,39 +290,56 @@ function buildFixMetadata(fix, { business_id, scan_id, scores } = {}) {
   const confidence = resolveConfidence(fix)
   const pageUrl = resolvePageUrl(fix, scores)
   const snippets = evidenceSnippets(fix)
+  const tier = fix.tier || (fix.rank != null && fix.rank <= 3 ? 'primary' : 'secondary')
 
   return {
     plan_type: 'website_fix',
-    plan_name: fix.pillar ? 'growth_plan' : 'fix_plan',
+    plan_name: fix.pillar || fix.tier ? 'growth_plan' : 'fix_plan',
     fix_rank: fix.rank ?? null,
-    step_label: fix.step_label || (fix.rank ? `Step ${fix.rank}` : null),
+    step_label:
+      fix.step_label ||
+      (tier === 'primary' && fix.rank ? `Growth Move ${fix.rank}` : fix.rank ? `Step ${fix.rank}` : null),
     pillar: fix.pillar || null,
     pillar_label: fix.pillar ? PILLAR_LABELS[fix.pillar] || fix.pillar : null,
+    tier,
+    is_primary: tier === 'primary',
     category,
     category_label: CATEGORY_LABELS[category] || String(category).replace(/_/g, ' '),
-    reason: fix.reason || fix.why_it_matters || null,
-    expected_impact: fix.expected_impact || fix.expected_score_lift || fix.impact || null,
+    reason: fix.reason || fix.why_it_matters || fix.customer_problem || null,
+    expected_impact: fix.expected_impact || fix.expected_score_lift || fix.expected_outcome || fix.impact || null,
     difficulty,
     owner_action: suggestOwnerAction(fix, category),
-    // Evidence-based fix-plan engine fields
     evidence: snippets.slice(0, 6),
     evidence_snippet: snippets[0] || null,
     page_url: pageUrl,
     confidence: confidence || 'medium',
     why_it_matters: fix.why_it_matters || fix.reason || null,
-    steps: Array.isArray(fix.steps) ? fix.steps.slice(0, 6) : [],
+    customer_problem: fix.customer_problem || null,
+    what_to_change: fix.what_to_change || null,
+    how_to_verify: fix.how_to_verify || null,
+    steps: Array.isArray(fix.steps)
+      ? fix.steps.slice(0, 6)
+      : Array.isArray(fix.implementation_steps)
+        ? fix.implementation_steps.slice(0, 6)
+        : [],
     expected_score_lift: fix.expected_score_lift || null,
     unlock_reason: fix.unlock_reason || null,
-    expected_business_outcome: fix.expected_business_outcome || null,
+    expected_business_outcome: fix.expected_business_outcome || fix.expected_outcome || null,
     ask_ai_prompt: fix.ask_ai_prompt || null,
     research_basis: fix.research_basis || null,
     affected_scores: Array.isArray(fix.affected_scores) ? fix.affected_scores : [],
     related_pages: Array.isArray(fix.related_pages) ? fix.related_pages.slice(0, 3) : [],
+    source_fix_ids: Array.isArray(fix.source_fix_ids) ? fix.source_fix_ids : [],
+    growth_diagnosis: scores?.growth_diagnosis || null,
     report_path: reportPath,
     scan_id: scan_id || null,
     scoring_version: scores?.scoring_version || null,
     business_model: scores?.business_model || scores?.rubric || scores?.scoring_rubric || null,
-    source_section: fix.evidence?.length ? 'fix_plan_engine' : 'priority_fixes',
+    source_section: scores?.growth_moves?.length
+      ? 'growth_move_writer'
+      : fix.evidence?.length
+        ? 'fix_plan_engine'
+        : 'priority_fixes',
   }
 }
 

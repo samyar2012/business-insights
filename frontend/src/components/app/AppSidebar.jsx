@@ -27,7 +27,7 @@ const workspaceItems = [
 
 const topLinks = [
   { label: 'Dashboard', to: '/app', icon: 'D' },
-  { label: 'Growth Roadmap', to: '/app/action-plan', icon: 'F' },
+  { label: 'Growth Plan', to: '/app/action-plan', icon: 'F' },
   { label: 'Growth Coach', to: '/app/tools/growth-coach', icon: 'C' },
   { label: 'Tools', to: '/app/tools', icon: 'T', exact: true },
 ]

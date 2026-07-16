@@ -19,32 +19,15 @@ const PILLAR_LABELS = {
   operate: 'Operate',
 }
 
-const PILLAR_DESCRIPTIONS = {
-  acquire: 'Discovery channels: SEO, local, social, listings, referrals.',
-  convert: 'Offer clarity, trust, CTA flow, and friction-free action paths.',
-  retain: 'Reviews, follow-up, loyalty, and repeat customer momentum.',
-  operate: 'Response speed, handoffs, fulfillment, and support readiness.',
-}
-
-const DIFFICULTY_LABELS = {
-  easy: 'Easy',
-  moderate: 'Moderate effort',
-  medium: 'Moderate effort',
-  hard: 'Hard',
-}
-
-const difficultyClass = {
-  easy: 'bg-[var(--app-success-bg)] text-[var(--app-success-icon)]',
-  moderate: 'bg-[var(--app-warning-bg)] text-[var(--app-warning-icon)]',
+const CONFIDENCE_CLASS = {
+  high: 'bg-[var(--app-success-bg)] text-[var(--app-success-icon)]',
   medium: 'bg-[var(--app-warning-bg)] text-[var(--app-warning-icon)]',
-  hard: 'bg-[var(--app-error-bg)] text-[var(--app-error-fg)]',
+  low: 'bg-[var(--app-error-bg)] text-[var(--app-error-fg)]',
 }
 
 const readMeta = (action, key) => action.metadata?.[key] ?? null
 
-const actionPillar = (action) => readMeta(action, 'pillar')
-
-const sortSteps = (a, b) => {
+const sortMoves = (a, b) => {
   const rankA = readMeta(a, 'fix_rank')
   const rankB = readMeta(b, 'fix_rank')
   if (rankA != null && rankB != null) return rankA - rankB
@@ -62,59 +45,69 @@ const coachPathForAction = (action) => {
   if (action.business_id) params.set('businessId', action.business_id)
   params.set('context', 'growth-plan')
   params.set('actionId', action.id)
+  const prompt = readMeta(action, 'ask_ai_prompt')
+  if (prompt) params.set('prompt', prompt.slice(0, 500))
   return `/app/tools/growth-coach?${params.toString()}`
 }
 
-/** Sum "+low-high pts" tokens across open steps into a single plan-level range. */
-function estimatePlanLift(steps) {
-  let low = 0
-  let high = 0
-  let found = false
-  for (const step of steps) {
-    if (step.status === 'done') continue
-    const label = readMeta(step, 'expected_score_lift')
-    if (!label) continue
-    const matches = String(label).matchAll(/\+(\d+)(?:-(\d+))?\s*pts/g)
-    for (const match of matches) {
-      found = true
-      low += Number(match[1])
-      high += Number(match[2] ?? match[1])
-    }
-  }
-  if (!found) return null
-  if (low === high) return `+${high} pts`
-  return `+${low} to +${high} pts`
+function ConfidenceBadge({ value }) {
+  if (!value) return null
+  return (
+    <span className={`rounded px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${CONFIDENCE_CLASS[value] || CONFIDENCE_CLASS.medium}`}>
+      {value} confidence
+    </span>
+  )
 }
 
-function StatusChip({ state }) {
-  if (state === 'done') {
-    return <span className="text-xs font-semibold text-[var(--app-success-icon)]">Done</span>
-  }
-  if (state === 'in_progress') {
-    return <span className="text-xs font-semibold text-[var(--app-warning-icon)]">In progress</span>
-  }
-  if (state === 'current') {
-    return <span className="text-xs font-semibold text-[var(--app-accent-strong)]">Up next</span>
-  }
-  return <span className="text-xs font-medium text-[var(--app-text-muted)]">Later</span>
+function AffectedScores({ scores }) {
+  if (!scores?.length) return null
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {scores.map((key) => (
+        <span
+          key={key}
+          className="rounded border border-[var(--app-border)] bg-[var(--app-bg-elevated)] px-2 py-0.5 text-[11px] font-medium text-[var(--app-text-secondary)]"
+        >
+          {CORE_CATEGORY_LABELS[key] || String(key).replace(/_/g, ' ')}
+        </span>
+      ))}
+    </div>
+  )
 }
 
-function StepDetails({ action }) {
+function MoveBody({ action }) {
   const evidence = readMeta(action, 'evidence') || []
-  const whyItMatters = readMeta(action, 'why_it_matters') || readMeta(action, 'reason') || action.description
-  const expectedBusinessOutcome = readMeta(action, 'expected_business_outcome')
+  const customerProblem = readMeta(action, 'customer_problem')
+  const whatToChange = readMeta(action, 'what_to_change')
+  const whyItMatters =
+    readMeta(action, 'why_it_matters') || readMeta(action, 'reason') || action.description
+  const howToVerify = readMeta(action, 'how_to_verify')
+  const expectedOutcome = readMeta(action, 'expected_business_outcome')
   const steps = readMeta(action, 'steps') || []
   const affectedScores = readMeta(action, 'affected_scores') || []
-  const expectedLift = readMeta(action, 'expected_score_lift')
-  const relatedPages = readMeta(action, 'related_pages') || []
-  const researchBasis = readMeta(action, 'research_basis')
 
   return (
     <div className="space-y-4">
+      {customerProblem ? (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
+            Why it costs customers
+          </p>
+          <p className="mt-1.5 text-sm leading-relaxed text-[var(--app-text-secondary)]">{customerProblem}</p>
+        </div>
+      ) : whyItMatters ? (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
+            Why it costs customers
+          </p>
+          <p className="mt-1.5 text-sm leading-relaxed text-[var(--app-text-secondary)]">{whyItMatters}</p>
+        </div>
+      ) : null}
+
       {evidence.length ? (
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
-            What the analyzer found
+            Evidence from the scan
           </p>
           <ul className="mt-1.5 list-inside list-disc space-y-1 text-sm leading-relaxed text-[var(--app-text-secondary)]">
             {evidence.map((item) => (
@@ -124,30 +117,19 @@ function StepDetails({ action }) {
         </div>
       ) : null}
 
-      {whyItMatters ? (
+      {whatToChange ? (
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
-            Why this grows the business
+            What to change
           </p>
-          <p className="mt-1.5 text-sm leading-relaxed text-[var(--app-text-secondary)]">{whyItMatters}</p>
-        </div>
-      ) : null}
-
-      {expectedBusinessOutcome ? (
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
-            Expected business outcome
-          </p>
-          <p className="mt-1.5 text-sm leading-relaxed text-[var(--app-text-secondary)]">
-            {expectedBusinessOutcome}
-          </p>
+          <p className="mt-1.5 text-sm leading-relaxed text-[var(--app-text-secondary)]">{whatToChange}</p>
         </div>
       ) : null}
 
       {steps.length ? (
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
-            How to complete this step
+            Implementation steps
           </p>
           <ol className="mt-1.5 list-inside list-decimal space-y-1 text-sm leading-relaxed text-[var(--app-text-secondary)]">
             {steps.map((step) => (
@@ -157,60 +139,37 @@ function StepDetails({ action }) {
         </div>
       ) : null}
 
-      {researchBasis ? (
-        <p className="app-fix-card__research">
-          <strong>The research: </strong>
-          {researchBasis}
-        </p>
-      ) : null}
-
-      {affectedScores.length || expectedLift ? (
-        <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-[var(--app-text-muted)]">
-          {affectedScores.length ? (
-            <span>
-              <span className="font-semibold">Improves: </span>
-              {affectedScores.map((key) => CORE_CATEGORY_LABELS[key] || String(key).replace(/_/g, ' ')).join(', ')}
-            </span>
-          ) : null}
-          {expectedLift ? (
-            <span>
-              <span className="font-semibold">Expected score lift: </span>
-              {expectedLift}
-            </span>
-          ) : null}
+      {howToVerify || expectedOutcome ? (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
+            How to verify it worked
+          </p>
+          <p className="mt-1.5 text-sm leading-relaxed text-[var(--app-text-secondary)]">
+            {howToVerify || expectedOutcome}
+          </p>
         </div>
       ) : null}
 
-      {relatedPages.length ? (
-        <div className="text-xs text-[var(--app-text-muted)]">
-          <span className="font-semibold">Pages to work on: </span>
-          {relatedPages.map((page, i) => (
-            <span key={page.url || page}>
-              {i > 0 ? ', ' : ''}
-              <a
-                href={page.url || page}
-                target="_blank"
-                rel="noreferrer"
-                className="app-link"
-              >
-                {page.title || page.url || page}
-              </a>
-            </span>
-          ))}
+      {affectedScores.length ? (
+        <div>
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
+            Affects scores
+          </p>
+          <AffectedScores scores={affectedScores} />
         </div>
       ) : null}
     </div>
   )
 }
 
-function StepActions({ action, busyId, onStatus, primary = false }) {
+function MoveActions({ action, busyId, onStatus }) {
   const busy = busyId === action.id
   return (
     <div className="flex flex-wrap gap-2">
       {action.status === 'todo' ? (
         <button
           type="button"
-          className={`app-btn ${primary ? 'app-btn--primary' : 'app-btn--secondary'}`}
+          className="app-btn app-btn--secondary"
           disabled={busy}
           onClick={() => onStatus(action, 'in_progress')}
         >
@@ -220,7 +179,7 @@ function StepActions({ action, busyId, onStatus, primary = false }) {
       {action.status !== 'done' ? (
         <button
           type="button"
-          className={`app-btn ${action.status === 'in_progress' && primary ? 'app-btn--primary' : 'app-btn--secondary'}`}
+          className="app-btn app-btn--primary"
           disabled={busy}
           onClick={() => onStatus(action, 'done')}
         >
@@ -237,7 +196,7 @@ function StepActions({ action, busyId, onStatus, primary = false }) {
         </button>
       )}
       <Link to={coachPathForAction(action)} className="app-btn app-btn--ghost">
-        Ask AI Coach how to do this
+        Ask AI Coach
       </Link>
     </div>
   )
@@ -251,20 +210,24 @@ const ActionPlan = () => {
   const business = businesses.find((b) => b.id === businessId) || businesses[0] || null
 
   const [actions, setActions] = useState([])
+  const [reportScores, setReportScores] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busyId, setBusyId] = useState(null)
   const [creating, setCreating] = useState(false)
-  const [expandedId, setExpandedId] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
       const query = businessId ? `?business_id=${businessId}` : ''
-      const data = await apiFetch(`/actions${query}`)
-      setActions(data.actions || [])
+      const [actionsData, profileData] = await Promise.all([
+        apiFetch(`/actions${query}`),
+        businessId ? apiFetch(`/businesses/${businessId}/web-profile`).catch(() => null) : Promise.resolve(null),
+      ])
+      setActions(actionsData.actions || [])
+      setReportScores(profileData?.profile?.scores || null)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -304,15 +267,18 @@ const ActionPlan = () => {
         setError('No website report found yet. Run the Website Analyzer first.')
         return
       }
+      setReportScores(scores)
       const result = await apiFetch('/actions/fix-plan', {
         method: 'POST',
         body: JSON.stringify({ business_id: businessId, scores }),
       })
       setActions(result.actions || [])
       if (result.already_exists) {
-        setNotice('Your plan already includes every fix from the latest report.')
+        setNotice('Your Growth Plan already includes every move from the latest report.')
       } else if (result.created?.length) {
-        setNotice(`Added ${result.created.length} fix${result.created.length === 1 ? '' : 'es'} from your latest website report.`)
+        setNotice(
+          `Added ${result.created.length} growth move${result.created.length === 1 ? '' : 's'} from your latest website report.`,
+        )
       }
     } catch (err) {
       setError(err.message)
@@ -321,30 +287,44 @@ const ActionPlan = () => {
     }
   }
 
-  const steps = useMemo(() => [...actions].sort(sortSteps), [actions])
-  const completed = steps.filter((s) => s.status === 'done')
-  const currentIndex = steps.findIndex((s) => s.status !== 'done')
-  const currentStep = currentIndex === -1 ? null : steps[currentIndex]
-  const planLift = useMemo(() => estimatePlanLift(steps), [steps])
-  const allDone = steps.length > 0 && !currentStep
+  const moves = useMemo(() => [...actions].sort(sortMoves), [actions])
+  const primaryMoves = useMemo(() => {
+    const flagged = moves.filter((m) => readMeta(m, 'is_primary') || readMeta(m, 'tier') === 'primary')
+    if (flagged.length) return flagged.slice(0, 3)
+    return moves.slice(0, 3)
+  }, [moves])
+  const secondaryMoves = useMemo(() => {
+    const primaryIds = new Set(primaryMoves.map((m) => m.id))
+    return moves.filter((m) => !primaryIds.has(m.id))
+  }, [moves, primaryMoves])
 
+  const diagnosis =
+    reportScores?.growth_diagnosis ||
+    readMeta(moves[0], 'growth_diagnosis') ||
+    null
+
+  const evidencePillars = useMemo(() => {
+    const counts = {}
+    for (const move of moves) {
+      const pillar = readMeta(move, 'pillar')
+      if (!pillar) continue
+      counts[pillar] = (counts[pillar] || 0) + 1
+    }
+    return Object.entries(counts).filter(([, count]) => count > 0)
+  }, [moves])
+
+  const completedPrimary = primaryMoves.filter((m) => m.status === 'done').length
+  const allPrimaryDone = primaryMoves.length > 0 && completedPrimary === primaryMoves.length
   const reportPath = businessId ? `/app/businesses/${businessId}/website-report` : '/app/businesses'
-
-  const stepState = (step, index) => {
-    if (step.status === 'done') return 'done'
-    if (step.status === 'in_progress') return 'in_progress'
-    if (index === currentIndex) return 'current'
-    return 'later'
-  }
 
   return (
     <div className="mx-auto max-w-4xl">
       <header className="app-stagger">
         <p className="app-eyebrow">Improve</p>
-        <h1 className="app-page-title mt-2">Growth Roadmap</h1>
+        <h1 className="app-page-title mt-2">Growth Plan Studio</h1>
         <p className="app-page-subtitle max-w-2xl">
-          Your ordered execution plan{business ? ` for ${business.business_name}` : ''}. Work through the
-          steps top to bottom - each step unlocks the next, then rescan to confirm your score went up.
+          The three highest-leverage moves{business ? ` for ${business.business_name}` : ''} based on
+          your latest website evidence — not a generic checklist.
         </p>
       </header>
 
@@ -354,19 +334,19 @@ const ActionPlan = () => {
         </Alert>
       ) : null}
       {notice ? (
-        <Alert variant="success" title="Growth roadmap updated" className="mt-6">
+        <Alert variant="success" title="Growth plan updated" className="mt-6">
           {notice}
         </Alert>
       ) : null}
 
       {loading ? (
-        <p className="mt-8 text-sm text-[var(--app-text-muted)]">Loading growth roadmap...</p>
-      ) : steps.length === 0 ? (
+        <p className="mt-8 text-sm text-[var(--app-text-muted)]">Loading growth plan...</p>
+      ) : moves.length === 0 ? (
         <div className="app-card mt-8 p-8 text-center">
-          <p className="text-sm font-medium text-[var(--app-text)]">No growth roadmap yet.</p>
+          <p className="text-sm font-medium text-[var(--app-text)]">No growth plan yet.</p>
           <p className="mx-auto mt-2 max-w-md text-sm text-[var(--app-text-secondary)]">
-            Analyze your website first, then turn the ranked findings into a step-by-step plan you can
-            execute and track.
+            Analyze your website first, then generate the top 3 evidence-backed growth moves to work
+            this week.
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-3">
             {businessId ? (
@@ -376,7 +356,7 @@ const ActionPlan = () => {
                 disabled={creating}
                 onClick={createFromReport}
               >
-                {creating ? 'Creating roadmap...' : 'Create roadmap from latest report'}
+                {creating ? 'Building plan...' : 'Build plan from latest report'}
               </button>
             ) : null}
             <Link to={reportPath} className="app-btn app-btn--secondary">
@@ -386,56 +366,60 @@ const ActionPlan = () => {
         </div>
       ) : (
         <>
-          <section className="mt-8">
-            <p className="app-eyebrow">4 growth pillars</p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {Object.entries(PILLAR_LABELS).map(([pillar, label]) => {
-                const count = steps.filter((item) => actionPillar(item) === pillar).length
-                return (
-                  <div key={pillar} className="app-card p-4">
-                    <p className="text-sm font-semibold text-[var(--app-text)]">{label}</p>
-                    <p className="mt-1 text-xs text-[var(--app-text-muted)]">{PILLAR_DESCRIPTIONS[pillar]}</p>
-                    <p className="mt-2 text-xs font-semibold text-[var(--app-accent-strong)]">
-                      {count} step{count === 1 ? '' : 's'}
-                    </p>
-                  </div>
-                )
-              })}
-            </div>
-          </section>
-
-          <div className="app-stagger mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <div className="app-metric">
-              <p className="app-eyebrow">Total steps</p>
-              <p className="app-metric__value mt-2">{steps.length}</p>
-            </div>
-            <div className="app-metric">
-              <p className="app-eyebrow">Completed</p>
-              <p className="app-metric__value mt-2">{completed.length}</p>
-            </div>
-            <div className="app-metric">
-              <p className="app-eyebrow">Current step</p>
-              <p className="app-metric__value mt-2">
-                {allDone ? 'All done' : `Step ${currentIndex + 1}`}
-              </p>
-            </div>
-            <div className="app-metric">
-              <p className="app-eyebrow">Estimated score lift</p>
-              <p className="app-metric__value mt-2 text-lg">{planLift || '-'}</p>
-            </div>
-          </div>
-
-          {allDone ? (
+          {diagnosis ? (
             <section className="app-next-action app-stagger mt-8">
-              <p className="app-eyebrow">Plan complete</p>
+              <p className="app-eyebrow">Growth diagnosis</p>
               <h2 className="mt-2 text-xl font-semibold tracking-tight text-[var(--app-text)]">
-                Every step is done. Rescan to confirm your score went up.
+                What is holding growth back
               </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--app-text-secondary)]">
-                Run the Website Analyzer again to measure the improvement and generate the next round of
-                growth opportunities.
+              <p className="mt-3 max-w-3xl text-sm leading-relaxed text-[var(--app-text-secondary)]">
+                {diagnosis}
               </p>
-              <div className="mt-5 flex flex-wrap gap-3">
+              <div className="mt-4 flex flex-wrap gap-3 text-xs text-[var(--app-text-muted)]">
+                <span>
+                  <span className="font-semibold text-[var(--app-text-secondary)]">Primary moves: </span>
+                  {primaryMoves.length}
+                </span>
+                <span>
+                  <span className="font-semibold text-[var(--app-text-secondary)]">Completed: </span>
+                  {completedPrimary}/{primaryMoves.length}
+                </span>
+                {typeof reportScores?.overall_score === 'number' ? (
+                  <span>
+                    <span className="font-semibold text-[var(--app-text-secondary)]">Site score: </span>
+                    {reportScores.overall_score}/100
+                  </span>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
+          {evidencePillars.length > 0 ? (
+            <section className="mt-6">
+              <p className="app-eyebrow">Evidence-backed pillars</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {evidencePillars.map(([pillar, count]) => (
+                  <span
+                    key={pillar}
+                    className="rounded border border-[var(--app-border)] px-3 py-1.5 text-xs font-medium text-[var(--app-text-secondary)]"
+                  >
+                    {PILLAR_LABELS[pillar] || pillar}
+                    <span className="ml-1.5 text-[var(--app-text-muted)]">
+                      {count} move{count === 1 ? '' : 's'}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {allPrimaryDone ? (
+            <section className="app-card mt-8 p-6">
+              <p className="app-eyebrow">Primary moves complete</p>
+              <h2 className="mt-2 text-lg font-semibold text-[var(--app-text)]">
+                Rescan to confirm the gains, then pull the next round.
+              </h2>
+              <div className="mt-4 flex flex-wrap gap-3">
                 <Link to={reportPath} className="app-btn app-btn--primary">
                   Rescan website
                 </Link>
@@ -445,35 +429,8 @@ const ActionPlan = () => {
                   disabled={creating}
                   onClick={createFromReport}
                 >
-                  {creating ? 'Checking report...' : 'Pull updates from latest report'}
+                  {creating ? 'Checking report...' : 'Sync from latest report'}
                 </button>
-              </div>
-            </section>
-          ) : currentStep ? (
-            <section className="app-next-action app-stagger mt-8">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="app-eyebrow">Do this first</p>
-                {readMeta(currentStep, 'difficulty') ? (
-                  <span
-                    className={`rounded px-2 py-0.5 text-xs font-medium ${difficultyClass[readMeta(currentStep, 'difficulty')] || ''}`}
-                  >
-                    {DIFFICULTY_LABELS[readMeta(currentStep, 'difficulty')] || readMeta(currentStep, 'difficulty')}
-                  </span>
-                ) : null}
-              </div>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight text-[var(--app-text)]">
-                Step {currentIndex + 1}: {currentStep.title}
-              </h2>
-              {readMeta(currentStep, 'unlock_reason') ? (
-                <p className="app-fix-card__unlock mt-3 max-w-2xl">
-                  {readMeta(currentStep, 'unlock_reason')}
-                </p>
-              ) : null}
-              <div className="mt-4">
-                <StepDetails action={currentStep} />
-              </div>
-              <div className="mt-5">
-                <StepActions action={currentStep} busyId={busyId} onStatus={updateStatus} primary />
               </div>
             </section>
           ) : null}
@@ -481,9 +438,9 @@ const ActionPlan = () => {
           <section className="mt-10">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <p className="app-eyebrow">The full plan</p>
+                <p className="app-eyebrow">Focus this week</p>
                 <h2 className="mt-1 text-lg font-semibold text-[var(--app-text)]">
-                  {steps.length} steps, in order
+                  Top 3 Growth Moves
                 </h2>
               </div>
               <Link to={reportPath} className="app-link text-sm font-medium">
@@ -491,114 +448,102 @@ const ActionPlan = () => {
               </Link>
             </div>
 
-            <ol className="mt-5 space-y-3">
-              {steps.map((step, index) => {
-                const state = stepState(step, index)
-                const isCurrent = state === 'current' || state === 'in_progress'
-                const expanded = expandedId === step.id || isCurrent
-                const difficulty = readMeta(step, 'difficulty')
-                const expectedLift = readMeta(step, 'expected_score_lift')
-                const unlockReason = readMeta(step, 'unlock_reason')
-                const pillar = actionPillar(step)
+            <ol className="mt-5 space-y-4">
+              {primaryMoves.map((move, index) => {
+                const confidence = readMeta(move, 'confidence')
+                const affected = readMeta(move, 'affected_scores') || []
+                const done = move.status === 'done'
 
                 return (
                   <li
-                    key={step.id}
-                    className={`app-card p-4 sm:p-5 ${state === 'done' ? 'opacity-70' : ''}`}
+                    key={move.id}
+                    className={`app-card border-l-4 p-5 sm:p-6 ${
+                      done
+                        ? 'border-l-[var(--app-success-icon)] opacity-75'
+                        : 'border-l-[var(--app-accent-strong)]'
+                    }`}
                   >
-                    <div className="flex items-start gap-3">
-                      <span className="app-priority-fix__rank shrink-0">{index + 1}</span>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
-                            Step {index + 1}
-                            {pillar ? ` - ${PILLAR_LABELS[pillar] || pillar}` : ''}
-                            {readMeta(step, 'category_label') ? ` - ${readMeta(step, 'category_label')}` : ''}
-                          </p>
-                          <StatusChip state={state} />
-                          {difficulty ? (
-                            <span
-                              className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${difficultyClass[difficulty] || ''}`}
-                            >
-                              {DIFFICULTY_LABELS[difficulty] || difficulty}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="app-priority-fix__rank">{index + 1}</span>
+                          <ConfidenceBadge value={confidence} />
+                          {done ? (
+                            <span className="text-xs font-semibold text-[var(--app-success-icon)]">Done</span>
+                          ) : move.status === 'in_progress' ? (
+                            <span className="text-xs font-semibold text-[var(--app-warning-icon)]">
+                              In progress
                             </span>
                           ) : null}
                         </div>
-                        <p
-                          className={`mt-1 text-sm font-semibold leading-snug ${
-                            state === 'done'
-                              ? 'text-[var(--app-text-muted)] line-through'
-                              : 'text-[var(--app-text)]'
+                        <h3
+                          className={`mt-2 text-base font-semibold leading-snug sm:text-lg ${
+                            done ? 'text-[var(--app-text-muted)] line-through' : 'text-[var(--app-text)]'
                           }`}
                         >
-                          {step.title}
-                        </p>
-                        {!expanded && expectedLift ? (
-                          <p className="mt-1 text-xs text-[var(--app-text-muted)]">
-                            Expected score lift: {expectedLift}
-                          </p>
-                        ) : null}
-                        {expanded && unlockReason && !isCurrent ? (
-                          <p className="app-fix-card__unlock mt-2">{unlockReason}</p>
-                        ) : null}
-
-                        {expanded ? (
-                          <div className="mt-4">
-                            <StepDetails action={step} />
-                            <div className="mt-4">
-                              <StepActions action={step} busyId={busyId} onStatus={updateStatus} />
-                            </div>
+                          {move.title}
+                        </h3>
+                        {affected.length ? (
+                          <div className="mt-3">
+                            <AffectedScores scores={affected} />
                           </div>
-                        ) : (
-                          <div className="mt-3 flex flex-wrap items-center gap-3">
-                            <button
-                              type="button"
-                              className="app-link text-xs font-semibold"
-                              onClick={() => setExpandedId(step.id)}
-                            >
-                              Show details
-                            </button>
-                            {state !== 'done' ? (
-                              <button
-                                type="button"
-                                className="app-link text-xs font-semibold"
-                                disabled={busyId === step.id}
-                                onClick={() => updateStatus(step, 'done')}
-                              >
-                                Mark done
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                className="app-link text-xs font-semibold"
-                                disabled={busyId === step.id}
-                                onClick={() => updateStatus(step, 'todo')}
-                              >
-                                Reopen
-                              </button>
-                            )}
-                            <Link to={coachPathForAction(step)} className="app-link text-xs font-semibold">
-                              Ask AI Coach how to do this
-                            </Link>
-                          </div>
-                        )}
-
-                        {expanded && expandedId === step.id && !isCurrent ? (
-                          <button
-                            type="button"
-                            className="app-link mt-3 text-xs font-semibold"
-                            onClick={() => setExpandedId(null)}
-                          >
-                            Hide details
-                          </button>
                         ) : null}
                       </div>
+                    </div>
+
+                    <div className="mt-5 border-t border-[var(--app-border)] pt-5">
+                      <MoveBody action={move} />
+                    </div>
+
+                    <div className="mt-5">
+                      <MoveActions action={move} busyId={busyId} onStatus={updateStatus} />
                     </div>
                   </li>
                 )
               })}
             </ol>
           </section>
+
+          {secondaryMoves.length ? (
+            <section className="mt-10">
+              <p className="app-eyebrow">After the top 3</p>
+              <h2 className="mt-1 text-lg font-semibold text-[var(--app-text)]">
+                Secondary moves
+              </h2>
+              <p className="mt-1 text-sm text-[var(--app-text-muted)]">
+                Still evidence-backed, but lower leverage than the primary three.
+              </p>
+              <ul className="mt-4 space-y-3">
+                {secondaryMoves.map((move) => (
+                  <li key={move.id} className={`app-card p-4 ${move.status === 'done' ? 'opacity-70' : ''}`}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <ConfidenceBadge value={readMeta(move, 'confidence')} />
+                      {readMeta(move, 'pillar') ? (
+                        <span className="text-[11px] font-medium text-[var(--app-text-muted)]">
+                          {PILLAR_LABELS[readMeta(move, 'pillar')] || readMeta(move, 'pillar')}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p
+                      className={`mt-2 text-sm font-semibold ${
+                        move.status === 'done'
+                          ? 'text-[var(--app-text-muted)] line-through'
+                          : 'text-[var(--app-text)]'
+                      }`}
+                    >
+                      {move.title}
+                    </p>
+                    <div className="mt-3">
+                      <MoveBody action={move} />
+                    </div>
+                    <div className="mt-4">
+                      <MoveActions action={move} busyId={busyId} onStatus={updateStatus} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
           <div className="mt-10 flex flex-wrap gap-3 border-t border-[var(--app-border)] pt-6">
             <button
@@ -607,7 +552,7 @@ const ActionPlan = () => {
               disabled={creating || !businessId}
               onClick={createFromReport}
             >
-              {creating ? 'Syncing...' : 'Sync roadmap with latest report'}
+              {creating ? 'Syncing...' : 'Sync plan with latest report'}
             </button>
             <Link to={reportPath} className="app-btn app-btn--ghost">
               Open website report

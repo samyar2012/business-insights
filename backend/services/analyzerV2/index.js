@@ -28,6 +28,10 @@ const { buildUxFeatureSnapshot } = require('../uxFeatureExtractor')
 const { buildFixPlan, buildGrowthPlan } = require('./fixPlanEngine')
 const { buildEvidenceStrengths, buildEvidenceRisks } = require('./evidenceNarrator')
 const { assessMobileOverflow } = require('./evidenceDetectors')
+const {
+  writeGrowthMovesSync,
+  toGrowthPlanItems,
+} = require('../growthMoveWriterService')
 
 function computeConfidenceScore({ pages, visualAudit, safetyResult, aggregated, crawlHealth, benchmark }) {
   let score = 35
@@ -207,7 +211,7 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     benchmarkComparison,
     aggregated,
   })
-  const growth_plan = buildGrowthPlan({
+  const growth_plan_raw = buildGrowthPlan({
     categoryDetails,
     uxFeatures,
     capReasons: capResult.cap_reasons,
@@ -218,6 +222,26 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     business,
     fixPlan: fix_plan,
   })
+  const strengths = buildEvidenceStrengths(categoryDetails, { rubric })
+  const risks = buildEvidenceRisks(categoryDetails, { rubric }, mismatchWarnings)
+  const growthWriter = writeGrowthMovesSync({
+    business_name: business?.business_name || business?.name || null,
+    business_model: rubric,
+    website_url: business?.store_url || business?.website_url || null,
+    overall_score,
+    category_scores: categoryScores,
+    risks,
+    strengths,
+    growth_plan: growth_plan_raw,
+    fix_plan,
+    ux_features: uxFeatures,
+    visual_evidence: options.visualAudit?.summary || uxFeatures?.visual_evidence_summary || null,
+    analyzed_pages: pages,
+    pages,
+    benchmark_comparison: benchmarkComparison,
+    business,
+  })
+  const growth_plan = toGrowthPlanItems(growthWriter)
   const priority_fixes = fix_plan
   const readable_summary = buildReadableSummary({
     overallScore: overall_score,
@@ -249,13 +273,18 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     priority_fixes,
     fix_plan,
     growth_plan,
+    growth_diagnosis: growthWriter.diagnosis,
+    growth_moves: growthWriter.growth_moves,
+    primary_growth_moves: growthWriter.primary_growth_moves,
+    secondary_growth_moves: growthWriter.secondary_growth_moves,
+    growth_moves_provider: growthWriter.provider,
     benchmark_comparison: benchmarkComparison?.enabled ? benchmarkComparison : { enabled: false, reason: benchmarkComparison?.reason },
     score_caps_applied: capResult.score_caps_applied,
     cap_reasons: capResult.cap_reasons,
     mismatch_warnings: mismatchWarnings,
     readable_summary,
-    strengths: buildEvidenceStrengths(categoryDetails, { rubric }),
-    risks: buildEvidenceRisks(categoryDetails, { rubric }, mismatchWarnings),
+    strengths,
+    risks,
     recommended_actions: growth_plan.map((item) => item.action),
     score_explanation: buildScoreExplanation(categoryDetails),
     ...legacyFields,

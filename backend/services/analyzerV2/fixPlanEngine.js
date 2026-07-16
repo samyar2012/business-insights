@@ -260,8 +260,6 @@ const RESEARCH_BASIS = {
   },
 }
 
-const GROWTH_PILLARS = ['acquire', 'convert', 'retain', 'operate']
-
 const PILLAR_LABELS = {
   acquire: 'Acquire',
   convert: 'Convert',
@@ -1414,53 +1412,7 @@ function buildRetainAndOperateItems({
   return items
 }
 
-function ensurePillarCoverage(plan, rubric) {
-  const covered = new Set(plan.map((item) => item.pillar))
-  let rank = plan.length + 1
-  const additions = []
-  for (const pillar of GROWTH_PILLARS) {
-    if (covered.has(pillar)) continue
-    additions.push({
-      id: `pillar_backfill_${pillar}`,
-      rank: rank++,
-      pillar,
-      title:
-        pillar === 'acquire'
-          ? 'Create a weekly discovery-growth routine.'
-          : pillar === 'convert'
-            ? 'Tighten the primary conversion path end to end.'
-            : pillar === 'retain'
-              ? 'Launch a repeat-customer follow-up sequence.'
-              : 'Document operations for demand spikes.',
-      category: pillar === 'operate' ? 'functionality' : pillar === 'retain' ? 'trust' : 'customer_attraction',
-      why_it_matters:
-        pillar === 'acquire'
-          ? 'Acquisition grows when discovery channels are worked consistently instead of ad hoc.'
-          : pillar === 'convert'
-            ? 'Traffic only creates revenue when the customer path is obvious and friction is low.'
-            : pillar === 'retain'
-              ? 'Retention creates compounding growth through repeat business and referrals.'
-              : 'Operational readiness protects customer experience as lead volume increases.',
-      evidence: ['This growth pillar has no explicit step yet, so add one to keep the roadmap balanced.'],
-      steps: [
-        'Define one owner and one weekly KPI for this pillar.',
-        'Implement one high-leverage improvement this week.',
-        'Review KPI movement next week and iterate.',
-      ],
-      expected_business_outcome: defaultOutcomeForPillar(pillar, rubric),
-      expected_score_lift: null,
-      affected_scores: [],
-      difficulty: 'medium',
-      confidence: 'low',
-      unlock_reason: 'Unlocked now - balanced growth requires consistent execution across all four pillars.',
-      research_basis:
-        "Nielsen Norman Group's usability guidance and Stanford credibility research both show that durable performance comes from consistent systems, not one-time changes.",
-      related_pages: [],
-      source: 'analyzer',
-    })
-  }
-  return [...plan, ...additions]
-}
+// ensurePillarCoverage removed: never invent pillar_backfill_* items without real evidence.
 
 function buildGrowthPlan(input = {}) {
   const rubric = input.rubric || 'ecommerce_store'
