@@ -1,3 +1,5 @@
+const { shouldDropFixForRubric } = require('./analyzerV2/evidenceFilters')
+
 const CATEGORY_LABELS = {
   // core analyzer categories (legacy priority_fixes shape)
   safety_trust: 'Safety & trust',
@@ -195,11 +197,22 @@ function isContradicted(fix, scores = {}) {
   return false
 }
 
+function resolveRubric(scores = {}) {
+  return (
+    scores.scoring_rubric ||
+    scores.business_model ||
+    scores.rubric ||
+    scores?.business_profile?.business_model ||
+    null
+  )
+}
+
 function shouldIncludeFix(fix, scores = {}) {
   if (!fix) return false
   if (LOW_CONFIDENCE_SKIP_IDS.has(fix.id)) return false
   if (!hasEnoughEvidence(fix)) return false
   if (isContradicted(fix, scores)) return false
+  if (shouldDropFixForRubric(fix, resolveRubric(scores))) return false
   // Pillar backfills are soft fillers — keep them out of the persisted action plan
   if (/^pillar_backfill_/i.test(fix.id || '')) return false
   return true

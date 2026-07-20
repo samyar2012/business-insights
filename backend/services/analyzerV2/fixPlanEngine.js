@@ -2,6 +2,20 @@
 // rubric signals) into a small set of meaningful, evidence-backed fix items instead of one
 // task per point deducted. See docs/fix-plan-research.md for the full mapping rationale.
 const { CATEGORY_LABELS: CORE_CATEGORY_LABELS } = require('./explanationBuilder')
+const {
+  filterEvidenceLines,
+  filterProblemLines,
+  shouldDropFixForRubric,
+  isPositiveEvidenceNote,
+  isPillarFillerText,
+} = require('./evidenceFilters')
+const {
+  conversionPathFix,
+  weakCtaFix,
+  trustMissingFix,
+  defaultTrustSteps,
+  defaultCtaSteps,
+} = require('./roadmapTemplates')
 
 const OFFER_TITLES = {
   ecommerce_store: 'Clarify your product catalog and pricing.',
@@ -61,12 +75,7 @@ const CTA_STEPS_BY_RUBRIC = {
     'Respond quickly to inquiries to keep the listing marked as responsive.',
   ],
 }
-const DEFAULT_CTA_STEPS = [
-  'Add one clear, high-contrast primary call-to-action above the fold.',
-  'Repeat that same CTA further down the page.',
-  'Remove or de-emphasize buttons that compete with the primary action.',
-  'Make your phone number or contact link visible as a backup action.',
-]
+const DEFAULT_CTA_STEPS = defaultCtaSteps('ecommerce_store')
 
 // Business-model-specific trust/proof steps. Which proof signals matter (reviews, policies,
 // service area, portfolio credibility) genuinely differs by business type, so this is not the
@@ -117,13 +126,7 @@ const TRUST_STEPS_BY_RUBRIC = {
     'Respond quickly to inquiries to keep the listing marked as responsive.',
   ],
 }
-const DEFAULT_TRUST_STEPS = [
-  'Add a visible phone number and email in the header and footer.',
-  'Publish privacy, shipping, and return policies (where relevant) and link them from the footer.',
-  'Add customer reviews, testimonials, or ratings near your main offer.',
-  'Link at least one active social profile to reinforce legitimacy.',
-  'Add a short About section stating who runs the business.',
-]
+const DEFAULT_TRUST_STEPS = defaultTrustSteps('ecommerce_store')
 
 // Business-model-specific content-depth steps. What "add more content" should actually mean
 // differs sharply between a product catalog, a service page, and a blog.
@@ -342,7 +345,7 @@ function collectEvents({ categoryDetails = {}, uxFeatures = {}, capReasons = [] 
   const seenText = new Set()
   const push = (category, text, extra = {}) => {
     const trimmed = String(text || '').trim()
-    if (!trimmed) return
+    if (!trimmed || isPositiveEvidenceNote(trimmed) || isPillarFillerText(trimmed)) return
     events.push({ category, text: trimmed, used: false, ...extra })
   }
 
@@ -351,7 +354,7 @@ function collectEvents({ categoryDetails = {}, uxFeatures = {}, capReasons = [] 
   }
 
   for (const [category, detail] of Object.entries(categoryDetails)) {
-    for (const problem of detail.problems || []) {
+    for (const problem of filterProblemLines(detail.problems || [])) {
       push(category, problem, { kind: 'problem' })
       seenText.add(problem)
     }
@@ -366,7 +369,7 @@ function collectEvents({ categoryDetails = {}, uxFeatures = {}, capReasons = [] 
   }
 
   for (const key of ['readability_problems', 'layout_problems', 'visual_problems']) {
-    for (const problem of uxFeatures?.[key] || []) {
+    for (const problem of filterProblemLines(uxFeatures?.[key] || [])) {
       if (seenText.has(problem)) continue
       push('ux_ui_visual', problem, { kind: 'ux_feature' })
       seenText.add(problem)
@@ -548,21 +551,17 @@ function runBusinessModelMismatch(events, ctx) {
   }
 }
 
-function runNoConversionPath(events) {
+function runNoConversionPath(events, ctx) {
   const matched = claim(events, ['overall'], /no clear cta, contact, or purchase path/i)
   if (!matched.length) return null
+  const rubric = ctx?.rubric || 'ecommerce_store'
+  const tpl = conversionPathFix(rubric)
   return {
     id: 'no_conversion_path',
-    title: 'Add a clear path for visitors to buy, book, or contact you.',
+    title: tpl.title,
     category: 'customer_attraction',
-    why_it_matters:
-      'With no visible phone, contact, booking, or purchase path, ready-to-buy visitors have no way to act, which caps the whole site regardless of how good the rest looks.',
-    steps: [
-      'Add one obvious phone number, contact form, booking, or "Buy now" action above the fold.',
-      'Repeat that same action at the bottom of the homepage.',
-      'Make sure the action works on mobile without extra taps.',
-      'Rescan after adding the action to confirm the score cap is removed.',
-    ],
+    why_it_matters: tpl.why_it_matters,
+    steps: tpl.steps,
     affected: ['customer_attraction'],
     difficulty: 'easy',
     forcedPriority: 'critical',
@@ -684,20 +683,13 @@ function runWeakCta(events, ctx) {
   )
   if (!matched.length) return null
   const rubric = ctx.rubric
-  const why =
-    rubric === 'ecommerce_store'
-      ? 'Visitors who cannot immediately see how to buy will bounce, even when your catalog and pricing are otherwise ready to convert.'
-      : ['online_plus_physical_service', 'local_service_business', 'online_gallery_physical_service', 'online_plus_offline_store'].includes(
-            rubric,
-          )
-        ? 'Visitors need one obvious next step - book, call, or request a quote - or they will leave without ever contacting the business.'
-        : 'Without one clear next step, visitors read the page and leave instead of converting into a lead, subscriber, or customer.'
+  const tpl = weakCtaFix(rubric)
   return {
     id: 'weak_cta',
-    title: 'Make the primary customer action clearer.',
+    title: tpl.title,
     category: 'customer_attraction',
-    why_it_matters: why,
-    steps: CTA_STEPS_BY_RUBRIC[rubric] || DEFAULT_CTA_STEPS,
+    why_it_matters: tpl.why_it_matters,
+    steps: CTA_STEPS_BY_RUBRIC[rubric] || defaultCtaSteps(rubric),
     affected: ['customer_attraction', 'offer_business_fit'],
     difficulty: 'easy',
     matched,
@@ -750,20 +742,13 @@ function runMissingTrust(events, ctx) {
     const matched = isEcommerce ? ecommerceAbsolute : filteredAbsolute
     if (!matched.length && !filteredSoftReviews.length && !softContact.length) return null
     if (matched.length) {
+      const tpl = trustMissingFix(ctx.rubric)
       return {
         id: 'missing_contact_trust',
-        title: isContent
-          ? 'Strengthen author trust and reader paths.'
-          : isEcommerce
-            ? 'Add the trust signals shoppers check before they buy.'
-            : 'Add stronger trust and proof signals.',
+        title: tpl.title,
         category: 'trust',
-        why_it_matters: isContent
-          ? 'Readers decide whether to trust a blog from the author, navigation, and subscribe path — commerce-style reviews are usually the wrong lever.'
-          : isEcommerce
-            ? 'DTC shoppers hesitate when policies, reviews, or checkout trust cues are missing — a header phone number is optional, not the primary fix.'
-            : 'New visitors decide whether to trust a business within seconds - missing contact details, policies, or proof makes that decision harder and increases bounce before visitors ever reach your offer.',
-        steps: TRUST_STEPS_BY_RUBRIC[ctx.rubric] || DEFAULT_TRUST_STEPS,
+        why_it_matters: tpl.why_it_matters,
+        steps: TRUST_STEPS_BY_RUBRIC[ctx.rubric] || defaultTrustSteps(ctx.rubric),
         affected: ['safety_trust', 'customer_attraction'],
         difficulty: 'easy',
         confidence: 'high',
@@ -1175,7 +1160,7 @@ function finalizeItem(raw, ctx) {
     id: raw.id,
     title: raw.title,
     category: raw.category,
-    evidence: sanitize(dedupe((raw.matched || []).map((e) => e.text))).slice(0, 4),
+    evidence: sanitize(filterEvidenceLines(dedupe((raw.matched || []).map((e) => e.text)), ctx.rubric)).slice(0, 4),
     why_it_matters: raw.why_it_matters,
     steps: sanitize(finalizeSteps(raw.steps)),
     expected_score_lift: lift.label,
@@ -1198,6 +1183,7 @@ function collectStrengthBlob(categoryDetails = {}) {
 
 function passesEvidenceGate(item, ctx = {}) {
   if (!item) return false
+  if (shouldDropFixForRubric(item, ctx.rubric)) return false
   if (!Array.isArray(item.evidence) || item.evidence.length === 0) return false
   if (!item.why_it_matters || !Array.isArray(item.steps) || item.steps.length === 0) return false
   if (!item.confidence) return false
@@ -1519,6 +1505,7 @@ function buildGrowthPlan(input = {}) {
   const merged = [...growthFromFixes, ...extraItems]
     .filter((item) => item.confidence && item.confidence !== 'low')
     .filter((item) => !/^pillar_backfill_/i.test(item.id || ''))
+    .filter((item) => !shouldDropFixForRubric(item, rubric))
     .slice(0, 12)
   // Do not backfill empty pillars with generic filler — only keep evidence-backed items
   const withCoverage = merged

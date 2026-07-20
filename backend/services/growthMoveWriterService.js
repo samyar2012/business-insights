@@ -12,21 +12,34 @@
 
 const AI_PROVIDER = String(process.env.AI_PROVIDER || 'mock').toLowerCase()
 
-const SERVICE_RUBRICS = new Set([
-  'online_plus_physical_service',
-  'local_service_business',
-  'online_gallery_physical_service',
-])
-
-const STORE_RUBRICS = new Set(['ecommerce_store', 'online_plus_offline_store'])
-
-const CONTENT_RUBRICS = new Set(['blog', 'content_business'])
+const {
+  filterEvidenceLines,
+  shouldDropFixForRubric,
+  isPositiveEvidenceNote,
+  isPillarFillerText,
+  isContentRubric,
+  isStoreRubric,
+  isServiceRubric,
+} = require('./analyzerV2/evidenceFilters')
+const {
+  conversionPathFix,
+  trustMissingFix,
+  weakCtaFix,
+} = require('./analyzerV2/roadmapTemplates')
 
 const VAGUE_TITLE_RE =
   /polish remaining|strengthen (?:remaining )?conversion|shore up|improve business fit|strengthen remaining|remaining layout|remaining technical|catchall|tighten the primary conversion|weekly discovery-growth|repeat-customer follow-up|document operations for demand/i
 
 function isContent(rubric) {
-  return CONTENT_RUBRICS.has(rubric)
+  return isContentRubric(rubric)
+}
+
+function isService(rubric) {
+  return isServiceRubric(rubric)
+}
+
+function isStore(rubric) {
+  return isStoreRubric(rubric)
 }
 
 const CATEGORY_LABELS = {
@@ -52,14 +65,6 @@ const CORE_SCORE_KEYS = [
   'offer_business_fit',
   'customer_attraction',
 ]
-
-function isService(rubric) {
-  return SERVICE_RUBRICS.has(rubric)
-}
-
-function isStore(rubric) {
-  return STORE_RUBRICS.has(rubric)
-}
 
 function dedupe(list) {
   return [...new Set((list || []).filter(Boolean).map((s) => String(s).trim()).filter(Boolean))]
@@ -110,11 +115,12 @@ function collectSourceItems(input) {
 }
 
 function collectUxEvidence(input) {
+  const rubric = rubricOf(input)
   const ux = input.ux_features || input.uxFeatures || {}
   const visual = input.visual_evidence || ux.visual_evidence_summary || {}
   const lines = []
   for (const key of ['readability_problems', 'layout_problems', 'visual_problems']) {
-    for (const line of ux[key] || []) lines.push(line)
+    for (const line of filterEvidenceLines(ux[key] || [], rubric)) lines.push(line)
   }
   for (const signal of visual.template_debt_signals || ux.signals?.template_debt_signals || []) {
     lines.push(`Template/demo residue detected: ${signal}`)
@@ -150,10 +156,7 @@ function pickEvidence(item, input, max = 4) {
     }
     return false
   })
-  // Never keep positive "no issue" lines as problem evidence
-  return dedupe([...fromItem, ...uxExtra])
-    .filter((line) => !/^no .+ (?:issue|problem) detected\.?$/i.test(line))
-    .slice(0, max)
+  return filterEvidenceLines(dedupe([...fromItem, ...uxExtra]), rubricOf(input)).slice(0, max)
 }
 
 function titleForItem(item, input) {
@@ -164,6 +167,16 @@ function titleForItem(item, input) {
     /misaligned|poorly fitted|poorly integrated|alignment inconsistency/i.test(evidence) &&
     !/no image alignment issue detected/i.test(evidence)
 
+  if (id === 'no_conversion_path') {
+    const tpl = conversionPathFix(rubric)
+    return tpl.title
+  }
+  if (id === 'weak_cta') {
+    return weakCtaFix(rubric).title
+  }
+  if (id === 'missing_contact_trust') {
+    return trustMissingFix(rubric).title
+  }
   if (id === 'unsafe_site') {
     return 'Clear the Safe Browsing warning before spending on ads or SEO'
   }
@@ -172,51 +185,6 @@ function titleForItem(item, input) {
   }
   if (id === 'no_https') {
     return 'Turn on HTTPS so browsers stop warning visitors away'
-  }
-  if (id === 'no_conversion_path' || id === 'weak_cta') {
-    if (isService(rubric)) return 'Make the booking path obvious before visitors scroll'
-    if (isStore(rubric)) return 'Put a clear Shop or Add to cart action above the fold'
-    if (isContent(rubric)) {
-      return 'Add one obvious subscribe or newsletter action above the fold'
-    }
-    return 'Give visitors one obvious next step on the homepage'
-  }
-  if (id === 'missing_contact_trust') {
-    if (isContent(rubric)) {
-      if (/about|author|identity/i.test(evidence)) {
-        return 'Add a clear About / author page so readers know who to trust'
-      }
-      return 'Strengthen author trust, navigation, and the subscribe path'
-    }
-    if (isStore(rubric)) {
-      if (/policy|shipping|return/i.test(evidence)) {
-        return 'Publish shipping, returns, and privacy links buyers expect'
-      }
-      if (/review|testimonial|rating/i.test(evidence)) {
-        return 'Place product reviews next to the buy decision'
-      }
-      if (/phone|email|contact/i.test(evidence)) {
-        return 'Add a clear Help / Contact path — chat, email, or contact page'
-      }
-      return 'Add the trust signals shoppers check before they buy'
-    }
-    if (/phone|email|contact/i.test(evidence) && /review|testimonial/i.test(evidence)) {
-      return isService(rubric)
-        ? 'Add a clickable phone number and place proof near the booking CTA'
-        : 'Add visible contact details and customer proof near the purchase path'
-    }
-    if (/review|testimonial|rating/i.test(evidence)) {
-      return 'Move reviews next to the decision point'
-    }
-    if (/phone|email|contact/i.test(evidence)) {
-      return 'Make the phone number clickable and visible in the header'
-    }
-    if (/policy|shipping|return/i.test(evidence)) {
-      return 'Publish shipping, returns, and privacy links buyers expect'
-    }
-    return isService(rubric)
-      ? 'Add trust details customers check before they book'
-      : 'Add the trust details shoppers check before they buy'
   }
   if (id === 'strengthen_trust_visibility') {
     if (isContent(rubric)) {
@@ -351,18 +319,34 @@ function customerProblemFor(item, input) {
   const name = businessLabel(input)
 
   if (id === 'weak_cta' || id === 'no_conversion_path') {
-    return isService(rubric)
-      ? `A visitor ready to book ${name} cannot quickly see how to call, quote, or schedule.`
-      : `A visitor ready to buy from ${name} cannot quickly see the next purchase step.`
-  }
-  if (id === 'unclear_offer' || id === 'business_model_mismatch') {
-    return `Someone landing on ${name} for the first time may leave before understanding what is offered.`
+    if (isContent(rubric)) {
+      return `A reader landing on ${name} cannot quickly find categories, search, or a subscribe path.`
+    }
+    if (isService(rubric)) {
+      return `A visitor ready to book ${name} cannot quickly see how to call, quote, or schedule.`
+    }
+    if (isStore(rubric)) {
+      return `A shopper landing on ${name} cannot quickly see how to browse products or add to cart.`
+    }
+    return `A visitor ready to engage with ${name} cannot quickly see the next step.`
   }
   if (id === 'missing_contact_trust' || id === 'strengthen_trust_visibility') {
+    if (isContent(rubric)) {
+      return `Readers may not trust ${name} because author context, navigation, or subscribe paths are unclear.`
+    }
+    if (isStore(rubric)) {
+      return 'Shoppers hesitate when checkout trust cues, policies, or product proof are missing near the buy path.'
+    }
     if (/review/i.test(evidence)) {
-      return 'Shoppers hesitate because proof is missing or not placed where the decision happens.'
+      return 'Visitors hesitate because proof is missing or not placed where the decision happens.'
     }
     return 'First-time visitors cannot quickly verify that a real, reachable business is behind the site.'
+  }
+  if (id === 'unclear_offer' || id === 'business_model_mismatch') {
+    if (isContent(rubric)) {
+      return `Someone landing on ${name} may leave before understanding the niche, categories, or where to start reading.`
+    }
+    return `Someone landing on ${name} for the first time may leave before understanding what is offered.`
   }
   if (id === 'mobile_overflow' || id === 'mobile_readability' || id === 'no_mobile_viewport') {
     return 'Phone visitors struggle to read or use the page, so they bounce before converting.'
@@ -385,6 +369,12 @@ function whatToChangeFor(item, input) {
 
 function whyItMattersFor(item, input) {
   const rubric = rubricOf(input)
+  const id = String(item.id || '')
+  if (id === 'no_conversion_path') return conversionPathFix(rubric).why_it_matters
+  if (id === 'weak_cta') return weakCtaFix(rubric).why_it_matters
+  if (id === 'missing_contact_trust' || id === 'strengthen_trust_visibility') {
+    return trustMissingFix(rubric).why_it_matters
+  }
   if (item.why_it_matters && !/score/i.test(item.why_it_matters.split(' ')[0] || '')) {
     // Prefer business cost framing
     const base = item.why_it_matters
@@ -400,7 +390,18 @@ function whyItMattersFor(item, input) {
 }
 
 function implementationStepsFor(item, input) {
+  const rubric = rubricOf(input)
+  const id = String(item.id || '')
   const steps = Array.isArray(item.steps) ? item.steps.map(String).filter(Boolean) : []
+  if (id === 'no_conversion_path') {
+    return dedupe([...steps, ...conversionPathFix(rubric).steps]).slice(0, 6)
+  }
+  if (id === 'weak_cta') {
+    return dedupe([...steps, ...weakCtaFix(rubric).steps]).slice(0, 6)
+  }
+  if (id === 'missing_contact_trust' || id === 'strengthen_trust_visibility') {
+    return dedupe([...steps, ...trustMissingFix(rubric).steps]).slice(0, 6)
+  }
   if (steps.length >= 2) return dedupe(steps).slice(0, 6)
 
   const title = titleForItem(item, input)
@@ -505,32 +506,10 @@ function writeGrowthMovesDeterministic(input = {}) {
 
   // Hard cap: no invented pillar filler
   const cleaned = moves.filter((move) => {
-    if (/^pillar_backfill_/i.test(move.id || '')) return false
+    const rubric = rubricOf(input)
+    if (shouldDropFixForRubric(move, rubric)) return false
     if (!move.evidence.length) return false
     if (VAGUE_TITLE_RE.test(move.title) && !move.evidence.length) return false
-    // Drop contradictory alignment moves
-    if (
-      /fix misaligned images/i.test(move.title) &&
-      /no image alignment issue detected/i.test((move.evidence || []).join(' '))
-    ) {
-      return false
-    }
-    // DTC: never surface phone-in-header as a growth move
-    if (
-      isStore(rubricOf(input)) &&
-      /phone number clickable and visible in the header|phone in the header/i.test(move.title)
-    ) {
-      return false
-    }
-    // Blog/content: never surface commerce review / "understand the offer" moves
-    if (
-      isContent(rubricOf(input)) &&
-      /reviews next to the decision|understand the (?:offer|service) in 5 seconds|add reviews/i.test(
-        move.title,
-      )
-    ) {
-      return false
-    }
     return true
   })
 

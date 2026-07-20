@@ -1,3 +1,4 @@
+const { filterProblemLines } = require('./evidenceFilters')
 const { unknownResult } = require('../safeBrowsingService')
 const { inferCrawlHealth } = require('../priorityWebsiteScoring')
 const { detectOperationalSignals } = require('../businessScoringRubrics')
@@ -689,7 +690,8 @@ function scoreUxUiVisual({ pages, aggregated, uxFeatures, visualAudit, rubric, s
   }
 
   if ((features.layout_problems || []).length) {
-    detail.problems.push(features.layout_problems[0])
+    const filtered = filterProblemLines(features.layout_problems)
+    if (filtered[0]) detail.problems.push(filtered[0])
   }
   if ((features.layout_strengths || []).length) {
     detail.strengths.push(features.layout_strengths[0])

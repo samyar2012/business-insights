@@ -212,6 +212,7 @@ function visualAuditWithMobileOverflow() {
     mobile: {
       metrics: {
         horizontal_overflow: true,
+        overflow_severity: 'minor',
       },
     },
   }

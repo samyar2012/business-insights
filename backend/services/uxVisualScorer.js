@@ -6,6 +6,7 @@ const {
   GALLERY_SERVICE_MODELS,
   isListingModel,
 } = require('./businessModelConfig')
+const { filterProblemLines } = require('./analyzerV2/evidenceFilters')
 const { mergeHeroHeadingSignals } = require('./heroHeadingDetection')
 const { HIGH_CONFIDENCE, MEDIUM_CONFIDENCE } = require('./visualEvidenceService')
 
@@ -1252,7 +1253,7 @@ function buildVisualUxScore(input = {}) {
     ux_component_explanations: uxComponentExplanations,
     component_notes: componentNotes,
     visual_strengths: [...new Set(strengths)].slice(0, 10),
-    visual_problems: [...new Set(problems)].slice(0, 12),
+    visual_problems: filterProblemLines([...new Set(problems)].slice(0, 12)),
     visual_recommended_fixes: [...new Set(recommended_fixes)].slice(0, 6),
     ux_confidence: avgConfidence,
     ux_evidence: {

@@ -89,7 +89,25 @@ function detectSevereBusinessMismatch(rubric, aggregated, mismatchWarnings = [])
   return severePairs.some((pair) => pair.rubric === rubric && pair.sites.includes(site))
 }
 
-function detectNoConversionPath(signals, rubric) {
+function detectNoConversionPath(signals, rubric, context = {}) {
+  const { aggregated = {}, uxFeatures = null, visualAudit = null, crawlExtraction = null } = context
+  const ctaBlob = (aggregated.content_signals?.ctas || []).join(' ')
+  const hasNewsletter =
+    Boolean(aggregated.content_signals?.newsletter_indicators) ||
+    /subscribe|newsletter|join our list|email signup/i.test(ctaBlob)
+  const hasVisualShopCta =
+    Boolean(uxFeatures?.cta_above_fold) ||
+    Boolean(uxFeatures?.signals?.has_add_to_cart) ||
+    /shop now|add to cart|buy now|browse/i.test(ctaBlob)
+  const hasVisualRenderedPath =
+    Boolean(visualAudit?.ok) &&
+    (Boolean(uxFeatures?.cta_above_fold) || (visualAudit?.summary?.contact_signals || {}).has_contact_cta)
+
+  // JS-heavy sparse crawl: if visual audit proves content/CTAs exist, do not cap as "no path"
+  if (crawlExtraction?.visual_shows_content && (hasVisualShopCta || hasNewsletter || hasVisualRenderedPath)) {
+    return false
+  }
+
   const hasPath =
     signals.has_quote_cta ||
     signals.has_booking_cta ||
@@ -98,7 +116,10 @@ function detectNoConversionPath(signals, rubric) {
     signals.has_add_to_cart ||
     signals.has_phone ||
     signals.has_contact_page ||
-    (rubric === 'content_business' && signals.has_creator_links)
+    hasVisualShopCta ||
+    hasNewsletter ||
+    (rubric === 'content_business' && signals.has_creator_links) ||
+    (rubric === 'blog' && (signals.has_creator_links || hasNewsletter))
 
   return !hasPath
 }

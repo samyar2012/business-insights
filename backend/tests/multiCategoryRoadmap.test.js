@@ -247,6 +247,12 @@ describe('multi-category analyzer roadmap fixes', () => {
       scores.overall_score > 45,
       `sparse crawl + strong visual should not collapse overall; got ${scores.overall_score} cats=${JSON.stringify(scores.category_scores)}`,
     )
+    assert.ok(scores.crawl_extraction?.sparse_crawl)
+    assert.ok(scores.crawl_extraction?.visual_shows_content)
+    assert.match(
+      String(scores.crawl_extraction_warning || ''),
+      /crawl-extraction limitation|very little text was extracted/i,
+    )
   })
 
   it('fix plan drops misaligned_images when strengths say no alignment issue', () => {

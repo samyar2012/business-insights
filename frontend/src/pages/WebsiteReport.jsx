@@ -570,6 +570,18 @@ const WebsiteReport = () => {
             </Alert>
           ) : null}
 
+          {scores.crawl_extraction_warning ? (
+            <Alert variant="warning" title="Crawler extraction confidence" className="mt-6">
+              <p className="text-sm text-[var(--app-text-secondary)]">{scores.crawl_extraction_warning}</p>
+              {scores.crawl_extraction?.js_rendered_gap ? (
+                <p className="mt-2 text-xs text-[var(--app-text-secondary)]">
+                  Visual audit found rendered content that HTML crawl did not capture — scores may understate
+                  the live site until crawlers can read more server-rendered copy.
+                </p>
+              ) : null}
+            </Alert>
+          ) : null}
+
           {missingWeightedScores ? (
             <Alert variant="warning" title="Outdated score data" className="mt-6">
               This report uses an older score format. Rescan the website to refresh category scores.

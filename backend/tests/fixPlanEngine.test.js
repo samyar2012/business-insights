@@ -74,7 +74,7 @@ describe('fixPlanEngine unit clusters', () => {
     const ctaFix = plan.find((item) => item.id === 'weak_cta')
 
     assert.ok(ctaFix, 'expected a weak_cta fix to be generated')
-    assert.equal(ctaFix.title, 'Make the primary customer action clearer.')
+    assert.equal(ctaFix.title, 'Make the primary shop action impossible to miss')
     assert.ok(/buy/i.test(ctaFix.why_it_matters))
     assert.ok(ctaFix.steps.some((s) => /cart|shop/i.test(s)), 'ecommerce CTA steps should be business-model aware')
   })
@@ -102,7 +102,7 @@ describe('fixPlanEngine unit clusters', () => {
     assert.ok(trustFix, 'expected a missing_contact_trust fix to be generated')
     assert.match(
       trustFix.title,
-      /Add the trust signals shoppers check before they buy|Add stronger trust and proof signals/i,
+      /Add the checkout trust signals shoppers expect|Add the trust signals shoppers check before they buy|Add stronger trust and proof signals/i,
     )
     assert.ok(trustFix.evidence.length >= 2, 'should combine multiple related evidence lines into one fix')
     assert.ok(trustFix.affected_scores.includes('safety_trust'))

@@ -26,6 +26,7 @@ const {
 const { buildBenchmarkComparison, humanEquivalentFromOverall } = require('./benchmarkInterpreter')
 const { buildUxFeatureSnapshot } = require('../uxFeatureExtractor')
 const { buildFixPlan, buildGrowthPlan } = require('./fixPlanEngine')
+const { assessCrawlExtraction } = require('./evidenceFilters')
 const { buildEvidenceStrengths, buildEvidenceRisks } = require('./evidenceNarrator')
 const { assessMobileOverflow } = require('./evidenceDetectors')
 const {
@@ -171,16 +172,25 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     Number(visualDesktop.above_fold_text_length) || 0,
     Number(visualMobile.above_fold_text_length) || 0,
   )
-  const visualShowsContent =
-    Boolean(options.visualAudit?.ok) && (visualTextLen >= 200 || Number(uxFeatures?.visual_score) >= 70)
-  const noReadableContent = crawlTextLen < 120 && pages.length > 0 && !visualShowsContent
+  const crawlExtraction = assessCrawlExtraction({
+    crawlTextLen,
+    visualAudit: options.visualAudit,
+    uxFeatures,
+  })
+  const visualShowsContent = crawlExtraction.visual_shows_content
+  const noReadableContent = crawlExtraction.sparse_crawl && pages.length > 0 && !visualShowsContent
   const overflowAssessment = assessMobileOverflow({
     uxFeatures,
     visualAudit: options.visualAudit,
   })
   const severeMobileOverflow = overflowAssessment.should_cap_score
   const severeBusinessMismatch = detectSevereBusinessMismatch(rubric, aggregated, mismatchWarnings)
-  const noConversionPath = detectNoConversionPath(signals, rubric)
+  const noConversionPath = detectNoConversionPath(signals, rubric, {
+    aggregated,
+    uxFeatures,
+    visualAudit: options.visualAudit,
+    crawlExtraction,
+  })
   const safetyStatus =
     safetyResult?.status === 'unsafe'
       ? 'unsafe'
@@ -293,6 +303,8 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     primary_growth_moves: growthWriter.primary_growth_moves,
     secondary_growth_moves: growthWriter.secondary_growth_moves,
     growth_moves_provider: growthWriter.provider,
+    crawl_extraction: crawlExtraction,
+    crawl_extraction_warning: crawlExtraction.warning || null,
     benchmark_comparison: benchmarkComparison?.enabled ? benchmarkComparison : { enabled: false, reason: benchmarkComparison?.reason },
     score_caps_applied: capResult.score_caps_applied,
     cap_reasons: capResult.cap_reasons,
