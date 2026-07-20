@@ -157,8 +157,23 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
 
   let overall_score = Object.values(categoryScores).reduce((sum, value) => sum + value, 0)
 
-  const noReadableContent =
-    (aggregated.content_signals?.total_text_length || 0) < 120 && pages.length > 0
+  // Sparse crawler HTML ≠ broken site. If the visual audit rendered real content, do not
+  // apply the hard "no readable content" overall-score cap (Peak Design–style SPAs).
+  const crawlTextLen = aggregated.content_signals?.total_text_length || 0
+  const visualSummary = options.visualAudit?.summary || {}
+  const visualDesktop = options.visualAudit?.desktop || {}
+  const visualMobile = options.visualAudit?.mobile || {}
+  const visualTextLen = Math.max(
+    Number(visualSummary.visible_text_length) || 0,
+    Number(visualSummary.above_fold_text_length) || 0,
+    Number(visualDesktop.visible_text_length) || 0,
+    Number(visualMobile.visible_text_length) || 0,
+    Number(visualDesktop.above_fold_text_length) || 0,
+    Number(visualMobile.above_fold_text_length) || 0,
+  )
+  const visualShowsContent =
+    Boolean(options.visualAudit?.ok) && (visualTextLen >= 200 || Number(uxFeatures?.visual_score) >= 70)
+  const noReadableContent = crawlTextLen < 120 && pages.length > 0 && !visualShowsContent
   const overflowAssessment = assessMobileOverflow({
     uxFeatures,
     visualAudit: options.visualAudit,
@@ -307,7 +322,10 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
   result.crawl_ux_ui_score = result.ux_ui_score
   result.deterministic_ux_ui_score = result.ux_ui_score
 
-  Object.assign(result, legacy)
+  // Keep v2 category_scores (safety_trust, …). Legacy flat scores stay for older UI fields.
+  const { category_scores: legacyCategoryScoresMap, ...legacyFlat } = legacy
+  Object.assign(result, legacyFlat)
+  result.legacy_category_scores = legacyCategoryScoresMap || null
 
   const validation = validateWeightedScore(result)
   if (!validation.valid) {

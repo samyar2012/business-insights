@@ -1194,6 +1194,11 @@ function buildVisualUxScore(input = {}) {
       if (/overcrowd/i.test(note) && (ctx.primaryNavLinkCount || 0) <= PRIMARY_NAV_OVERCROWD_THRESHOLD) {
         continue
       }
+      // Positive "No X issue detected" notes must stay strengths — "/no /" alone is too greedy.
+      if (/^no .+ (?:issue|problem|overflow|misalignment) detected\.?$/i.test(note)) {
+        if (!strengths.includes(note)) strengths.push(note)
+        continue
+      }
       if (/too|missing|no |not |lack|low|spam|overflow|dense|weak|hard|outdated|may be|misaligned|poorly sized/i.test(note)) {
         if (!problems.includes(note)) problems.push(note)
       } else if (/clear|supports|visible|readable|strong|solid|good|organized|balanced|fit the page/i.test(note)) {

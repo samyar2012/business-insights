@@ -25,9 +25,12 @@ const CONFIDENCE_CLASS = {
   low: 'bg-[var(--app-error-bg)] text-[var(--app-error-fg)]',
 }
 
-const readMeta = (action, key) => action.metadata?.[key] ?? null
+const readMeta = (action, key) => action?.metadata?.[key] ?? null
 
 const sortMoves = (a, b) => {
+  if (!a && !b) return 0
+  if (!a) return 1
+  if (!b) return -1
   const rankA = readMeta(a, 'fix_rank')
   const rankB = readMeta(b, 'fix_rank')
   if (rankA != null && rankB != null) return rankA - rankB
@@ -76,6 +79,7 @@ function AffectedScores({ scores }) {
 }
 
 function MoveBody({ action }) {
+  if (!action) return null
   const evidence = readMeta(action, 'evidence') || []
   const customerProblem = readMeta(action, 'customer_problem')
   const whatToChange = readMeta(action, 'what_to_change')
@@ -163,6 +167,7 @@ function MoveBody({ action }) {
 }
 
 function MoveActions({ action, busyId, onStatus }) {
+  if (!action) return null
   const busy = busyId === action.id
   return (
     <div className="flex flex-wrap gap-2">
@@ -261,17 +266,12 @@ const ActionPlan = () => {
     setError('')
     setNotice('')
     try {
-      const webData = await apiFetch(`/businesses/${businessId}/web-profile`)
-      const scores = webData?.profile?.scores
-      if (!scores) {
-        setError('No website report found yet. Run the Website Analyzer first.')
-        return
-      }
-      setReportScores(scores)
       const result = await apiFetch('/actions/fix-plan', {
         method: 'POST',
-        body: JSON.stringify({ business_id: businessId, scores }),
+        body: JSON.stringify({ business_id: businessId }),
       })
+      const webData = await apiFetch(`/businesses/${businessId}/web-profile`).catch(() => null)
+      if (webData?.profile?.scores) setReportScores(webData.profile.scores)
       setActions(result.actions || [])
       if (result.already_exists) {
         setNotice('Your Growth Plan already includes every move from the latest report.')
@@ -287,7 +287,7 @@ const ActionPlan = () => {
     }
   }
 
-  const moves = useMemo(() => [...actions].sort(sortMoves), [actions])
+  const moves = useMemo(() => actions.filter(Boolean).sort(sortMoves), [actions])
   const primaryMoves = useMemo(() => {
     const flagged = moves.filter((m) => readMeta(m, 'is_primary') || readMeta(m, 'tier') === 'primary')
     if (flagged.length) return flagged.slice(0, 3)

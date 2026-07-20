@@ -20,8 +20,14 @@ const SERVICE_RUBRICS = new Set([
 
 const STORE_RUBRICS = new Set(['ecommerce_store', 'online_plus_offline_store'])
 
+const CONTENT_RUBRICS = new Set(['blog', 'content_business'])
+
 const VAGUE_TITLE_RE =
   /polish remaining|strengthen (?:remaining )?conversion|shore up|improve business fit|strengthen remaining|remaining layout|remaining technical|catchall|tighten the primary conversion|weekly discovery-growth|repeat-customer follow-up|document operations for demand/i
+
+function isContent(rubric) {
+  return CONTENT_RUBRICS.has(rubric)
+}
 
 const CATEGORY_LABELS = {
   safety_trust: 'Safety & trust',
@@ -144,13 +150,19 @@ function pickEvidence(item, input, max = 4) {
     }
     return false
   })
-  return dedupe([...fromItem, ...uxExtra]).slice(0, max)
+  // Never keep positive "no issue" lines as problem evidence
+  return dedupe([...fromItem, ...uxExtra])
+    .filter((line) => !/^no .+ (?:issue|problem) detected\.?$/i.test(line))
+    .slice(0, max)
 }
 
 function titleForItem(item, input) {
   const rubric = rubricOf(input)
   const evidence = evidenceBlob(item)
   const id = String(item.id || '')
+  const hasNegativeAlignment =
+    /misaligned|poorly fitted|poorly integrated|alignment inconsistency/i.test(evidence) &&
+    !/no image alignment issue detected/i.test(evidence)
 
   if (id === 'unsafe_site') {
     return 'Clear the Safe Browsing warning before spending on ads or SEO'
@@ -164,12 +176,30 @@ function titleForItem(item, input) {
   if (id === 'no_conversion_path' || id === 'weak_cta') {
     if (isService(rubric)) return 'Make the booking path obvious before visitors scroll'
     if (isStore(rubric)) return 'Put a clear Shop or Add to cart action above the fold'
-    if (rubric === 'content_business' || rubric === 'blog') {
-      return 'Add one obvious subscribe or follow action above the fold'
+    if (isContent(rubric)) {
+      return 'Add one obvious subscribe or newsletter action above the fold'
     }
     return 'Give visitors one obvious next step on the homepage'
   }
   if (id === 'missing_contact_trust') {
+    if (isContent(rubric)) {
+      if (/about|author|identity/i.test(evidence)) {
+        return 'Add a clear About / author page so readers know who to trust'
+      }
+      return 'Strengthen author trust, navigation, and the subscribe path'
+    }
+    if (isStore(rubric)) {
+      if (/policy|shipping|return/i.test(evidence)) {
+        return 'Publish shipping, returns, and privacy links buyers expect'
+      }
+      if (/review|testimonial|rating/i.test(evidence)) {
+        return 'Place product reviews next to the buy decision'
+      }
+      if (/phone|email|contact/i.test(evidence)) {
+        return 'Add a clear Help / Contact path — chat, email, or contact page'
+      }
+      return 'Add the trust signals shoppers check before they buy'
+    }
     if (/phone|email|contact/i.test(evidence) && /review|testimonial/i.test(evidence)) {
       return isService(rubric)
         ? 'Add a clickable phone number and place proof near the booking CTA'
@@ -189,12 +219,24 @@ function titleForItem(item, input) {
       : 'Add the trust details shoppers check before they buy'
   }
   if (id === 'strengthen_trust_visibility') {
+    if (isContent(rubric)) {
+      return 'Make author and newsletter paths easier to find'
+    }
+    if (isStore(rubric)) {
+      if (/review|testimonial|attribution/i.test(`${item.title} ${evidence}`)) {
+        return 'Place product reviews next to the buy decision'
+      }
+      return 'Make Help / Contact and policy links easier to find'
+    }
     if (/review|testimonial|attribution/i.test(`${item.title} ${evidence}`)) {
       return 'Move reviews next to the decision point'
     }
     return 'Make the phone number clickable and visible in the header'
   }
   if (id === 'unclear_offer' || id === 'business_model_mismatch') {
+    if (isContent(rubric)) {
+      return 'Make categories, search, and “start here” navigation obvious on the homepage'
+    }
     if (isService(rubric)) {
       return 'Rewrite the homepage so customers understand the service in 5 seconds'
     }
@@ -207,24 +249,33 @@ function titleForItem(item, input) {
     return 'Stop horizontal scrolling on phones so the page feels usable'
   }
   if (id === 'mobile_readability') {
-    return 'Shorten above-the-fold copy so phones can read the offer fast'
+    return isContent(rubric)
+      ? 'Improve recipe and post readability on phones'
+      : 'Shorten above-the-fold copy so phones can read the offer fast'
   }
   if (id === 'thin_content') {
+    if (isContent(rubric)) {
+      return 'Add recipe cards, category navigation, and internal links readers expect'
+    }
     if (isService(rubric)) return 'Add service details, process, and FAQs that answer booking questions'
     if (isStore(rubric)) return 'Add product detail buyers need before they add to cart'
     return 'Add enough on-page detail for visitors and search engines to trust the offer'
   }
   if (id === 'weak_seo_meta') {
-    return 'Rewrite the title and meta description so search clicks know what they get'
+    return isContent(rubric)
+      ? 'Rewrite titles and meta so recipe and post search clicks know what they get'
+      : 'Rewrite the title and meta description so search clicks know what they get'
   }
   if (id === 'nav_clutter') {
-    return 'Simplify the top navigation so the main action is hard to miss'
+    return isContent(rubric)
+      ? 'Simplify navigation so categories and search are easy to find'
+      : 'Simplify the top navigation so the main action is hard to miss'
   }
   if (id === 'visual_polish' || id === 'misaligned_images' || id.startsWith('catchall_ux')) {
     if (hasTemplateDebt(input, evidence)) {
       return 'Remove template/demo content that makes the business look unfinished'
     }
-    if (/misalign|poorly fitted|image alignment/i.test(evidence)) {
+    if (hasNegativeAlignment) {
       return 'Fix misaligned images so the site looks finished'
     }
     return 'Clean up spacing and layout so the first screen looks intentional'
@@ -239,20 +290,26 @@ function titleForItem(item, input) {
     return `Close the conversion gap versus similar ${String(rubric).replace(/_/g, ' ')} sites`
   }
   if (id === 'retain_reviews_loop') {
-    return 'Ask every completed customer for a review within 24 hours'
+    return isContent(rubric)
+      ? 'Ask engaged readers to subscribe and share their favorite posts'
+      : 'Ask every completed customer for a review within 24 hours'
   }
   if (id === 'operate_response_playbook') {
     return isService(rubric)
       ? 'Set a same-day response playbook for quote and booking inquiries'
-      : 'Set a fast response playbook so new leads are not left waiting'
+      : isStore(rubric)
+        ? 'Set a fast support playbook for order and return questions'
+        : 'Set a fast response playbook so new leads are not left waiting'
   }
-  if (id.startsWith('catchall_safety') || id.startsWith('catchall_') && /trust|safety/i.test(id)) {
+  if (id.startsWith('catchall_safety') || (id.startsWith('catchall_') && /trust|safety/i.test(id))) {
     return 'Fix remaining trust blockers that still push visitors away'
   }
   if (id.includes('catchall_customer')) {
     return isService(rubric)
       ? 'Remove conversion friction from the booking path'
-      : 'Remove conversion friction from the primary purchase path'
+      : isContent(rubric)
+        ? 'Remove friction from subscribe and find-a-post paths'
+        : 'Remove conversion friction from the primary purchase path'
   }
   if (id.includes('catchall_technical')) {
     return 'Fix technical crawl and load issues that still hide the offer'
@@ -265,14 +322,24 @@ function titleForItem(item, input) {
   if (hasTemplateDebt(input, evidence)) {
     return 'Remove template/demo content that makes the business look unfinished'
   }
-  if (/book|quote|consult|cta|phone/i.test(evidence)) {
-    return isService(rubric)
-      ? 'Make the booking path obvious before visitors scroll'
-      : 'Make the primary customer action obvious above the fold'
+  if (hasNegativeAlignment) {
+    return 'Fix misaligned images so the site looks finished'
   }
-  if (/review|testimonial/i.test(evidence)) return 'Move reviews next to the decision point'
+  if (/book|quote|consult|cta|phone/i.test(evidence) && isService(rubric)) {
+    return 'Make the booking path obvious before visitors scroll'
+  }
+  if (/review|testimonial/i.test(evidence) && !isContent(rubric)) {
+    return isStore(rubric)
+      ? 'Place product reviews next to the buy decision'
+      : 'Move reviews next to the decision point'
+  }
   if (/offer|service|what you sell|unclear/i.test(evidence)) {
-    return 'Rewrite the homepage so customers understand the service in 5 seconds'
+    if (isContent(rubric)) {
+      return 'Make categories, search, and “start here” navigation obvious on the homepage'
+    }
+    return isService(rubric)
+      ? 'Rewrite the homepage so customers understand the service in 5 seconds'
+      : 'Rewrite the homepage so shoppers know what you sell in 5 seconds'
   }
   return existing || 'Fix the highest-friction issue on the customer path'
 }
@@ -441,6 +508,29 @@ function writeGrowthMovesDeterministic(input = {}) {
     if (/^pillar_backfill_/i.test(move.id || '')) return false
     if (!move.evidence.length) return false
     if (VAGUE_TITLE_RE.test(move.title) && !move.evidence.length) return false
+    // Drop contradictory alignment moves
+    if (
+      /fix misaligned images/i.test(move.title) &&
+      /no image alignment issue detected/i.test((move.evidence || []).join(' '))
+    ) {
+      return false
+    }
+    // DTC: never surface phone-in-header as a growth move
+    if (
+      isStore(rubricOf(input)) &&
+      /phone number clickable and visible in the header|phone in the header/i.test(move.title)
+    ) {
+      return false
+    }
+    // Blog/content: never surface commerce review / "understand the offer" moves
+    if (
+      isContent(rubricOf(input)) &&
+      /reviews next to the decision|understand the (?:offer|service) in 5 seconds|add reviews/i.test(
+        move.title,
+      )
+    ) {
+      return false
+    }
     return true
   })
 

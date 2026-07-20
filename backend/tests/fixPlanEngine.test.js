@@ -100,7 +100,10 @@ describe('fixPlanEngine unit clusters', () => {
     const trustFix = plan.find((item) => item.id === 'missing_contact_trust')
 
     assert.ok(trustFix, 'expected a missing_contact_trust fix to be generated')
-    assert.equal(trustFix.title, 'Add stronger trust and proof signals.')
+    assert.match(
+      trustFix.title,
+      /Add the trust signals shoppers check before they buy|Add stronger trust and proof signals/i,
+    )
     assert.ok(trustFix.evidence.length >= 2, 'should combine multiple related evidence lines into one fix')
     assert.ok(trustFix.affected_scores.includes('safety_trust'))
   })

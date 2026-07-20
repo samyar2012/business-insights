@@ -311,6 +311,7 @@ function scoreSafetyTrust({ aggregated, pages, safetyResult, crawlHealth, rubric
     pages,
     signals: opsSignals,
     visualAudit: visualAudit || null,
+    rubric,
   })
   const contactStrength =
     contact.claim === 'contact_visible'
@@ -401,33 +402,50 @@ function scoreSafetyTrust({ aggregated, pages, safetyResult, crawlHealth, rubric
     detail.problems.push('Business name or identity is unclear from crawled content.')
   }
 
-  const reviews = assessReviewEvidence({ aggregated, pages, signals: opsSignals })
+  const reviews = assessReviewEvidence({ aggregated, pages, signals: opsSignals, rubric })
   const reviewStrength = reviews.strength
-  points += pointsForStrength(reviewStrength, 3)
-  if (reviewStrength === 'strong') {
-    detail.strengths.push('Reviews or testimonials build visitor trust.')
-    detail.evidence.push({
-      signal: 'reviews',
-      strength: reviewStrength,
-      label: 'Social proof',
-      detail: 'Structured review or testimonial evidence detected.',
-      proof: reviews.evidence.slice(0, 4),
-      confidence: 'high',
-    })
-  } else if (reviewStrength === 'medium' || reviewStrength === 'weak') {
-    detail.strengths.push('Some review or rating signals were detected.')
-    if (reviews.problem) {
-      detail.problems.push(reviews.problem)
-      detail.recommended_fixes.push(reviews.fix)
+  const isContentSite = rubric === 'blog' || rubric === 'content_business'
+  // Blogs/content: author/about/social prove trust — do not push commerce review problems.
+  if (!isContentSite) {
+    points += pointsForStrength(reviewStrength, 3)
+    if (reviewStrength === 'strong') {
+      detail.strengths.push('Reviews or testimonials build visitor trust.')
+      detail.evidence.push({
+        signal: 'reviews',
+        strength: reviewStrength,
+        label: 'Social proof',
+        detail: 'Structured review or testimonial evidence detected.',
+        proof: reviews.evidence.slice(0, 4),
+        confidence: 'high',
+      })
+    } else if (reviewStrength === 'medium' || reviewStrength === 'weak') {
+      detail.strengths.push('Some review or rating signals were detected.')
+      if (reviews.problem) {
+        detail.problems.push(reviews.problem)
+        detail.recommended_fixes.push(reviews.fix)
+      }
+      detail.evidence.push({
+        signal: 'reviews',
+        strength: reviewStrength,
+        label: 'Social proof',
+        detail: reviews.problem || 'Review language detected.',
+        proof: reviews.evidence.slice(0, 4),
+        confidence: reviewStrength === 'medium' ? 'medium' : 'low',
+      })
     }
-    detail.evidence.push({
-      signal: 'reviews',
-      strength: reviewStrength,
-      label: 'Social proof',
-      detail: reviews.problem || 'Review language detected.',
-      proof: reviews.evidence.slice(0, 4),
-      confidence: reviewStrength === 'medium' ? 'medium' : 'low',
-    })
+  } else {
+    const authorStrength = combineStrengths([
+      strengthFromBoolean(Boolean(businessNameFromPages(pages))),
+      strengthFromBoolean((aggregated.social_channels || []).length >= 1),
+      strengthFromBoolean(aggregated.content_signals?.newsletter_indicators),
+    ])
+    points += pointsForStrength(authorStrength, 3)
+    if (authorStrength !== 'none') {
+      detail.strengths.push('Author identity, social, or newsletter signals support reader trust.')
+    } else {
+      detail.problems.push('Author identity and reader-trust paths (About, social, newsletter) are weak.')
+      detail.recommended_fixes.push('Add an About/author section and a clear newsletter or social follow path.')
+    }
   }
 
   const socialStrength =
@@ -503,11 +521,31 @@ function scoreTechnicalFunctionality({ aggregated, pages, crawlHealth, visualAud
   }
 
   const meta = aggregated.extraction_meta || {}
+  const visualTextLen = Math.max(
+    Number(visualAudit?.summary?.visible_text_length) || 0,
+    Number(visualAudit?.summary?.above_fold_text_length) || 0,
+    Number(visualAudit?.desktop?.visible_text_length) || 0,
+    Number(visualAudit?.mobile?.visible_text_length) || 0,
+  )
+  const visualShowsContent = Boolean(visualAudit?.ok) && visualTextLen >= 200
+
   if (meta.js_rendered_pages > 0) {
-    detail.problems.push('Sparse or JS-rendered HTML reduced content extractability.')
-    detail.recommended_fixes.push('Serve key content in server-rendered HTML for crawlers and visitors.')
-    points = Math.max(0, points - 2)
-    confidenceFactors.push(45)
+    if (visualShowsContent) {
+      detail.problems.push(
+        'Sparse or JS-rendered HTML reduced crawler extractability, but the visual audit confirmed rendered content is present.',
+      )
+      detail.recommended_fixes.push(
+        'Serve key offer copy in server-rendered HTML so crawlers and slower devices see the same content visitors see.',
+      )
+      // Soft penalty: crawlability gap, not "site is empty"
+      points = Math.max(0, points - 1)
+      confidenceFactors.push(55)
+    } else {
+      detail.problems.push('Sparse or JS-rendered HTML reduced content extractability.')
+      detail.recommended_fixes.push('Serve key content in server-rendered HTML for crawlers and visitors.')
+      points = Math.max(0, points - 2)
+      confidenceFactors.push(45)
+    }
   } else {
     confidenceFactors.push(75)
   }
@@ -518,6 +556,15 @@ function scoreTechnicalFunctionality({ aggregated, pages, crawlHealth, visualAud
     detail.strengths.push('Enough readable content extracted for analysis.')
   } else if (textLen >= 600) {
     points += 1
+  } else if (visualShowsContent) {
+    points += 1
+    detail.strengths.push(
+      'Visual audit found substantial rendered text even though the crawler extracted little HTML content.',
+    )
+    detail.problems.push(
+      'Crawler HTML extraction was thin — treat this as a crawlability issue, not proof the live site is empty.',
+    )
+    detail.recommended_fixes.push('Server-render primary product or offer copy so analysis and SEO can see it.')
   } else {
     detail.problems.push('Very little readable content on crawled pages.')
     detail.recommended_fixes.push('Add descriptive text to homepage and key landing pages.')
@@ -669,51 +716,104 @@ function scoreCustomerAttraction({ aggregated, pages, signals, rubric, uxFeature
     return safeEarned
   }
 
-  const reviews = assessReviewEvidence({ aggregated, pages, signals })
+  const reviews = assessReviewEvidence({ aggregated, pages, signals, rubric })
   const proofStrength = reviews.strength
-  const proofPts = pointsForStrength(proofStrength, 3)
-  points += addBreakdown(
-    'trust_proof',
-    'Trust proof (reviews/testimonials)',
-    proofPts,
-    3,
-    proofStrength !== 'none' ? 'Review or testimonial evidence detected.' : 'No clear review proof found.',
-  )
-  if (proofStrength === 'strong') {
-    detail.strengths.push('Reviews or testimonials answer “why trust this business?”')
-  } else if (proofStrength === 'medium' || proofStrength === 'weak') {
-    detail.strengths.push('Some review or rating signals are present.')
-    if (reviews.problem) {
+  const isContentSite = rubric === 'blog' || rubric === 'content_business'
+  if (isContentSite) {
+    const audienceTrust = combineStrengths([
+      strengthFromBoolean(aggregated.content_signals?.newsletter_indicators),
+      strengthFromBoolean(signals.has_creator_links),
+      strengthFromCount((aggregated.social_channels || []).length, { weak: 1, medium: 2, strong: 3 }),
+    ])
+    const trustPts = pointsForStrength(audienceTrust, 3)
+    points += addBreakdown(
+      'trust_proof',
+      'Author / newsletter / social trust',
+      trustPts,
+      3,
+      audienceTrust !== 'none'
+        ? 'Reader-trust paths (newsletter, social, creator links) detected.'
+        : 'Limited author or subscribe trust paths.',
+    )
+    if (trustPts > 0) {
+      detail.strengths.push('Newsletter, social, or creator links help readers trust the content.')
+    } else {
+      detail.problems.push('Readers lack a clear author, newsletter, or follow path to trust and return.')
+      detail.recommended_fixes.push('Add About/author context and an obvious newsletter or follow CTA.')
+    }
+  } else {
+    const proofPts = pointsForStrength(proofStrength, 3)
+    points += addBreakdown(
+      'trust_proof',
+      'Trust proof (reviews/testimonials)',
+      proofPts,
+      3,
+      proofStrength !== 'none' ? 'Review or testimonial evidence detected.' : 'No clear review proof found.',
+    )
+    if (proofStrength === 'strong') {
+      detail.strengths.push('Reviews or testimonials answer “why trust this business?”')
+    } else if (proofStrength === 'medium' || proofStrength === 'weak') {
+      detail.strengths.push('Some review or rating signals are present.')
+      if (reviews.problem) {
+        detail.problems.push(reviews.problem)
+        detail.recommended_fixes.push(reviews.fix)
+      }
+    } else if (reviews.claim === 'no_reviews_high_confidence') {
       detail.problems.push(reviews.problem)
       detail.recommended_fixes.push(reviews.fix)
+    } else if (reviews.problem) {
+      detail.problems.push(reviews.problem)
     }
-  } else if (reviews.claim === 'no_reviews_high_confidence') {
-    detail.problems.push(reviews.problem)
-    detail.recommended_fixes.push(reviews.fix)
-  } else if (reviews.problem) {
-    // Low-confidence absence: soft wording only, do not push a hard "add reviews" top fix
-    detail.problems.push(reviews.problem)
   }
 
-  const offerStrength = combineStrengths([
+  const offerParts = [
     strengthFromBoolean(aggregated.pricing_signals?.length > 0),
     strengthFromBoolean(signals.has_service_categories || signals.has_product_categories),
     strengthFromBoolean(signals.has_niche_language),
     strengthFromCount((aggregated.products || []).length, { weak: 1, medium: 3, strong: 5 }),
-  ])
+  ]
+  if (isContentSite) {
+    const articlePages = pages.filter((p) =>
+      /article|blog|recipe|post/i.test(String(p.page_type || '')),
+    ).length
+    offerParts.push(strengthFromCount(articlePages || (aggregated.content_signals?.article_count || 0), {
+      weak: 1,
+      medium: 3,
+      strong: 6,
+    }))
+  }
+  const offerStrength = combineStrengths(offerParts)
   const offerPts = pointsForStrength(offerStrength, 4)
   points += addBreakdown(
     'offer_clarity',
-    'Offer / pricing / category clarity',
+    isContentSite ? 'Niche / category / navigation clarity' : 'Offer / pricing / category clarity',
     offerPts,
     4,
-    offerStrength !== 'none' ? 'Visitors can tell what you sell or offer.' : 'Offer clarity is weak.',
+    offerStrength !== 'none'
+      ? isContentSite
+        ? 'Readers can tell what the blog or content covers.'
+        : 'Visitors can tell what you sell or offer.'
+      : isContentSite
+        ? 'Category and niche clarity is weak for new readers.'
+        : 'Offer clarity is weak.',
   )
   if (offerPts > 0) {
-    detail.strengths.push('Offer, pricing, or service categories are clear enough to attract interest.')
+    detail.strengths.push(
+      isContentSite
+        ? 'Categories or niche framing help readers understand what they will find.'
+        : 'Offer, pricing, or service categories are clear enough to attract interest.',
+    )
   } else {
-    detail.problems.push('Visitors may not quickly understand what you sell or who you help.')
-    detail.recommended_fixes.push('Clarify your offer, pricing, or service categories on the homepage.')
+    detail.problems.push(
+      isContentSite
+        ? 'New readers may not quickly see categories, search, or what the site is known for.'
+        : 'Visitors may not quickly understand what you sell or who you help.',
+    )
+    detail.recommended_fixes.push(
+      isContentSite
+        ? 'Add clear category navigation, search, and a short homepage line for what the site covers.'
+        : 'Clarify your offer, pricing, or service categories on the homepage.',
+    )
   }
 
   const home = pages.find((p) => p.page_type === 'homepage') || pages[0]
@@ -754,18 +854,37 @@ function scoreCustomerAttraction({ aggregated, pages, signals, rubric, uxFeature
   }
 
   const contentDepth = aggregated.content_signals?.total_text_length || 0
+  const visualDepth = Math.max(
+    Number(uxFeatures?.above_fold_text_length) || 0,
+    Number(uxFeatures?.signals?.visible_text_length) || 0,
+    Number(uxFeatures?.visual_evidence_summary?.visible_text_length) || 0,
+  )
+  const visualScore = Number(uxFeatures?.visual_score) || 0
+  const visualBackedDepth = contentDepth < 400 && (visualDepth >= 200 || visualScore >= 70)
+  const effectiveDepth = visualBackedDepth ? Math.max(contentDepth, 1200) : contentDepth
   const contentStrength =
-    contentDepth > 3000 ? 'strong' : contentDepth > 1800 ? 'medium' : contentDepth > 700 ? 'weak' : 'none'
+    effectiveDepth > 3000 ? 'strong' : effectiveDepth > 1800 ? 'medium' : effectiveDepth > 700 ? 'weak' : 'none'
   const contentPts = pointsForStrength(contentStrength, 3)
   points += addBreakdown(
     'content_depth',
-    'Content depth on crawled pages',
+    visualBackedDepth ? 'Content depth (visual-backed; crawl HTML was thin)' : 'Content depth on crawled pages',
     contentPts,
     3,
-    `${contentDepth} characters extracted.`,
+    visualBackedDepth
+      ? `Crawl extracted ${contentDepth} chars; visual audit supports richer rendered content (visual ${visualScore}/100).`
+      : `${contentDepth} characters extracted.`,
   )
   if (contentPts > 0) {
-    detail.strengths.push('Content depth gives visitors reasons to stay and learn more.')
+    detail.strengths.push(
+      visualBackedDepth
+        ? 'Rendered page content looks substantial even when crawler HTML is sparse.'
+        : 'Content depth gives visitors reasons to stay and learn more.',
+    )
+    if (visualBackedDepth) {
+      detail.problems.push(
+        'Crawler extracted little HTML text — improve server-rendered copy for SEO without treating the live site as empty.',
+      )
+    }
   } else {
     detail.problems.push('Thin homepage content gives visitors little reason to engage.')
   }

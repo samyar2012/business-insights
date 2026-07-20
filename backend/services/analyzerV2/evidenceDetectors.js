@@ -120,7 +120,10 @@ function assessContactEvidence({
   aggregated = {},
   signals = {},
   visualAudit = null,
+  rubric = null,
 } = {}) {
+  const isEcommerce = rubric === 'ecommerce_store'
+  const isContent = rubric === 'blog' || rubric === 'content_business'
   const emails = new Set(aggregated.contact_signals?.emails || [])
   const phones = new Set(aggregated.contact_signals?.phones || [])
   const evidence = []
@@ -315,10 +318,22 @@ function assessContactEvidence({
   let fix = null
   let strength = 'none'
 
+  // For DTC ecommerce, chat/email/help is enough — do not treat missing phone as a hard gap.
+  const ecommerceHasSupportPath = isEcommerce && (hasEmail || hasAlternatePath)
+  const contentHasTrustPath = isContent && (hasAlternatePath || hasEmail)
+
   if (hasDirectContact && !weaklyPlaced) {
     claim = 'contact_visible'
     strength = hasTel || hasMailto ? 'strong' : 'medium'
-  } else if (hasDirectContact && renderedPhoneNotClickable) {
+  } else if (ecommerceHasSupportPath && !hasPhone) {
+    claim = 'contact_visible'
+    strength = 'medium'
+  } else if (contentHasTrustPath && !hasPhone) {
+    claim = 'contact_path_only'
+    strength = 'weak'
+    problem = 'A reader path exists, but About / contact details could be clearer.'
+    fix = 'Add an About page and a clear contact or newsletter path — a header phone is not required for blogs.'
+  } else if (hasDirectContact && renderedPhoneNotClickable && !isEcommerce && !isContent) {
     claim = 'contact_weak_placement'
     strength = 'weak'
     problem = 'A phone number is visible but may not be clickable or prominent enough.'
@@ -327,23 +342,41 @@ function assessContactEvidence({
     claim = 'contact_weak_placement'
     strength = 'weak'
     problem = 'Contact path exists but may be hard for visitors to notice.'
-    fix = 'Make the contact path more visible in the header or above the fold (clickable phone, email, or clear contact CTA).'
+    fix = isEcommerce
+      ? 'Make Help / Contact, chat, or email easier to find in the header or footer.'
+      : isContent
+        ? 'Make About, subscribe, or contact links easier to find from the homepage.'
+        : 'Make the contact path more visible in the header or above the fold (clickable phone, email, or clear contact CTA).'
   } else if (hasAlternatePath && !hasDirectContact) {
     claim = 'contact_path_only'
     strength = 'weak'
-    problem = 'A contact path exists (form, page, or CTA), but no phone or email was clearly detected.'
-    fix = 'Add a visible, clickable phone number or email alongside your contact form or CTA.'
+    problem = isEcommerce
+      ? 'A contact path exists (form, page, or CTA), but support email was not clearly detected.'
+      : 'A contact path exists (form, page, or CTA), but no phone or email was clearly detected.'
+    fix = isEcommerce
+      ? 'Add a visible Help / Contact email or chat alongside your contact form or CTA.'
+      : isContent
+        ? 'Add an About page and a clear contact or newsletter signup path.'
+        : 'Add a visible, clickable phone number or email alongside your contact form or CTA.'
   } else if (!hasAnyContactPath && absenceConfidence === 'high') {
     claim = 'no_contact_high_confidence'
     strength = 'none'
     problem = 'No phone, email, contact form, or clear contact CTA was found across crawled pages.'
-    fix = 'Add phone and email in the header and footer, plus a clear contact or booking CTA.'
+    fix = isEcommerce
+      ? 'Add a Help / Contact path (email, chat, or contact page) plus shipping/returns links near checkout.'
+      : isContent
+        ? 'Add About/author details and a clear contact or newsletter path.'
+        : 'Add phone and email in the header and footer, plus a clear contact or booking CTA.'
   } else if (!hasAnyContactPath) {
     claim = 'no_contact_low_confidence'
     strength = 'none'
     problem =
       'Contact details were not clearly detected in crawled HTML; verify phone, email, or a contact form are visible.'
-    fix = 'Confirm visitors can easily find a clickable phone number, email, or contact form on key pages.'
+    fix = isEcommerce
+      ? 'Confirm visitors can easily find Help / Contact, chat, or email support.'
+      : isContent
+        ? 'Confirm readers can find About, contact, or newsletter signup paths.'
+        : 'Confirm visitors can easily find a clickable phone number, email, or contact form on key pages.'
   }
 
   return {
@@ -386,7 +419,8 @@ function detectReviewsInJsonLd(jsonLd) {
   return false
 }
 
-function assessReviewEvidence({ pages = [], aggregated = {}, signals = {} } = {}) {
+function assessReviewEvidence({ pages = [], aggregated = {}, signals = {}, rubric = null } = {}) {
+  const isContent = rubric === 'blog' || rubric === 'content_business'
   const evidence = []
   let schemaHits = 0
   let widgetHits = 0
@@ -490,7 +524,13 @@ function assessReviewEvidence({ pages = [], aggregated = {}, signals = {} } = {}
     const crawlable = pages.filter((p) => (p.status_code || 200) < 400).length
     const sparse = (aggregated.content_signals?.total_text_length || 0) < 400
     const jsHeavy = (aggregated.extraction_meta?.js_rendered_pages || 0) >= Math.max(1, crawlable)
-    if (crawlable >= 2 && !sparse && !jsHeavy) {
+    if (isContent) {
+      // Recipe/content blogs should not get commerce "add reviews" claims.
+      claim = 'reviews_not_applicable'
+      strength = 'none'
+      problem = null
+      fix = null
+    } else if (crawlable >= 2 && !sparse && !jsHeavy) {
       claim = 'no_reviews_high_confidence'
       problem = 'No on-page reviews, testimonials, or rating markup was detected on crawled pages.'
       fix = 'Add reviews, ratings, or client testimonials near your main offer.'

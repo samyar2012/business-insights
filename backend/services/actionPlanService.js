@@ -6,6 +6,34 @@ const {
   isWebsiteFixAction,
   CATEGORY_LABELS,
 } = require('./actionPlanFixBuilder')
+const { getBusinessWebProfile } = require('./businessProfileService')
+const { getCrawlPages, listCrawlRuns } = require('./crawler/crawlerService')
+
+async function loadScoresFromWebProfile(userId, businessId) {
+  const businessResult = await query(`SELECT * FROM businesses WHERE id = $1 AND user_id = $2`, [
+    businessId,
+    userId,
+  ])
+  const business = businessResult.rows[0]
+  if (!business) return null
+
+  const crawls = await listCrawlRuns(userId, businessId)
+  const latestCrawl = crawls[0] || null
+  let pages = []
+  if (latestCrawl) {
+    pages = await getCrawlPages(userId, latestCrawl.id)
+  }
+
+  const profile = await getBusinessWebProfile(userId, businessId, {
+    rehydrateScores: true,
+    business,
+    pages,
+    crawlRun: latestCrawl,
+    startUrl: latestCrawl?.start_url || business.store_url,
+  })
+
+  return profile?.scores || null
+}
 
 function parseMetadata(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
@@ -131,10 +159,16 @@ async function createFixPlanFromReport(userId, body) {
   const businessId = body.business_id || null
   if (!businessId) throw new Error('business_id is required')
 
-  const scores = body.scores || {}
+  // Load from stored web profile — avoids posting the full scores blob from the client.
+  const scores = (await loadScoresFromWebProfile(userId, businessId)) || body.scores || {}
   const fixes = normalizeFixesFromScores(scores)
   if (!fixes.length) {
-    return { error: 'no_fixes', message: 'No priority fixes found in this report.' }
+    return {
+      error: 'no_fixes',
+      message: scores && Object.keys(scores).length
+        ? 'No priority fixes found in this report.'
+        : 'No website report found yet. Run the Website Analyzer first.',
+    }
   }
 
   const existing = await listActions(userId, { business_id: businessId })
@@ -232,6 +266,7 @@ module.exports = {
   updateAction,
   createActionPlanFromScan,
   createFixPlanFromReport,
+  loadScoresFromWebProfile,
   formatAction,
   isWebsiteFixAction,
   CATEGORY_LABELS,

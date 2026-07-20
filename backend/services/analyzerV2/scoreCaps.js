@@ -15,7 +15,8 @@ const CAP_RULES = [
     id: 'no_readable_content_cap_45',
     cap: 45,
     test: (ctx) => ctx.noReadableContent,
-    reason: 'Very little readable content was extracted, so the overall score is capped at 45.',
+    reason:
+      'Very little readable content was extracted from crawl HTML (and the visual audit did not confirm rendered content), so the overall score is capped at 45.',
   },
   {
     id: 'business_model_mismatch_cap_65',

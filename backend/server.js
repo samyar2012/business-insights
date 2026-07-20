@@ -57,6 +57,11 @@ app.use('/api/research', researchRouter)
 app.use('/api', crawlsRouter)
 
 app.use((err, _req, res, _next) => {
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({
+      error: 'Request payload too large. Sync the growth plan using business_id only — do not send the full report.',
+    })
+  }
   console.error(err)
   res.status(500).json({ error: 'Unexpected server error' })
 })

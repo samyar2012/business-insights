@@ -279,14 +279,13 @@ const WebsiteReport = () => {
   const rescan = () => startCrawl(true)
 
   const createFixPlan = async () => {
-    const scores = profile?.scores
-    if (!scores) return
+    if (!profile?.scores) return
     setCreatingPlan(true)
     setError('')
     try {
       await apiFetch('/actions/fix-plan', {
         method: 'POST',
-        body: JSON.stringify({ business_id: businessId, scores }),
+        body: JSON.stringify({ business_id: businessId }),
       })
       navigate(`/app/action-plan?businessId=${businessId}`)
     } catch (err) {

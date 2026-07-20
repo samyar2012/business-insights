@@ -73,10 +73,10 @@ const DEFAULT_CTA_STEPS = [
 // same generic checklist for every site.
 const TRUST_STEPS_BY_RUBRIC = {
   ecommerce_store: [
-    'Add a visible phone number and email in the header and footer.',
     'Publish shipping, returns, and privacy policies and link them from the footer and checkout.',
     'Show customer reviews or star ratings near the product grid and on product pages.',
     'Add recognizable trust badges (secure checkout, payment logos) near the buy button.',
+    'Offer a clear Help / Contact path (chat, email, or contact page) — a header phone is optional for DTC brands.',
   ],
   online_plus_offline_store: [
     'Show your store address, hours, and phone number near the top of the homepage.',
@@ -104,12 +104,12 @@ const TRUST_STEPS_BY_RUBRIC = {
   content_business: [
     'Add an About page or section explaining who writes or runs the content.',
     'Link active social or newsletter profiles to reinforce legitimacy.',
-    'Add reader testimonials, subscriber counts, or press mentions if you have them.',
+    'Add a clear subscribe / start-here path so new readers know what to do next.',
   ],
   blog: [
-    'Add an About page or section explaining who writes the blog.',
-    'Link active social or newsletter profiles to reinforce legitimacy.',
-    'Add reader testimonials or notable mentions if you have them.',
+    'Add an About page naming the author and why readers should trust the recipes or posts.',
+    'Strengthen category, search, or "start here" navigation so readers find recipes fast.',
+    'Make the newsletter or email signup obvious above the fold and after posts.',
   ],
   listing: [
     'Add clear contact or response information to the listing.',
@@ -152,13 +152,15 @@ const CONTENT_STEPS_BY_RUBRIC = {
     'Add descriptions to portfolio pieces (materials, process, timeline).',
     'Add an FAQ about commissioning, booking, or pricing.',
   ],
+  blog: [
+    'Add recipe or post cards with clear titles, photos, and links from the homepage.',
+    'Strengthen category and search navigation so readers find what they came for.',
+    'Add a newsletter signup and internal links between related posts.',
+  ],
   content_business: [
     'Publish additional articles or expand thin ones with more depth.',
     'Add an About or "start here" page so new readers know where to begin.',
-  ],
-  blog: [
-    'Publish additional posts or expand thin ones with more depth.',
-    'Add category or "start here" navigation so readers know what to click next.',
+    'Add category navigation and a clear subscribe path.',
   ],
   listing: [
     'Expand the listing description with the details buyers actually ask about.',
@@ -703,6 +705,10 @@ function runWeakCta(events, ctx) {
 }
 
 function runMissingTrust(events, ctx) {
+  const rubric = ctx.rubric || ''
+  const isContent = rubric === 'blog' || rubric === 'content_business'
+  const isEcommerce = rubric === 'ecommerce_store'
+
   const absoluteMissing = claim(
     events,
     ['safety_trust', 'customer_attraction', 'offer_business_fit'],
@@ -719,46 +725,97 @@ function runMissingTrust(events, ctx) {
     /review or rating signals exist but may need|possible review language was detected|review or testimonial proof was not clearly detected/i,
   )
 
-  if (absoluteMissing.length) {
-    return {
-      id: 'missing_contact_trust',
-      title: 'Add stronger trust and proof signals.',
-      category: 'trust',
-      why_it_matters:
-        'New visitors decide whether to trust a business within seconds - missing contact details, policies, or proof makes that decision harder and increases bounce before visitors ever reach your offer.',
-      steps: TRUST_STEPS_BY_RUBRIC[ctx.rubric] || DEFAULT_TRUST_STEPS,
-      affected: ['safety_trust', 'customer_attraction'],
-      difficulty: 'easy',
-      confidence: 'high',
-      matched: absoluteMissing,
+  // Blogs/content sites: commerce-style reviews are not the growth lever — drop review claims.
+  const filteredAbsolute = isContent
+    ? absoluteMissing.filter((e) => !/review|testimonial|rating markup/i.test(e.text))
+    : absoluteMissing
+  const filteredSoftReviews = isContent ? [] : softReviews
+
+  // DTC ecommerce: phone-in-header is not a top trust move when policies/reviews are the gap.
+  const ecommerceAbsolute = isEcommerce
+    ? filteredAbsolute.filter((e) => {
+        if (/expected ecommerce policies|shipping or returns policy/i.test(e.text)) return true
+        if (/review|testimonial|rating/i.test(e.text)) return true
+        if (/business name or identity/i.test(e.text)) return true
+        // Keep absolute contact absence only when no phone AND no email/form wording
+        if (/no phone, email, contact form|no phone number or email found/i.test(e.text)) return true
+        if (/no phone number or contact page/i.test(e.text) && !/email|form|chat|help/i.test(e.text)) {
+          return false
+        }
+        return true
+      })
+    : filteredAbsolute
+
+  if (ecommerceAbsolute.length || filteredAbsolute.length) {
+    const matched = isEcommerce ? ecommerceAbsolute : filteredAbsolute
+    if (!matched.length && !filteredSoftReviews.length && !softContact.length) return null
+    if (matched.length) {
+      return {
+        id: 'missing_contact_trust',
+        title: isContent
+          ? 'Strengthen author trust and reader paths.'
+          : isEcommerce
+            ? 'Add the trust signals shoppers check before they buy.'
+            : 'Add stronger trust and proof signals.',
+        category: 'trust',
+        why_it_matters: isContent
+          ? 'Readers decide whether to trust a blog from the author, navigation, and subscribe path — commerce-style reviews are usually the wrong lever.'
+          : isEcommerce
+            ? 'DTC shoppers hesitate when policies, reviews, or checkout trust cues are missing — a header phone number is optional, not the primary fix.'
+            : 'New visitors decide whether to trust a business within seconds - missing contact details, policies, or proof makes that decision harder and increases bounce before visitors ever reach your offer.',
+        steps: TRUST_STEPS_BY_RUBRIC[ctx.rubric] || DEFAULT_TRUST_STEPS,
+        affected: ['safety_trust', 'customer_attraction'],
+        difficulty: 'easy',
+        confidence: 'high',
+        matched,
+      }
     }
   }
 
-  if (softContact.length || softReviews.length) {
-    const matched = [...softContact, ...softReviews]
+  if (softContact.length || filteredSoftReviews.length) {
+    const matched = [...softContact, ...filteredSoftReviews]
     const isPlacement = softContact.some((e) => /hard for visitors to notice|weakly|contact path exists/i.test(e.text))
-    const isReviewPlacement = softReviews.some((e) => /placement|attribution|possible review language/i.test(e.text))
+    const isReviewPlacement = filteredSoftReviews.some((e) =>
+      /placement|attribution|possible review language/i.test(e.text),
+    )
+    const softSteps = isReviewPlacement
+      ? [
+          'Move your strongest review or testimonial near the primary offer above the fold.',
+          'Name the source (Google, customers, platform) next to each quote or rating.',
+          'Keep at least one fresh review visible on the homepage.',
+        ]
+      : isEcommerce
+        ? [
+            'Add a clear Help / Contact or chat entry in the header or footer.',
+            'Link shipping and returns near the buy button or cart.',
+            'Keep support email or contact form easy to find without requiring a phone number.',
+          ]
+        : isContent
+          ? [
+              'Make the About / author link easy to find from the homepage.',
+              'Place newsletter signup above the fold and after posts.',
+              'Link social profiles that prove the author is active.',
+            ]
+          : [
+              'Place a clickable phone number or email in the header.',
+              'Repeat a clear Contact / Book / Quote CTA above the fold.',
+              'Keep footer contact details as a backup, not the only path.',
+            ]
     return {
       id: 'strengthen_trust_visibility',
       title: isReviewPlacement && !isPlacement
         ? 'Improve review visibility and attribution.'
         : isPlacement && !isReviewPlacement
-          ? 'Make the contact path more visible.'
+          ? isEcommerce
+            ? 'Make Help / Contact easier to find.'
+            : isContent
+              ? 'Make author and subscribe paths more visible.'
+              : 'Make the contact path more visible.'
           : 'Strengthen trust signal visibility.',
       category: 'trust',
       why_it_matters:
         'Trust signals that exist but are hard to notice still leave first-time visitors unsure. Clearer placement usually converts better than adding brand-new content.',
-      steps: isReviewPlacement
-        ? [
-            'Move your strongest review or testimonial near the primary offer above the fold.',
-            'Name the source (Google, customers, platform) next to each quote or rating.',
-            'Keep at least one fresh review visible on the homepage.',
-          ]
-        : [
-            'Place a clickable phone number or email in the header.',
-            'Repeat a clear Contact / Book / Quote CTA above the fold.',
-            'Keep footer contact details as a backup, not the only path.',
-          ],
+      steps: softSteps,
       affected: ['safety_trust', 'customer_attraction'],
       difficulty: 'easy',
       forcedPriority: 'medium',
@@ -939,6 +996,11 @@ function runMisalignedImages(events, ctx) {
     /^image alignment:|images look misaligned or poorly fitted/i,
   )
   if (!matched.length) return null
+  // Never keep a fix when evidence/strengths say alignment is fine
+  const strengthBlob = collectStrengthBlob(ctx.categoryDetails)
+  if (/no image alignment issue detected/i.test(`${matched.map((e) => e.text).join(' ')} ${strengthBlob}`)) {
+    return null
+  }
   return {
     id: 'misaligned_images',
     title: 'Fix misaligned or poorly fitted images.',
@@ -1163,13 +1225,14 @@ function passesEvidenceGate(item, ctx = {}) {
     if (item.id === 'mobile_overflow' && !(signals.overflow_offenders_mobile || []).length) return false
   }
 
-  // Image alignment contradiction: confidence 0 means drop
-  if (/misaligned_images|image alignment|poorly fitted images/i.test(`${item.id} ${titleBlob}`)) {
+  // Image alignment contradiction: confidence 0 OR explicit "no issue" evidence means drop
+  if (/misaligned_images|image alignment|poorly fitted images|fix misaligned/i.test(`${item.id} ${titleBlob}`)) {
     const alignConfidence =
       ctx.uxFeatures?.visual_evidence_summary?.misalignment_confidence ??
       signals.misalignment_confidence ??
       0
     if (!(Number(alignConfidence) > 0)) return false
+    if (/no image alignment issue detected/i.test(`${evidenceBlob} ${strengths}`)) return false
   }
 
   // Never recommend "no phone/contact" when contact proof exists
@@ -1197,6 +1260,23 @@ function passesEvidenceGate(item, ctx = {}) {
     ) {
       return false
     }
+  }
+
+  // Never recommend add-reviews for blogs/content — commerce proof is the wrong lever
+  if (
+    (ctx.rubric === 'blog' || ctx.rubric === 'content_business') &&
+    /add reviews|missing review|no on-page reviews|testimonial|move reviews/i.test(`${titleBlob} ${evidenceBlob}`)
+  ) {
+    return false
+  }
+
+  // DTC ecommerce: never keep phone-in-header as a standalone roadmap item
+  if (
+    ctx.rubric === 'ecommerce_store' &&
+    /phone (?:number )?(?:clickable|visible|in the header)|add a (?:visible )?phone/i.test(titleBlob) &&
+    !/policy|shipping|return|review|checkout|help|contact form/i.test(titleBlob)
+  ) {
+    return false
   }
 
   // Business model mismatch contradicted by hybrid service conversion signals
@@ -1319,6 +1399,7 @@ function buildRetainAndOperateItems({
     /no on-page reviews, testimonials, or rating markup was detected/i.test(line),
   )
   const reviewsMissing =
+    !['blog', 'content_business'].includes(rubric) &&
     !hasStrongReviews &&
     absoluteReviewMissing &&
     !aggregated?.trust_signals?.review_indicators
