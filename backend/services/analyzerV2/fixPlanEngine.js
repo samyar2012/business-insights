@@ -5,9 +5,12 @@ const { CATEGORY_LABELS: CORE_CATEGORY_LABELS } = require('./explanationBuilder'
 const {
   filterEvidenceLines,
   filterProblemLines,
+  filterSteps,
   shouldDropFixForRubric,
   isPositiveEvidenceNote,
   isPillarFillerText,
+  isGenericFillerStep,
+  isContentRubric,
 } = require('./evidenceFilters')
 const {
   conversionPathFix,
@@ -321,11 +324,32 @@ const CATCHALL_GRANULAR = {
   customer_attraction: 'customer_attraction',
 }
 
-const GENERIC_FILLER_STEPS = [
-  'Review this area on both desktop and mobile.',
-  'Ask the AI growth coach to double-check the change before you publish it.',
-  'Rescan your website after making changes to confirm the score improves.',
-]
+const VERIFY_STEPS_BY_RUBRIC = {
+  blog: [
+    'Check category navigation, search, and newsletter signup on a phone-sized screen.',
+    'Rescan after publishing to confirm reader paths improved.',
+  ],
+  content_business: [
+    'Check topic navigation and subscribe paths on a phone-sized screen.',
+    'Rescan after publishing to confirm reader paths improved.',
+  ],
+  ecommerce_store: [
+    'Verify Shop / Add to cart is visible above the fold on mobile.',
+    'Rescan after publishing to confirm checkout trust cues improved.',
+  ],
+  local_service_business: [
+    'Verify booking or quote CTA and phone link work on mobile.',
+    'Rescan after publishing to confirm the service path improved.',
+  ],
+  default: [
+    'Apply the change on the homepage and retest on a phone-sized screen.',
+    'Rescan after publishing to confirm the related category scores improved.',
+  ],
+}
+
+function verifyStepsFor(rubric) {
+  return VERIFY_STEPS_BY_RUBRIC[rubric] || VERIFY_STEPS_BY_RUBRIC.default
+}
 
 function dedupe(list) {
   return [...new Set((list || []).filter(Boolean))]
@@ -413,15 +437,18 @@ function estimateLift(affectedScores, categoryDetails, matchedCount) {
   return { label, parts }
 }
 
-function finalizeSteps(rawSteps) {
-  let steps = dedupe((rawSteps || []).map((s) => String(s).trim()).filter(Boolean))
+function finalizeSteps(rawSteps, rubric = null) {
+  let steps = filterSteps(
+    dedupe((rawSteps || []).map((s) => String(s).trim()).filter(Boolean)),
+    rubric,
+  )
   if (steps.length > 6) steps = steps.slice(0, 6)
-  let fillerIndex = 0
-  while (steps.length < 3 && fillerIndex < GENERIC_FILLER_STEPS.length) {
-    const filler = GENERIC_FILLER_STEPS[fillerIndex++]
+  const verify = verifyStepsFor(rubric)
+  for (const filler of verify) {
+    if (steps.length >= 3) break
     if (!steps.includes(filler)) steps.push(filler)
   }
-  if (steps.length < 6 && !steps.some((s) => /rescan/i.test(s))) {
+  if (!steps.some((s) => /rescan/i.test(s))) {
     steps.push('Rescan your website after making changes to confirm the score improves.')
   }
   return dedupe(steps).slice(0, 6)
@@ -1015,13 +1042,18 @@ function runUnclearOffer(events, ctx) {
   const matched = [...matchedOffer, ...matchedAttraction]
   if (!matched.length) return null
   const detail = ctx.categoryDetails.offer_business_fit || {}
+  const rubricSteps = filterSteps(detail.recommended_fixes || [], ctx.rubric)
+  const evidenceSteps = matched
+    .map((e) => e.text)
+    .filter((text) => !isPositiveEvidenceNote(text))
+    .slice(0, 3)
   return {
     id: 'unclear_offer',
     title: OFFER_TITLES[ctx.rubric] || 'Clarify what you offer and how customers engage.',
     category: 'business_fit',
     why_it_matters:
       'Visitors who cannot quickly tell what you sell, who it is for, or how to get it will leave for a competitor whose offer is clearer.',
-    steps: detail.recommended_fixes?.length ? detail.recommended_fixes : matched.map((e) => `Address: ${e.text}`),
+    steps: rubricSteps.length ? rubricSteps : evidenceSteps.length ? evidenceSteps : verifyStepsFor(ctx.rubric),
     affected: ['offer_business_fit'],
     difficulty: 'medium',
     matched,
@@ -1029,6 +1061,7 @@ function runUnclearOffer(events, ctx) {
 }
 
 function runCategoryCatchAll(events, ctx) {
+  if (isContentRubric(ctx.rubric)) return []
   const items = []
   for (const key of ['safety_trust', 'technical_functionality', 'ux_ui_visual', 'customer_attraction']) {
     const remaining = events.filter((e) => !e.used && e.category === key)
@@ -1037,12 +1070,17 @@ function runCategoryCatchAll(events, ctx) {
       e.used = true
     })
     const detail = ctx.categoryDetails[key] || {}
+    const rubricSteps = filterSteps(detail.recommended_fixes || [], ctx.rubric)
+    const evidenceSteps = remaining
+      .map((e) => e.text)
+      .filter((text) => !isPositiveEvidenceNote(text) && !isGenericFillerStep(text))
+      .slice(0, 3)
     items.push({
       id: `catchall_${key}`,
       title: CATCHALL_TITLES[key],
       category: CATCHALL_GRANULAR[key],
       why_it_matters: `Several smaller ${(CORE_CATEGORY_LABELS[key] || key).toLowerCase()} issues are still holding back the score (${detail.score ?? 0}/${detail.max ?? '-'}), even though none was severe enough to flag on its own.`,
-      steps: detail.recommended_fixes?.length ? detail.recommended_fixes : remaining.map((e) => `Address: ${e.text}`),
+      steps: rubricSteps.length ? rubricSteps : evidenceSteps.length ? evidenceSteps : verifyStepsFor(ctx.rubric),
       affected: [key],
       difficulty: 'medium',
       matched: remaining,
@@ -1162,7 +1200,7 @@ function finalizeItem(raw, ctx) {
     category: raw.category,
     evidence: sanitize(filterEvidenceLines(dedupe((raw.matched || []).map((e) => e.text)), ctx.rubric)).slice(0, 4),
     why_it_matters: raw.why_it_matters,
-    steps: sanitize(finalizeSteps(raw.steps)),
+    steps: sanitize(filterSteps(finalizeSteps(raw.steps, ctx.rubric), ctx.rubric)),
     expected_score_lift: lift.label,
     affected_scores: affected,
     priority,
@@ -1374,6 +1412,8 @@ function buildRetainAndOperateItems({
   existingIds,
   nextRankStart,
 }) {
+  if (isContentRubric(rubric)) return []
+
   const items = []
   let rank = nextRankStart
   const trustProblems = categoryDetails?.safety_trust?.problems || []

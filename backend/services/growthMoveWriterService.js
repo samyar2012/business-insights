@@ -14,6 +14,7 @@ const AI_PROVIDER = String(process.env.AI_PROVIDER || 'mock').toLowerCase()
 
 const {
   filterEvidenceLines,
+  filterSteps,
   shouldDropFixForRubric,
   isPositiveEvidenceNote,
   isPillarFillerText,
@@ -187,19 +188,7 @@ function titleForItem(item, input) {
     return 'Turn on HTTPS so browsers stop warning visitors away'
   }
   if (id === 'strengthen_trust_visibility') {
-    if (isContent(rubric)) {
-      return 'Make author and newsletter paths easier to find'
-    }
-    if (isStore(rubric)) {
-      if (/review|testimonial|attribution/i.test(`${item.title} ${evidence}`)) {
-        return 'Place product reviews next to the buy decision'
-      }
-      return 'Make Help / Contact and policy links easier to find'
-    }
-    if (/review|testimonial|attribution/i.test(`${item.title} ${evidence}`)) {
-      return 'Move reviews next to the decision point'
-    }
-    return 'Make the phone number clickable and visible in the header'
+    return trustMissingFix(rubric).title
   }
   if (id === 'unclear_offer' || id === 'business_model_mismatch') {
     if (isContent(rubric)) {
@@ -394,24 +383,39 @@ function implementationStepsFor(item, input) {
   const id = String(item.id || '')
   const steps = Array.isArray(item.steps) ? item.steps.map(String).filter(Boolean) : []
   if (id === 'no_conversion_path') {
-    return dedupe([...steps, ...conversionPathFix(rubric).steps]).slice(0, 6)
+    return filterSteps(dedupe([...steps, ...conversionPathFix(rubric).steps]), rubric).slice(0, 6)
   }
   if (id === 'weak_cta') {
-    return dedupe([...steps, ...weakCtaFix(rubric).steps]).slice(0, 6)
+    return filterSteps(dedupe([...steps, ...weakCtaFix(rubric).steps]), rubric).slice(0, 6)
   }
   if (id === 'missing_contact_trust' || id === 'strengthen_trust_visibility') {
-    return dedupe([...steps, ...trustMissingFix(rubric).steps]).slice(0, 6)
+    return filterSteps(dedupe([...steps, ...trustMissingFix(rubric).steps]), rubric).slice(0, 6)
   }
-  if (steps.length >= 2) return dedupe(steps).slice(0, 6)
+  const filteredSteps = filterSteps(steps, rubric)
+  if (filteredSteps.length >= 2) return filteredSteps.slice(0, 6)
 
   const title = titleForItem(item, input)
-  const fallback = [
-    `Implement: ${title}.`,
-    'Apply the change on the homepage and any linked booking/contact page.',
-    'Check the result on a phone-sized screen.',
-    'Rescan the website to confirm the related category scores improve.',
-  ]
-  return dedupe([...steps, ...fallback]).slice(0, 6)
+  const fallback = isContent(rubric)
+    ? [
+        `Implement: ${title}.`,
+        'Apply the change on the homepage and category/archive pages.',
+        'Check the result on a phone-sized screen.',
+        'Rescan the website to confirm reader paths improved.',
+      ]
+    : isStore(rubric)
+      ? [
+          `Implement: ${title}.`,
+          'Apply the change on the homepage and product/collection pages.',
+          'Check the result on a phone-sized screen.',
+          'Rescan the website to confirm the related category scores improve.',
+        ]
+      : [
+          `Implement: ${title}.`,
+          'Apply the change on the homepage and any linked booking/contact page.',
+          'Check the result on a phone-sized screen.',
+          'Rescan the website to confirm the related category scores improve.',
+        ]
+  return filterSteps(dedupe([...filteredSteps, ...fallback]), rubric).slice(0, 6)
 }
 
 function expectedOutcomeFor(item, input) {

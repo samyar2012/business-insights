@@ -18,7 +18,13 @@ const PILLAR_FILLER_RE =
   /pillar_backfill_|weekly discovery-growth routine|this growth pillar has no explicit step|balanced growth requires consistent execution across all four pillars|document operations for demand spikes/i
 
 const GENERIC_COMMERCE_CTA_RE =
-  /buy, book, or contact|phone number and email in the header|add a visible phone number and email/i
+  /buy, book, or contact|book, shop, or contact|business model \(book|phone number and email in the header|add a visible phone number and email|click-to-call phone number in the header|make the phone number clickable and (?:more )?visible in the header/i
+
+const GENERIC_FILLER_STEP_RE =
+  /^address:|ask the ai growth coach|review this area on both desktop and mobile/i
+
+const VAGUE_CATCHALL_RE =
+  /polish remaining|strengthen remaining|shore up remaining|resolve remaining technical/i
 
 function isContentRubric(rubric) {
   return CONTENT_RUBRICS.has(rubric)
@@ -38,6 +44,10 @@ function isPositiveEvidenceNote(text) {
   if (POSITIVE_NOTE_RE.test(t)) return true
   if (/^no (?:image alignment|overflow|layout) issue/i.test(t)) return true
   if (/could not be reliably evaluated/i.test(t) && /alignment/i.test(t)) return true
+  // Positive notes must never appear inside longer problem strings
+  if (/no image alignment issue detected/i.test(t) && !/misaligned|poorly fitted|poorly integrated/i.test(t)) {
+    return true
+  }
   return false
 }
 
@@ -45,12 +55,32 @@ function isPillarFillerText(text) {
   return PILLAR_FILLER_RE.test(String(text || ''))
 }
 
+function isGenericFillerStep(text) {
+  return GENERIC_FILLER_STEP_RE.test(String(text || '').trim())
+}
+
 function isGenericCommerceAdvice(text, rubric) {
   const blob = String(text || '')
-  if (!GENERIC_COMMERCE_CTA_RE.test(blob)) return false
-  if (isContentRubric(rubric)) return true
-  if (isStoreRubric(rubric) && /phone number and email in the header/i.test(blob)) return true
-  if (isContentRubric(rubric) && /buy, book, or contact/i.test(blob)) return true
+  if (!blob) return false
+
+  if (GENERIC_COMMERCE_CTA_RE.test(blob)) {
+    if (isContentRubric(rubric)) return true
+    if (isStoreRubric(rubric) && /phone|click-to-call|header/i.test(blob)) return true
+    if (isContentRubric(rubric) && /buy|book|shop|contact/i.test(blob)) return true
+  }
+
+  if (isContentRubric(rubric)) {
+    if (/buy, book|book, shop|shop, or contact|move reviews next to the decision|add reviews|understand the offer in 5 seconds/i.test(blob)) {
+      return true
+    }
+  }
+
+  if (isStoreRubric(rubric)) {
+    if (/phone number clickable|click-to-call phone|visible in the header|phone and email in the header/i.test(blob)) {
+      return true
+    }
+  }
+
   return false
 }
 
@@ -60,6 +90,7 @@ function filterEvidenceLines(lines, rubric = null) {
     .filter(Boolean)
     .filter((line) => !isPositiveEvidenceNote(line))
     .filter((line) => !isPillarFillerText(line))
+    .filter((line) => !isGenericFillerStep(line))
     .filter((line) => !(rubric && isGenericCommerceAdvice(line, rubric)))
 }
 
@@ -67,9 +98,30 @@ function filterProblemLines(lines, rubric = null) {
   return filterEvidenceLines(lines, rubric)
 }
 
+function filterSteps(steps, rubric = null) {
+  return filterEvidenceLines(steps, rubric).filter((step) => !/^address:/i.test(step))
+}
+
+function sanitizeCategoryDetail(detail, rubric = null) {
+  if (!detail) return detail
+  detail.problems = filterProblemLines(detail.problems || [], rubric)
+  detail.recommended_fixes = filterSteps(detail.recommended_fixes || [], rubric)
+  detail.strengths = (detail.strengths || []).filter((line) => !isPillarFillerText(line))
+  if (Array.isArray(detail.point_breakdown)) {
+    detail.point_breakdown = detail.point_breakdown.map((item) => ({
+      ...item,
+      note: isPositiveEvidenceNote(item.note) ? '' : item.note,
+    }))
+  }
+  return detail
+}
+
 function shouldDropFixForRubric(item, rubric) {
   if (!item) return true
   if (/^pillar_backfill_/i.test(item.id || '')) return true
+  if (/^catchall_/i.test(item.id || '') && isContentRubric(rubric)) return true
+  if (item.id === 'retain_reviews_loop' && isContentRubric(rubric)) return true
+  if (item.id === 'operate_response_playbook' && isContentRubric(rubric)) return true
 
   const blob = [
     item.id,
@@ -78,28 +130,34 @@ function shouldDropFixForRubric(item, rubric) {
     item.why_it_matters,
     ...(item.evidence || []),
     ...(item.steps || []),
+    ...(item.implementation_steps || []),
   ]
     .filter(Boolean)
     .join(' ')
 
   if (isPillarFillerText(blob)) return true
   if (isGenericCommerceAdvice(blob, rubric)) return true
+  if (VAGUE_CATCHALL_RE.test(item.title || '') && /^catchall_/i.test(item.id || '')) return true
 
   if (isContentRubric(rubric)) {
-    if (/buy, book, or contact|move reviews next to the decision|add reviews/i.test(blob)) return true
+    if (/buy, book|book, shop|shop, or contact|move reviews next to the decision|add reviews/i.test(blob)) return true
     if (/understand the (?:offer|service) in 5 seconds/i.test(blob) && !/categor|navigation|recipe|subscribe/i.test(blob)) {
       return true
     }
   }
 
   if (isStoreRubric(rubric)) {
-    if (/phone number clickable and visible in the header|add a visible phone number and email/i.test(blob)) {
+    if (/phone number clickable|click-to-call phone|visible in the header|phone and email in the header/i.test(blob)) {
       return true
     }
   }
 
-  if (/fix misaligned images/i.test(item.title || '') && isPositiveEvidenceNote((item.evidence || []).join(' '))) {
-    return true
+  if (/fix misaligned images|misaligned or poorly fitted/i.test(item.title || '')) {
+    if (isPositiveEvidenceNote(blob) || /no image alignment issue detected/i.test(blob)) return true
+  }
+
+  if ((item.evidence || []).some((line) => isPositiveEvidenceNote(line))) {
+    if (/misaligned|alignment|layout|visual polish/i.test(blob)) return true
   }
 
   return false
@@ -115,6 +173,7 @@ function assessCrawlExtraction({ crawlTextLen = 0, visualAudit = null, uxFeature
     Number(visualDesktop.visible_text_length) || 0,
     Number(visualMobile.visible_text_length) || 0,
     Number(uxFeatures?.signals?.visible_text_length) || 0,
+    Number(uxFeatures?.visual_evidence_summary?.visible_text_length) || 0,
   )
   const visualScore = Number(uxFeatures?.visual_score) || 0
   const visualOk = Boolean(visualAudit?.ok)
@@ -158,9 +217,12 @@ module.exports = {
   isServiceRubric,
   isPositiveEvidenceNote,
   isPillarFillerText,
+  isGenericFillerStep,
   isGenericCommerceAdvice,
   filterEvidenceLines,
   filterProblemLines,
+  filterSteps,
+  sanitizeCategoryDetail,
   shouldDropFixForRubric,
   assessCrawlExtraction,
 }

@@ -32,7 +32,10 @@ function expectedImpact(category, priority) {
   return `Polishing ${label} can lift conversion incrementally.`
 }
 
+const { isContentRubric, isStoreRubric } = require('./evidenceFilters')
+
 function buildPriorityFixes(categoryDetails, context = {}) {
+  const rubric = context.rubric || context.scoring_rubric || null
   const fixes = []
   const seen = new Set()
 
@@ -50,7 +53,11 @@ function buildPriorityFixes(categoryDetails, context = {}) {
               : rule?.id === 'mobile_overflow_cap_70'
                 ? 'Fix mobile CSS overflow and horizontal scrolling.'
                 : rule?.id === 'no_conversion_path_cap_75'
-                  ? 'Add a visible phone, contact, booking, or purchase CTA.'
+                  ? isContentRubric(rubric)
+                    ? 'Add clear category navigation and a newsletter signup CTA.'
+                    : isStoreRubric(rubric)
+                      ? 'Add a visible Shop now or Add to cart CTA above the fold.'
+                      : 'Add a visible booking, quote, or contact CTA.'
                   : cap.reason
     if (!seen.has(action)) {
       seen.add(action)

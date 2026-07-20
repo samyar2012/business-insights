@@ -6,7 +6,7 @@ const {
   GALLERY_SERVICE_MODELS,
   isListingModel,
 } = require('./businessModelConfig')
-const { filterProblemLines } = require('./analyzerV2/evidenceFilters')
+const { filterProblemLines, isPositiveEvidenceNote } = require('./analyzerV2/evidenceFilters')
 const { mergeHeroHeadingSignals } = require('./heroHeadingDetection')
 const { HIGH_CONFIDENCE, MEDIUM_CONFIDENCE } = require('./visualEvidenceService')
 
@@ -1189,8 +1189,10 @@ function buildVisualUxScore(input = {}) {
   const problems = []
   const strengths = []
   for (const result of Object.values(components)) {
-    for (const note of result.problems || []) problems.push(note)
-    for (const note of result.strengths || []) strengths.push(note)
+    for (const note of filterProblemLines(result.problems || [], businessModel)) problems.push(note)
+    for (const note of result.strengths || []) {
+      if (!isPositiveEvidenceNote(note) || /^no .+ detected/i.test(note)) strengths.push(note)
+    }
     for (const note of result.notes || []) {
       if (/overcrowd/i.test(note) && (ctx.primaryNavLinkCount || 0) <= PRIMARY_NAV_OVERCROWD_THRESHOLD) {
         continue
@@ -1210,13 +1212,32 @@ function buildVisualUxScore(input = {}) {
 
   const recommended_fixes = problems.slice(0, 6).map((problem) => {
     if (/overflow/i.test(problem)) return 'Fix mobile CSS overflow and test on a 390px-wide viewport.'
-    if (/navigation/i.test(problem)) return 'Add a visible header nav with 3–6 clear links to key pages.'
+    if (/navigation/i.test(problem)) {
+      return CONTENT_MODELS.has(businessModel)
+        ? 'Add clear category or recipe navigation with 4–8 focused links.'
+        : 'Add a visible header nav with 3–6 clear links to key pages.'
+    }
     if (/semantic H1/i.test(problem)) return 'Add a single semantic <h1> that matches your visible hero heading.'
-    if (/H1|hero/i.test(problem)) return 'Rewrite the hero with a short headline, supporting line, and one primary CTA.'
+    if (/H1|hero/i.test(problem)) {
+      return CONTENT_MODELS.has(businessModel)
+        ? 'Rewrite the hero with a short headline, supporting line, and one newsletter or start-here CTA.'
+        : 'Rewrite the hero with a short headline, supporting line, and one primary CTA.'
+    }
     if (/text block|paragraph|dense/i.test(problem)) return 'Break long copy into shorter paragraphs with subheadings.'
-    if (/CTA|conversion|phone/i.test(problem)) return 'Add one natural primary CTA matched to your business model (book, shop, or contact).'
+    if (/CTA|conversion|phone/i.test(problem)) {
+      if (CONTENT_MODELS.has(businessModel)) {
+        return 'Add one obvious subscribe or category navigation action above the fold.'
+      }
+      if (ECOMMERCE_MODELS.has(businessModel)) {
+        return 'Add one obvious Shop now or Add to cart action above the fold.'
+      }
+      if (SERVICE_MODELS.has(businessModel)) {
+        return 'Add one obvious Book now or Get a quote action above the fold.'
+      }
+      return 'Add one obvious primary action matched to your business model.'
+    }
     if (/image/i.test(problem)) return 'Add relevant photos that prove your product, service, or brand.'
-    return `Address visual UX issue: ${problem}`
+    return `Improve this visual issue on the live site: ${problem}`
   })
 
   const evidenceProblems = collectEvidenceProblems(visualEvidenceIssues, HIGH_CONFIDENCE)
@@ -1269,7 +1290,7 @@ function buildVisualUxScore(input = {}) {
     readability_problems: readability.problems || [],
     readability_confidence: readability.confidence || avgConfidence,
     layout_strengths: layout.strengths || [],
-    layout_problems: layout.problems || [],
+    layout_problems: filterProblemLines(layout.problems || [], businessModel),
     layout_evidence: layout.evidence || [],
     score_trace: scoreTrace,
     visual_evidence_summary: {

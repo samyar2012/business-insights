@@ -190,11 +190,14 @@ function buildEvidenceStrengths(categoryDetails = {}, ctx = {}) {
   return out.slice(0, 8)
 }
 
+const { filterProblemLines } = require('./evidenceFilters')
+
 function buildEvidenceRisks(categoryDetails = {}, ctx = {}, extraWarnings = []) {
+  const rubric = ctx.rubric || ctx.scoring_rubric || null
   const seen = new Set()
   const out = []
   for (const [category, detail] of Object.entries(categoryDetails)) {
-    for (const raw of detail.problems || []) {
+    for (const raw of filterProblemLines(detail.problems || [], rubric)) {
       const narrated = narrateOne(raw, category, ctx, REWRITE_RISKS)
       if (!seen.has(narrated)) {
         seen.add(narrated)

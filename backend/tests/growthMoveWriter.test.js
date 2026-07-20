@@ -141,7 +141,7 @@ describe('growthMoveWriterService', () => {
     const titles = result.growth_moves.map((m) => m.title)
     assert.ok(titles.some((t) => /booking path obvious/i.test(t)))
     assert.ok(titles.some((t) => /understand the service in 5 seconds/i.test(t)))
-    assert.ok(titles.some((t) => /reviews next to the decision point/i.test(t)))
+    assert.ok(titles.some((t) => /trust details customers check before they book/i.test(t)))
     assert.ok(titles.some((t) => /template\/demo content/i.test(t)))
     for (const title of titles) {
       assert.equal(VAGUE_TITLE_RE.test(title), false, `vague title survived: ${title}`)
@@ -221,7 +221,7 @@ describe('growthMoveWriterService', () => {
     const blob = result.primary_growth_moves.map((m) => m.title).join(' | ')
     assert.match(blob, /booking path/i)
     assert.match(result.growth_moves.map((m) => m.title).join(' | '), /service in 5 seconds/i)
-    assert.match(result.growth_moves.map((m) => m.title).join(' | '), /reviews next to the decision/i)
+    assert.match(result.growth_moves.map((m) => m.title).join(' | '), /trust details customers check before they book/i)
     assert.match(result.growth_moves.map((m) => m.title).join(' | '), /template\/demo/i)
 
     const json = JSON.parse(JSON.stringify({

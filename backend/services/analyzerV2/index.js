@@ -26,7 +26,7 @@ const {
 const { buildBenchmarkComparison, humanEquivalentFromOverall } = require('./benchmarkInterpreter')
 const { buildUxFeatureSnapshot } = require('../uxFeatureExtractor')
 const { buildFixPlan, buildGrowthPlan } = require('./fixPlanEngine')
-const { assessCrawlExtraction } = require('./evidenceFilters')
+const { assessCrawlExtraction, sanitizeCategoryDetail } = require('./evidenceFilters')
 const { buildEvidenceStrengths, buildEvidenceRisks } = require('./evidenceNarrator')
 const { assessMobileOverflow } = require('./evidenceDetectors')
 const {
@@ -100,6 +100,13 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
   }
   const safetyResult = options.safetyResult || null
 
+  const crawlTextLen = aggregated.content_signals?.total_text_length || 0
+  const crawlExtraction = assessCrawlExtraction({
+    crawlTextLen,
+    visualAudit: options.visualAudit,
+    uxFeatures,
+  })
+
   const categoryDetails = {
     safety_trust: scoreSafetyTrust({
       aggregated,
@@ -115,7 +122,7 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
       pages,
       crawlHealth,
       visualAudit: options.visualAudit,
-      options,
+      options: { ...options, rubric, crawlExtraction },
     }),
     ux_ui_visual: scoreUxUiVisual({
       pages,
@@ -128,18 +135,21 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     offer_business_fit: (() => {
       const fit = scoreOfferBusinessFit(
         rubric,
-        { aggregated, business, pages, signals, visualAudit: options.visualAudit, uxFeatures },
+        { aggregated, business, pages, signals, visualAudit: options.visualAudit, uxFeatures, crawlExtraction },
         CATEGORY_WEIGHTS.offer_business_fit,
       )
-      return {
-        score: fit.score,
-        max: CATEGORY_WEIGHTS.offer_business_fit,
-        confidence: 75,
-        strengths: fit.strengths,
-        problems: fit.problems,
-        evidence: fit.evidence,
-        recommended_fixes: fit.recommended_fixes,
-      }
+      return sanitizeCategoryDetail(
+        {
+          score: fit.score,
+          max: CATEGORY_WEIGHTS.offer_business_fit,
+          confidence: 75,
+          strengths: fit.strengths,
+          problems: fit.problems,
+          evidence: fit.evidence,
+          recommended_fixes: fit.recommended_fixes,
+        },
+        rubric,
+      )
     })(),
     customer_attraction: scoreCustomerAttraction({
       aggregated,
@@ -160,23 +170,6 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
 
   // Sparse crawler HTML ≠ broken site. If the visual audit rendered real content, do not
   // apply the hard "no readable content" overall-score cap (Peak Design–style SPAs).
-  const crawlTextLen = aggregated.content_signals?.total_text_length || 0
-  const visualSummary = options.visualAudit?.summary || {}
-  const visualDesktop = options.visualAudit?.desktop || {}
-  const visualMobile = options.visualAudit?.mobile || {}
-  const visualTextLen = Math.max(
-    Number(visualSummary.visible_text_length) || 0,
-    Number(visualSummary.above_fold_text_length) || 0,
-    Number(visualDesktop.visible_text_length) || 0,
-    Number(visualMobile.visible_text_length) || 0,
-    Number(visualDesktop.above_fold_text_length) || 0,
-    Number(visualMobile.above_fold_text_length) || 0,
-  )
-  const crawlExtraction = assessCrawlExtraction({
-    crawlTextLen,
-    visualAudit: options.visualAudit,
-    uxFeatures,
-  })
   const visualShowsContent = crawlExtraction.visual_shows_content
   const noReadableContent = crawlExtraction.sparse_crawl && pages.length > 0 && !visualShowsContent
   const overflowAssessment = assessMobileOverflow({
@@ -334,10 +327,13 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
   result.crawl_ux_ui_score = result.ux_ui_score
   result.deterministic_ux_ui_score = result.ux_ui_score
 
-  // Keep v2 category_scores (safety_trust, …). Legacy flat scores stay for older UI fields.
-  const { category_scores: legacyCategoryScoresMap, ...legacyFlat } = legacy
-  Object.assign(result, legacyFlat)
-  result.legacy_category_scores = legacyCategoryScoresMap || null
+  // Legacy flat scores for older UI fields — never overwrite v2 category_scores keys.
+  result.store_score = legacy.store_score
+  result.trust_score = legacy.trust_score
+  result.offer_score = legacy.offer_score
+  result.content_score = legacy.content_score
+  result.technical_score = legacy.technical_score
+  result.legacy_category_scores = legacy.category_scores || null
 
   const validation = validateWeightedScore(result)
   if (!validation.valid) {

@@ -56,4 +56,16 @@ describe('evidenceFilters', () => {
     assert.equal(result.visual_shows_content, true)
     assert.match(String(result.warning || ''), /crawl-extraction limitation/i)
   })
+
+  it('drops book, shop, or contact phrasing for blogs', () => {
+    const drop = shouldDropFixForRubric(
+      {
+        id: 'weak_cta',
+        title: 'Add one natural primary CTA matched to your business model (book, shop, or contact).',
+        evidence: ['No clear action path.'],
+      },
+      'blog',
+    )
+    assert.equal(drop, true)
+  })
 })

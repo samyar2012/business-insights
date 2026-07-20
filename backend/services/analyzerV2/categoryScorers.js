@@ -1,4 +1,4 @@
-const { filterProblemLines } = require('./evidenceFilters')
+const { filterProblemLines, sanitizeCategoryDetail } = require('./evidenceFilters')
 const { unknownResult } = require('../safeBrowsingService')
 const { inferCrawlHealth } = require('../priorityWebsiteScoring')
 const { detectOperationalSignals } = require('../businessScoringRubrics')
@@ -247,7 +247,7 @@ function emptyCategoryDetail(max) {
   }
 }
 
-function finalizeCategory(detail, max, confidenceFactors = []) {
+function finalizeCategory(detail, max, confidenceFactors = [], rubric = null) {
   detail.score = clamp(detail.score, max)
   detail.max = max
   const avgConfidence =
@@ -255,7 +255,7 @@ function finalizeCategory(detail, max, confidenceFactors = []) {
       ? Math.round(confidenceFactors.reduce((sum, value) => sum + value, 0) / confidenceFactors.length)
       : 55
   detail.confidence = Math.max(20, Math.min(100, avgConfidence))
-  return detail
+  return sanitizeCategoryDetail(detail, rubric)
 }
 
 function scoreSafetyTrust({ aggregated, pages, safetyResult, crawlHealth, rubric, signals, visualAudit }) {
@@ -282,7 +282,7 @@ function scoreSafetyTrust({ aggregated, pages, safetyResult, crawlHealth, rubric
     detail.problems.push(result.message || 'Site flagged as unsafe by Google Safe Browsing.')
     detail.recommended_fixes.push('Remove malware/phishing content and request a Safe Browsing review.')
     detail.score = 0
-    return finalizeCategory(detail, max, [result.configured ? 95 : 70])
+    return finalizeCategory(detail, max, [result.configured ? 95 : 70], rubric)
   }
 
   if (result.status === 'safe') {
@@ -461,7 +461,7 @@ function scoreSafetyTrust({ aggregated, pages, safetyResult, crawlHealth, rubric
   }
 
   detail.score = points
-  return finalizeCategory(detail, max, confidenceFactors)
+  return finalizeCategory(detail, max, confidenceFactors, rubric)
 }
 
 function businessNameFromPages(pages) {
@@ -528,7 +528,9 @@ function scoreTechnicalFunctionality({ aggregated, pages, crawlHealth, visualAud
     Number(visualAudit?.desktop?.visible_text_length) || 0,
     Number(visualAudit?.mobile?.visible_text_length) || 0,
   )
-  const visualShowsContent = Boolean(visualAudit?.ok) && visualTextLen >= 200
+  const visualShowsContent =
+    Boolean(options?.crawlExtraction?.visual_shows_content) ||
+    (Boolean(visualAudit?.ok) && visualTextLen >= 200)
 
   if (meta.js_rendered_pages > 0) {
     if (visualShowsContent) {
@@ -555,10 +557,8 @@ function scoreTechnicalFunctionality({ aggregated, pages, crawlHealth, visualAud
   if (textLen >= 1500) {
     points += 2
     detail.strengths.push('Enough readable content extracted for analysis.')
-  } else if (textLen >= 600) {
-    points += 1
   } else if (visualShowsContent) {
-    points += 1
+    points += 2
     detail.strengths.push(
       'Visual audit found substantial rendered text even though the crawler extracted little HTML content.',
     )
@@ -566,6 +566,8 @@ function scoreTechnicalFunctionality({ aggregated, pages, crawlHealth, visualAud
       'Crawler HTML extraction was thin — treat this as a crawlability issue, not proof the live site is empty.',
     )
     detail.recommended_fixes.push('Server-render primary product or offer copy so analysis and SEO can see it.')
+  } else if (textLen >= 600) {
+    points += 1
   } else {
     detail.problems.push('Very little readable content on crawled pages.')
     detail.recommended_fixes.push('Add descriptive text to homepage and key landing pages.')
@@ -600,7 +602,7 @@ function scoreTechnicalFunctionality({ aggregated, pages, crawlHealth, visualAud
   }
 
   detail.score = points
-  return finalizeCategory(detail, max, confidenceFactors)
+  return finalizeCategory(detail, max, confidenceFactors, options?.rubric || null)
 }
 
 function scoreUxUiVisual({ pages, aggregated, uxFeatures, visualAudit, rubric, signals }) {
@@ -703,7 +705,7 @@ function scoreUxUiVisual({ pages, aggregated, uxFeatures, visualAudit, rubric, s
 
   detail.score = score
   const confidence = features.ux_confidence ?? (visualOk ? 88 : 52)
-  return finalizeCategory(detail, max, [confidence])
+  return finalizeCategory(detail, max, [confidence], rubric)
 }
 
 function scoreCustomerAttraction({ aggregated, pages, signals, rubric, uxFeatures, crawlHealth }) {
@@ -913,20 +915,40 @@ function scoreCustomerAttraction({ aggregated, pages, signals, rubric, uxFeature
     detail.strengths.push('Visual presentation partially supports initial interest.')
   }
 
-  const ctaStrength = combineStrengths([
-    strengthFromBoolean(signals.has_quote_cta || signals.has_booking_cta || signals.has_add_to_cart),
-    strengthFromBoolean(signals.has_phone || signals.has_contact_page),
-  ])
+  const ctaStrength = isContentSite
+    ? combineStrengths([
+        strengthFromBoolean(aggregated.content_signals?.newsletter_indicators),
+        strengthFromBoolean(signals.has_creator_links),
+        strengthFromCount((aggregated.content_signals?.navigation_labels || []).length, {
+          weak: 2,
+          medium: 4,
+          strong: 6,
+        }),
+      ])
+    : combineStrengths([
+        strengthFromBoolean(signals.has_quote_cta || signals.has_booking_cta || signals.has_add_to_cart),
+        strengthFromBoolean(signals.has_phone || signals.has_contact_page),
+      ])
   const ctaPts = pointsForStrength(ctaStrength, 1)
   points += addBreakdown(
     'action_path',
-    'Contact / next-step path (minor factor)',
+    isContentSite ? 'Subscribe / navigation path (minor factor)' : 'Contact / next-step path (minor factor)',
     ctaPts,
     1,
-    ctaStrength !== 'none' ? 'A path exists when visitors are ready to act.' : 'No clear action path.',
+    ctaStrength !== 'none'
+      ? isContentSite
+        ? 'Readers can find categories or subscribe.'
+        : 'A path exists when visitors are ready to act.'
+      : isContentSite
+        ? 'No clear subscribe or category navigation path.'
+        : 'No clear action path.',
   )
   if (ctaPts > 0) {
-    detail.strengths.push('A contact or next-step path exists when visitors are ready to act.')
+    detail.strengths.push(
+      isContentSite
+        ? 'Category navigation or a subscribe path exists for readers.'
+        : 'A contact or next-step path exists when visitors are ready to act.',
+    )
   }
 
   const downsides = computeVisitorAppealDownsides(uxFeatures)
@@ -965,7 +987,7 @@ function scoreCustomerAttraction({ aggregated, pages, signals, rubric, uxFeature
   detail.point_breakdown = breakdown
   detail.score = points
   const confidence = crawlHealth.crawled >= 2 ? 78 : 50
-  return finalizeCategory(detail, max, [confidence])
+  return finalizeCategory(detail, max, [confidence], rubric)
 }
 
 function buildScoringContext(aggregated, business, pages, options = {}) {

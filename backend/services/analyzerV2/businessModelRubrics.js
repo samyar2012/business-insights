@@ -213,10 +213,16 @@ function inferCatalogSignals(ctx) {
 }
 
 function scoreEcommerceOffer(ctx, max) {
-  const { aggregated, signals } = ctx
+  const { aggregated, signals, crawlExtraction, uxFeatures } = ctx
   const meta = aggregated.extraction_meta || {}
   const catalog = inferCatalogSignals(ctx)
   const result = { earned: 0, strengths: [], problems: [], evidence: [], recommended_fixes: [] }
+  const visualBackedCatalog =
+    Boolean(crawlExtraction?.visual_shows_content) &&
+    (catalog.productGridCount >= 4 ||
+      catalog.hasShopCta ||
+      Boolean(signals?.has_add_to_cart) ||
+      Boolean(uxFeatures?.signals?.has_add_to_cart))
 
   let productStrength = strengthFromCount(catalog.productCount, {
     weak: 1,
@@ -305,14 +311,24 @@ function scoreEcommerceOffer(ctx, max) {
     fix: 'Add star ratings or testimonials near product listings.',
   })
 
-  if (catalog.productCount === 0 && !catalog.hasWeakCatalog) {
+  if (catalog.productCount === 0 && !catalog.hasWeakCatalog && !visualBackedCatalog) {
     result.earned = Math.min(result.earned, Math.round(max * 0.35))
     result.problems.push('Ecommerce store has no extractable products or catalog signals — offer clarity is severely limited.')
     result.recommended_fixes.push('Publish product collection pages with named items, prices, and images.')
-  } else if (catalog.productCount === 0 && catalog.hasWeakCatalog) {
-    result.earned = Math.min(result.earned, Math.round(max * 0.72))
-    if (!result.strengths.some((s) => /catalog|product/i.test(s))) {
-      result.strengths.push('Shop/catalog signals detected even though product extraction was incomplete.')
+  } else if (catalog.productCount === 0 && (catalog.hasWeakCatalog || visualBackedCatalog)) {
+    result.earned = Math.min(result.earned, Math.max(result.earned, Math.round(max * 0.72)))
+    if (!result.strengths.some((s) => /catalog|product|visual/i.test(s))) {
+      result.strengths.push(
+        visualBackedCatalog
+          ? 'Visual audit found a shoppable catalog even though product extraction from crawl HTML was incomplete.'
+          : 'Shop/catalog signals detected even though product extraction was incomplete.',
+      )
+    }
+    if (visualBackedCatalog) {
+      result.problems.push(
+        'Crawler extracted few products, but the visual audit shows a product grid — treat this as a crawl-extraction gap, not a missing catalog.',
+      )
+      result.recommended_fixes.push('Server-render product names and prices in HTML so crawlers and SEO can read the catalog.')
     }
   }
   if (
