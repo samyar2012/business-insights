@@ -18,7 +18,7 @@ const PILLAR_FILLER_RE =
   /pillar_backfill_|weekly discovery-growth routine|this growth pillar has no explicit step|balanced growth requires consistent execution across all four pillars|document operations for demand spikes/i
 
 const GENERIC_COMMERCE_CTA_RE =
-  /buy, book, or contact|book, shop, or contact|business model \(book|phone number and email in the header|add a visible phone number and email|click-to-call phone number in the header|make the phone number clickable and (?:more )?visible in the header/i
+  /buy, book, or contact|book, shop, or contact|business model \(book|phone number and email in the header|add a visible phone number and email|phone and email in the header|header and footer, plus a clear contact|click-to-call phone number in the header|make the phone number clickable and (?:more )?visible in the header/i
 
 const GENERIC_FILLER_STEP_RE =
   /^address:|ask the ai growth coach|review this area on both desktop and mobile/i
@@ -76,7 +76,7 @@ function isGenericCommerceAdvice(text, rubric) {
   }
 
   if (isStoreRubric(rubric)) {
-    if (/phone number clickable|click-to-call phone|visible in the header|phone and email in the header/i.test(blob)) {
+    if (/phone number clickable|click-to-call phone|visible in the header|phone and email in the header|header and footer/i.test(blob)) {
       return true
     }
   }
@@ -147,7 +147,7 @@ function shouldDropFixForRubric(item, rubric) {
   }
 
   if (isStoreRubric(rubric)) {
-    if (/phone number clickable|click-to-call phone|visible in the header|phone and email in the header/i.test(blob)) {
+    if (/phone number clickable|click-to-call phone|visible in the header|phone and email in the header|header and footer/i.test(blob)) {
       return true
     }
   }

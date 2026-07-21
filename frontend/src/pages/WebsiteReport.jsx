@@ -322,19 +322,30 @@ const WebsiteReport = () => {
     scores.overall_score !== weightedSum &&
     !(scores.score_caps_applied?.length > 0)
   const scoreExplanations = weightedScoreExplanations(scores)
-  const growthOpportunities = scores.growth_plan?.length
-    ? scores.growth_plan
-    : scores.fix_plan?.length
-      ? scores.fix_plan
+  const growthOpportunities = scores.growth_moves?.length
+    ? scores.growth_moves.map((move, index) => ({
+        rank: move.rank ?? index + 1,
+        priority: move.priority || (index < 3 ? 'high' : 'medium'),
+        category: move.category || 'customer_attraction',
+        action: move.title,
+        title: move.title,
+        evidence: move.evidence || [],
+        why_it_matters: move.why_it_matters || move.customer_problem,
+        steps: move.implementation_steps || move.steps || [],
+        tier: move.tier || (index < 3 ? 'primary' : 'secondary'),
+        pillar: move.pillar || null,
+      }))
+    : scores.growth_plan?.length
+      ? scores.growth_plan
       : scores.priority_fixes?.length
         ? scores.priority_fixes
-    : (scores.recommended_actions || []).map((action, index) => ({
-        rank: index + 1,
-        priority: index === 0 ? 'high' : 'medium',
-        category: 'customer_attraction',
-        action,
-        impact: '',
-      }))
+        : (scores.recommended_actions || []).map((action, index) => ({
+            rank: index + 1,
+            priority: index === 0 ? 'high' : 'medium',
+            category: 'customer_attraction',
+            action,
+            impact: '',
+          }))
   const topFixPreview = growthOpportunities.slice(0, 3)
   const benchmark = scores.benchmark_comparison
   const uxFeatures = scores.ux_features || {}

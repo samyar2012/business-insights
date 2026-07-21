@@ -648,7 +648,7 @@ function scoreUxUiVisual({ pages, aggregated, uxFeatures, visualAudit, rubric, s
   }
 
   if ((features.readability_problems || []).length) {
-    for (const problem of features.readability_problems.slice(0, 2)) {
+    for (const problem of filterProblemLines(features.readability_problems.slice(0, 2), rubric)) {
       detail.problems.push(problem)
     }
   }

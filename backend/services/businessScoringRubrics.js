@@ -18,8 +18,12 @@ const WEIGHTED_CATEGORY_MAX_V2 = {
 
 const WEIGHTED_SCORE_FIELDS = Object.keys(WEIGHTED_CATEGORY_MAX)
 
+function isAnalyzerV2Scores(scores) {
+  return String(scores?.scoring_version || '').startsWith('business_insights_analyzer_v2')
+}
+
 function resolveCategoryMax(scores) {
-  if (scores?.scoring_version === 'business_insights_analyzer_v2') {
+  if (isAnalyzerV2Scores(scores)) {
     return WEIGHTED_CATEGORY_MAX_V2
   }
   return WEIGHTED_CATEGORY_MAX
@@ -56,9 +60,11 @@ function validateWeightedScore(scores) {
   return { valid: errors.length === 0, errors }
 }
 
+const { SCORING_VERSION } = require('./analyzerV2/scoringWeights')
+
 function needsWeightedScoreRehydration(scores) {
   if (!scores || typeof scores !== 'object') return true
-  if (scores.scoring_version !== 'business_insights_analyzer_v2') return true
+  if (scores.scoring_version !== SCORING_VERSION) return true
   return WEIGHTED_SCORE_FIELDS.some(
     (key) => typeof scores[key] !== 'number' || Number.isNaN(scores[key]),
   )

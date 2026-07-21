@@ -1,4 +1,4 @@
-const SCORING_VERSION = 'business_insights_analyzer_v2'
+const SCORING_VERSION = 'business_insights_analyzer_v2_roadmap_1'
 
 const CATEGORY_WEIGHTS = {
   safety_trust: 20,

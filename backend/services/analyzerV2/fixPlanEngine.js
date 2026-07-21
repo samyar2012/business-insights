@@ -10,6 +10,7 @@ const {
   isPositiveEvidenceNote,
   isPillarFillerText,
   isGenericFillerStep,
+  isGenericCommerceAdvice,
   isContentRubric,
 } = require('./evidenceFilters')
 const {
@@ -364,12 +365,13 @@ function claim(events, categories, pattern) {
   return matched
 }
 
-function collectEvents({ categoryDetails = {}, uxFeatures = {}, capReasons = [] }) {
+function collectEvents({ categoryDetails = {}, uxFeatures = {}, capReasons = [], rubric = null }) {
   const events = []
   const seenText = new Set()
   const push = (category, text, extra = {}) => {
     const trimmed = String(text || '').trim()
     if (!trimmed || isPositiveEvidenceNote(trimmed) || isPillarFillerText(trimmed)) return
+    if (rubric && isGenericCommerceAdvice(trimmed, rubric)) return
     events.push({ category, text: trimmed, used: false, ...extra })
   }
 
@@ -378,7 +380,7 @@ function collectEvents({ categoryDetails = {}, uxFeatures = {}, capReasons = [] 
   }
 
   for (const [category, detail] of Object.entries(categoryDetails)) {
-    for (const problem of filterProblemLines(detail.problems || [])) {
+    for (const problem of filterProblemLines(detail.problems || [], rubric)) {
       push(category, problem, { kind: 'problem' })
       seenText.add(problem)
     }
@@ -393,7 +395,7 @@ function collectEvents({ categoryDetails = {}, uxFeatures = {}, capReasons = [] 
   }
 
   for (const key of ['readability_problems', 'layout_problems', 'visual_problems']) {
-    for (const problem of filterProblemLines(uxFeatures?.[key] || [])) {
+    for (const problem of filterProblemLines(uxFeatures?.[key] || [], rubric)) {
       if (seenText.has(problem)) continue
       push('ux_ui_visual', problem, { kind: 'ux_feature' })
       seenText.add(problem)
@@ -1359,7 +1361,7 @@ function buildFixPlan(input = {}) {
   const aggregated = input.aggregated || {}
   const benchmarkComparison = input.benchmarkComparison || null
 
-  const events = collectEvents({ categoryDetails, uxFeatures, capReasons })
+  const events = collectEvents({ categoryDetails, uxFeatures, capReasons, rubric })
   const ctx = { rubric, categoryDetails, uxFeatures, pages, aggregated }
 
   const rawItems = []

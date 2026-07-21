@@ -328,12 +328,37 @@ function calculateScores(aggregated, business, pages, options = {}) {
   return calculateAnalyzerV2Scores(aggregated, business, pages, options)
 }
 
+function mapGrowthPlanToPriorityFixes(growthPlan = []) {
+  return growthPlan.map((item, index) => ({
+    rank: item.rank ?? index + 1,
+    priority: item.priority || (index < 3 ? 'high' : 'medium'),
+    category: item.category || 'customer_attraction',
+    action: item.action || item.title,
+    reason: item.reason || item.why_it_matters,
+    expected_impact: item.expected_impact || item.expected_business_outcome,
+    ...item,
+  }))
+}
+
 function buildProfileScoresPayload(aggregated, business, pages, options = {}) {
   const scores = calculateScores(aggregated, business, pages, options)
-  const priorityFixes =
-    scores.priority_fixes?.length > 0
-      ? scores.priority_fixes
-      : buildPriorityFixes(aggregated, pages, scores)
+  const fromGrowthPlan = mapGrowthPlanToPriorityFixes(scores.growth_plan || [])
+  const fromGrowthMoves = (scores.growth_moves || []).map((move, index) => ({
+    rank: move.rank ?? index + 1,
+    priority: move.priority || (index < 3 ? 'high' : 'medium'),
+    category: move.category || 'customer_attraction',
+    action: move.title,
+    reason: move.why_it_matters || move.customer_problem,
+    expected_impact: move.expected_outcome || move.expected_business_outcome,
+    ...move,
+  }))
+  const priorityFixes = fromGrowthMoves.length
+    ? fromGrowthMoves
+    : fromGrowthPlan.length
+      ? fromGrowthPlan
+      : scores.priority_fixes?.length > 0
+        ? scores.priority_fixes
+        : buildPriorityFixes(aggregated, pages, scores)
   return {
     ...scores,
     strengths: scores.strengths?.length ? scores.strengths : buildStrengths(aggregated, scores),

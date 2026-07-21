@@ -41,7 +41,7 @@ describe('actionPlanService fix plan helpers', () => {
       {
         business_id: 'biz-1',
         scan_id: 'scan-1',
-        scores: { scoring_version: 'business_insights_analyzer_v2', business_model: 'ecommerce_store' },
+        scores: { scoring_version: 'business_insights_analyzer_v2_roadmap_1', business_model: 'ecommerce_store' },
       },
     )
 

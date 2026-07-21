@@ -482,7 +482,7 @@ describe('priorityWebsiteScoring', () => {
     )
     assert.equal(
       needsWeightedScoreRehydration({
-        scoring_version: 'business_insights_analyzer_v2',
+        scoring_version: 'business_insights_analyzer_v2_roadmap_1',
         overall_score: 72,
         safety_score: 16,
         functionality_score: 12,
@@ -521,7 +521,7 @@ describe('priorityWebsiteScoring', () => {
         payload.business_fit_score +
         payload.customer_attraction_score,
     )
-    assert.equal(payload.scoring_version, 'business_insights_analyzer_v2')
+    assert.equal(payload.scoring_version, 'business_insights_analyzer_v2_roadmap_1')
   })
 
   it('does not apply key_pages_failure_cap_60 when discovered exceeds crawled but pages_failed is 0', () => {

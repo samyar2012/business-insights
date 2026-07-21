@@ -194,7 +194,7 @@ describe('analyzerV2', () => {
       },
     )
 
-    assert.equal(scores.scoring_version, 'business_insights_analyzer_v2')
+    assert.equal(scores.scoring_version, 'business_insights_analyzer_v2_roadmap_1')
     assert.ok(scores.overall_score <= 55)
     assert.ok(scores.business_fit_score <= 10)
     assert.ok(scores.category_details.offer_business_fit.problems.some((p) => /product/i.test(p)))
@@ -385,7 +385,7 @@ describe('analyzerV2', () => {
     )
     assert.ok(scores.confidence_score < 80)
     assert.ok(scores.category_details.ux_ui_visual.confidence < 70)
-    assert.equal(scores.scoring_version, 'business_insights_analyzer_v2')
+    assert.equal(scores.scoring_version, 'business_insights_analyzer_v2_roadmap_1')
   })
 
   it('preserves legacy frontend-compatible fields', () => {

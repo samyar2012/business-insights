@@ -4,6 +4,7 @@ const { calculateAnalyzerV2Scores } = require('../services/analyzerV2')
 const { writeGrowthMovesDeterministic, titleForItem } = require('../services/growthMoveWriterService')
 const { buildFixPlan } = require('../services/analyzerV2/fixPlanEngine')
 const { buildVisualUxScore } = require('../services/uxVisualScorer')
+const { buildProfileScoresPayload } = require('../services/businessProfileLogic')
 
 const V2_CATEGORY_KEYS = [
   'safety_trust',
@@ -303,5 +304,49 @@ describe('multi-category analyzer roadmap fixes', () => {
     if (scored && Array.isArray(scored.problems)) {
       assert.ok(!scored.problems.includes('No image alignment issue detected.'))
     }
+  })
+
+  it('buildProfileScoresPayload uses filtered growth_plan for recommended_actions, not raw fix_plan', () => {
+    const aggregated = {
+      content_signals: {
+        total_text_length: 2000,
+        ctas: ['Shop now'],
+        headings: { h1: ['Honeylove'] },
+      },
+      contact_signals: { phones: [], emails: ['help@brand.com'], has_mailto: true, has_contact_form: true },
+      trust_signals: { https: true, review_indicators: false },
+      policy_signals: { privacy: false, shipping: false, returns: false, policy_count: 0 },
+      products: [{ name: 'Bra', price: '68' }],
+      tech_signals: { https: true, has_viewport: true },
+    }
+    const pages = [
+      {
+        url: 'https://honeylove.example.com/',
+        final_url: 'https://honeylove.example.com/',
+        title: 'Honeylove',
+        page_type: 'homepage',
+        extracted_text: 'Shapewear. Shop now. Help center.',
+        http_status: 200,
+      },
+    ]
+    const payload = buildProfileScoresPayload(
+      aggregated,
+      { business_name: 'Honeylove', store_url: 'https://honeylove.example.com', business_model: 'ecommerce_store' },
+      pages,
+      {
+        safetyResult: { status: 'safe', configured: true, threats: [], message: 'Safe.' },
+        crawlMeta: { homepage_fetch_ok: true, pages_crawled: 1, pages_discovered: 1 },
+        includeBenchmark: false,
+      },
+    )
+
+    const actions = (payload.recommended_actions || []).join(' | ')
+    assert.ok(!/phone number clickable|click-to-call phone|header and footer/i.test(actions), actions)
+    assert.ok(payload.growth_plan?.length > 0)
+    assert.deepEqual(
+      payload.recommended_actions,
+      payload.priority_fixes.map((fix) => fix.action),
+    )
+    assert.equal(payload.scoring_version, 'business_insights_analyzer_v2_roadmap_1')
   })
 })

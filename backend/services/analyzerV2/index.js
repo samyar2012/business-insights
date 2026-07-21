@@ -260,7 +260,14 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     business,
   })
   const growth_plan = toGrowthPlanItems(growthWriter)
-  const priority_fixes = fix_plan
+  const priority_fixes = growth_plan.map((item, index) => ({
+    rank: item.rank ?? index + 1,
+    priority: item.priority || (index < 3 ? 'high' : 'medium'),
+    category: item.category || 'customer_attraction',
+    action: item.action || item.title,
+    reason: item.reason || item.why_it_matters,
+    expected_impact: item.expected_impact || item.expected_business_outcome,
+  }))
   const readable_summary = buildReadableSummary({
     overallScore: overall_score,
     confidenceScore: confidence_score,
