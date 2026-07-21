@@ -33,9 +33,14 @@ const REWRITE_STRENGTHS = new Map([
     () => 'Google confirms the site is free of malware or phishing, so visitors and ad platforms will not see safety warnings.',
   ],
   [
+    'HTTPS and crawler security checks passed, but Google Safe Browsing was not configured.',
+    () =>
+      'HTTPS and crawler security checks passed, but Google Safe Browsing was not configured.',
+  ],
+  [
     'HTTPS and crawl checks passed; live Google Safe Browsing was not verified.',
     () =>
-      'The site loads over HTTPS and the crawl found no security red flags, but live Google Safe Browsing was not verified in this scan.',
+      'HTTPS and crawler security checks passed, but Google Safe Browsing was not configured.',
   ],
   [
     'Multiple supporting pages were crawled successfully.',

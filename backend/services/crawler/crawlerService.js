@@ -374,6 +374,12 @@ async function crawlBusinessWebsite({
       crawlMeta: {
         homepage_fetch_ok: Boolean(homeFetch.ok && homeFetch.html),
         bot_protection_bypassed: Boolean(homeFetch.fetched_via_browser && homeFetch.bot_blocked),
+        bot_blocked: Boolean(homeFetch.bot_blocked && !homeFetch.fetched_via_browser),
+        crawl_blocked: Boolean(
+          homeFetch.crawl_blocked || (homeFetch.bot_blocked && !homeFetch.fetched_via_browser),
+        ),
+        block_reason: homeFetch.block_reason || null,
+        user_message: homeFetch.user_message || null,
         fetched_via_browser: Boolean(homeFetch.fetched_via_browser),
         pages_discovered: pagesDiscovered,
         pages_crawled: pages.length,

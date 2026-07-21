@@ -13,6 +13,19 @@ const DOMAIN_DELAY_MS = Number(process.env.CRAWLER_DOMAIN_DELAY_MS || 300)
 const BOT_CHALLENGE_RE =
   /verifying your connection|just a moment|attention required|cf-browser-verification|challenge-platform|checking your browser|ddos protection|please enable javascript/i
 
+const CRAWL_LIMITATION_USER_MESSAGE =
+  'This site blocked automated crawling. Try browser-based scan mode or rescan later.'
+
+function crawlLimitationFields(result = {}) {
+  const status = Number(result.status || 0)
+  return {
+    bot_blocked: true,
+    crawl_blocked: true,
+    block_reason: status === 403 ? 'http_403' : 'bot_protection',
+    user_message: CRAWL_LIMITATION_USER_MESSAGE,
+  }
+}
+
 const lastFetchByDomain = new Map()
 let sharedBrowserPromise = null
 
@@ -249,8 +262,8 @@ async function fetchWithBrowser(url, options = {}) {
           finalUrl: page.url(),
           html: html.slice(0, MAX_RESPONSE_BYTES),
           error: 'Bot protection challenge did not clear in time',
-          bot_blocked: true,
           viaBrowser: true,
+          ...crawlLimitationFields({ status }),
         }
       }
 
@@ -295,7 +308,7 @@ async function fetchPage(url, options = {}) {
     if (blocked) {
       return {
         ...result,
-        bot_blocked: true,
+        ...crawlLimitationFields(result),
         error:
           browserResult.error ||
           'Site bot protection blocked automated access even with browser fallback.',
@@ -307,7 +320,7 @@ async function fetchPage(url, options = {}) {
   if (blocked) {
     return {
       ...result,
-      bot_blocked: true,
+      ...crawlLimitationFields(result),
       error:
         result.error ||
         `Site returned bot protection (HTTP ${result.status || 'challenge page'}). Set CRAWLER_USE_PLAYWRIGHT=true to crawl with a browser.`,

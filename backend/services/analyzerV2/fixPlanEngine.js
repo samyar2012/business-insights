@@ -356,6 +356,91 @@ function dedupe(list) {
   return [...new Set((list || []).filter(Boolean))]
 }
 
+const ECOMMERCE_TRUST_CLUSTER = new Set([
+  'ecommerce_checkout_trust',
+  'missing_contact_trust',
+  'strengthen_trust_visibility',
+  'retain_reviews_loop',
+])
+
+const CHECKOUT_TRUST_EVIDENCE_RE =
+  /shipping|returns|policy|review|testimonial|rating|checkout|add-to-cart|secure-checkout|payment|expected ecommerce policies/i
+
+const CRAWL_BLOCKED_USER_MESSAGE =
+  'This site blocked automated crawling. Try browser-based scan mode or rescan later.'
+
+function isEcommerceRubric(rubric) {
+  return rubric === 'ecommerce_store' || rubric === 'online_plus_offline_store'
+}
+
+function detectCrawlBlocked(input = {}) {
+  const pages = input.pages || []
+  const crawlMeta = input.crawlMeta || {}
+  if (crawlMeta.crawl_blocked || crawlMeta.bot_blocked || crawlMeta.bot_protection) return true
+  return pages.some(
+    (p) =>
+      p.crawl_blocked === true ||
+      p.bot_blocked === true ||
+      p.extracted_data_json?.bot_blocked === true ||
+      ([401, 403, 429, 503].includes(Number(p.status_code)) &&
+        String(p.extracted_text || '').trim().length < 120),
+  )
+}
+
+function primaryNavLinkCountFrom(ctx = {}) {
+  return Number(
+    ctx?.uxFeatures?.primary_nav_link_count ??
+      ctx?.uxFeatures?.ux_scoring_inputs?.primary_nav_link_count ??
+      ctx?.uxFeatures?.signals?.primary_nav_link_count ??
+      0,
+  )
+}
+
+function visualAuditOkFrom(ctx = {}) {
+  return Boolean(
+    ctx?.uxFeatures?.source === 'visual_audit+crawler' || ctx?.uxFeatures?.ux_scoring_inputs?.visual_audit_ok,
+  )
+}
+
+function mergeEcommerceTrustFixes(items, rubric) {
+  if (!isEcommerceRubric(rubric)) return items
+  const cluster = items.filter((item) => {
+    if (!ECOMMERCE_TRUST_CLUSTER.has(item.id)) return false
+    if (item.id === 'strengthen_trust_visibility' || item.id === 'retain_reviews_loop') {
+      return (item.evidence || []).some((line) => CHECKOUT_TRUST_EVIDENCE_RE.test(line))
+    }
+    return true
+  })
+  if (cluster.length <= 1) return items
+
+  const priorityRank = { critical: 4, high: 3, medium: 2, low: 1 }
+  const confidenceRank = { high: 3, medium: 2, low: 1 }
+  const bestPriority = cluster.reduce(
+    (best, item) => ((priorityRank[item.priority] || 0) > (priorityRank[best.priority] || 0) ? item : best),
+    cluster[0],
+  )
+  const bestConfidence = cluster.reduce(
+    (best, item) => ((confidenceRank[item.confidence] || 0) > (confidenceRank[best.confidence] || 0) ? item : best),
+    cluster[0],
+  )
+  const canonical = cluster.find((item) => item.id === 'ecommerce_checkout_trust') || cluster[0]
+
+  const merged = {
+    ...canonical,
+    id: 'ecommerce_checkout_trust',
+    title: 'Add the checkout trust signals shoppers expect.',
+    evidence: dedupe(cluster.flatMap((item) => item.evidence || [])).slice(0, 3),
+    steps: finalizeSteps(dedupe(cluster.flatMap((item) => item.steps || [])), rubric),
+    affected_scores: dedupe(cluster.flatMap((item) => item.affected_scores || [])),
+    priority: bestPriority.priority,
+    confidence: bestConfidence.confidence,
+    _tier: tierIndexFor('ecommerce_checkout_trust'),
+  }
+
+  const clusterSet = new Set(cluster)
+  return [...items.filter((item) => !clusterSet.has(item)), merged].sort(compareFixItems)
+}
+
 function claim(events, categories, pattern) {
   const cats = Array.isArray(categories) ? categories : [categories]
   const matched = events.filter((e) => !e.used && cats.includes(e.category) && pattern.test(e.text))
@@ -540,43 +625,136 @@ function runCrawlBlocked(events) {
   if (!matched.length) return null
   return {
     id: 'crawl_blocked',
-    title: 'This site blocked automated crawling — rescan with a real browser.',
+    title: CRAWL_BLOCKED_USER_MESSAGE,
     category: 'functionality',
     why_it_matters:
-      'When the site returns HTTP 403 or a bot challenge, the analyzer cannot see products, offers, or layout — any scores from that crawl are incomplete and should not drive roadmap decisions.',
-    steps: [
-      'Enable browser/Playwright crawling (CRAWLER_USE_PLAYWRIGHT=true) and a rendered visual audit.',
-      'Rescan the homepage and key pages after the browser fetch succeeds.',
-      'If the site still blocks bots, whitelist your crawler IP or use an approved monitoring path.',
-      'Treat the previous crawl-only roadmap as incomplete until a successful browser scan finishes.',
-    ],
+      'When the site returns HTTP 403 or a bot challenge, the analyzer cannot see products, offers, or layout — scores and roadmap advice from that crawl are incomplete.',
+    steps: ['Run browser-based scan mode for this site.', 'Rescan after the browser fetch succeeds.'],
     affected: ['technical_functionality'],
     difficulty: 'medium',
     forcedPriority: 'critical',
+    confidence: 'high',
     matched,
   }
 }
 
-function runEcommerceCatalog(events, ctx) {
-  const rubric = ctx?.rubric || ''
-  if (rubric !== 'ecommerce_store' && rubric !== 'online_plus_offline_store') return null
+function runEcommerceProductGridClarity(events, ctx) {
+  if (!isEcommerceRubric(ctx?.rubric)) return null
   const matched = claim(
     events,
     ['offer_business_fit', 'customer_attraction'],
-    /no reliable product|no extractable products|catalog layout|collection pages|product cards|no clear product pricing/i,
+    /no reliable product cards|no clear product pricing|no extractable products|product cards with name|offer clarity is severely limited/i,
+  )
+  if (!matched.length) return null
+  const ctas = ctx?.aggregated?.content_signals?.ctas || []
+  const hasShopCta = ctas.some((cta) => /shop|buy|add to cart|collection/i.test(String(cta)))
+  const jsLimitation =
+    hasShopCta && matched.some((e) => /no reliable product|no extractable products|severely limited/i.test(e.text))
+  if (jsLimitation) {
+    matched.push({
+      category: 'offer_business_fit',
+      text:
+        'The crawler found shop CTAs but did not detect product cards in crawled HTML. This may be a JS-rendered extraction limitation.',
+      used: true,
+    })
+  }
+  return {
+    id: 'ecommerce_product_grid_clarity',
+    title: 'Make product grids and pricing easy to scan.',
+    category: 'business_fit',
+    why_it_matters:
+      'Shoppers decide in seconds whether a store looks shoppable — unclear product cards or missing prices stop browsing before anyone reaches checkout.',
+    steps: [
+      'Ensure collection grids show product name, image, price, and a detail-page link on each card.',
+      'Server-render product names and prices in HTML so crawlers and slow phones can read the catalog.',
+      'Verify the product grid on a phone-sized screen above the fold.',
+      'Rescan after publishing to confirm product cards are detected.',
+    ],
+    affected: ['offer_business_fit', 'customer_attraction'],
+    difficulty: 'medium',
+    confidence: jsLimitation ? 'medium' : 'high',
+    matched,
+  }
+}
+
+function runEcommerceCollectionNavigation(events, ctx) {
+  if (!isEcommerceRubric(ctx?.rubric)) return null
+  const matched = claim(
+    events,
+    ['offer_business_fit', 'customer_attraction'],
+    /catalog layout|shop navigation|collection pages|collection\/category navigation/i,
+  )
+  if (!matched.length) return null
+  const weakProducts = claim(
+    events,
+    ['offer_business_fit'],
+    /crawler extracted few products|product extraction|incomplete/i,
+  )
+  return {
+    id: 'ecommerce_collection_navigation',
+    title: 'Clarify collection and category navigation.',
+    category: 'business_fit',
+    why_it_matters:
+      'Shoppers browse by category before they pick a product — if collections are hard to find, traffic never reaches a buyable item.',
+    steps: [
+      'Link Shop / Collections from the header above the fold.',
+      'Publish named collection pages with clear category labels and product cards.',
+      weakProducts.length
+        ? 'If products are JS-rendered, run a browser-based scan to verify collection pages before rewriting navigation.'
+        : 'Group bestsellers, new arrivals, and sale items into obvious collection entry points.',
+      'Rescan after publishing to confirm collection navigation is detected.',
+    ].filter(Boolean),
+    affected: ['offer_business_fit', 'customer_attraction'],
+    difficulty: 'medium',
+    matched: [...matched, ...weakProducts],
+  }
+}
+
+function runEcommerceCartPath(events, ctx) {
+  if (!isEcommerceRubric(ctx?.rubric)) return null
+  const matched = claim(
+    events,
+    ['offer_business_fit', 'customer_attraction'],
+    /no add-to-cart, buy now, or checkout path detected/i,
   )
   if (!matched.length) return null
   return {
-    id: 'ecommerce_catalog',
-    title: 'Make product and collection pages obvious to shoppers.',
+    id: 'ecommerce_cart_path',
+    title: 'Make the add-to-cart and checkout path obvious.',
+    category: 'customer_attraction',
+    why_it_matters:
+      'Even strong product pages fail when shoppers cannot find Add to cart or checkout — the buy path must be visible on product cards and PDPs.',
+    steps: [
+      'Place Shop / Add to cart above the fold on the homepage and product detail pages.',
+      'Keep cart and checkout links visible in the header on collection and product pages.',
+      'Test the full path from product card to cart on a phone-sized screen.',
+      'Rescan after publishing to confirm checkout CTAs are detected.',
+    ],
+    affected: ['offer_business_fit', 'customer_attraction'],
+    difficulty: 'easy',
+    matched,
+  }
+}
+
+function runEcommerceOfferClarity(events, ctx) {
+  if (!isEcommerceRubric(ctx?.rubric)) return null
+  const matched = claim(
+    events,
+    ['offer_business_fit', 'customer_attraction'],
+    /offer clarity is weak|bundles?|discount|promo|sale clarity/i,
+  )
+  if (!matched.length) return null
+  return {
+    id: 'ecommerce_offer_clarity',
+    title: 'Clarify bundles, offers, and discounts.',
     category: 'business_fit',
     why_it_matters:
-      'DTC shoppers need a clear path into collections and product cards — without that, paid traffic never reaches a buyable item.',
+      'Unclear promo or bundle wording creates hesitation at checkout — shoppers need to know exactly what they get and what the price is.',
     steps: [
-      'Publish collection pages with named products, images, and prices.',
-      'Link Shop / Collections from the header above the fold.',
-      'Ensure product cards include name, price, image, and a detail-page link.',
-      'Server-render product names and prices so crawlers and SEO can read the catalog.',
+      'State bundle contents and savings in plain language near the buy button.',
+      'Show the final price (or discount terms) on product cards, not only in banners.',
+      'Link sale or bundle pages from the header without hiding collection navigation.',
+      'Rescan after publishing to confirm offer copy is readable in crawl HTML.',
     ],
     affected: ['offer_business_fit', 'customer_attraction'],
     difficulty: 'medium',
@@ -591,7 +769,7 @@ function runEcommerceCheckoutTrust(events, ctx) {
   const matched = claim(
     events,
     ['offer_business_fit', 'safety_trust', 'customer_attraction'],
-    /no shipping or returns policy|expected ecommerce policies|no customer reviews or testimonials detected|no add-to-cart, buy now, or checkout path/i,
+    /no shipping or returns policy|expected ecommerce policies|no customer reviews or testimonials detected/i,
   )
   if (!matched.length) return null
   // If weak_cta already claimed the checkout line, still allow policy/review bundle.
@@ -865,6 +1043,16 @@ function runMissingTrust(events, ctx) {
     const matched = isEcommerce ? ecommerceAbsolute : filteredAbsolute
     if (!matched.length && !filteredSoftReviews.length && !softContact.length) return null
     if (matched.length) {
+      if (
+        isEcommerce &&
+        matched.every((e) =>
+          /expected ecommerce policies|shipping or returns|review|testimonial|rating markup|no customer reviews|no on-page reviews/i.test(
+            e.text,
+          ),
+        )
+      ) {
+        return null
+      }
       const tpl = trustMissingFix(ctx.rubric)
       return {
         id: 'missing_contact_trust',
@@ -881,6 +1069,9 @@ function runMissingTrust(events, ctx) {
   }
 
   if (softContact.length || filteredSoftReviews.length) {
+    if (isEcommerce && filteredSoftReviews.length && !softContact.length) {
+      return null
+    }
     const matched = [...softContact, ...filteredSoftReviews]
     const isPlacement = softContact.some((e) => /hard for visitors to notice|weakly|contact path exists/i.test(e.text))
     const isReviewPlacement = filteredSoftReviews.some((e) =>
@@ -1044,13 +1235,28 @@ function runWeakSeoMeta(events) {
 function runNavClutter(events, ctx) {
   const matched = claim(events, ['ux_ui_visual', 'customer_attraction'], /overcrowded|navigation clutter|primary nav links/i)
   if (!matched.length) return null
+
   const rubric = ctx?.rubric || ''
-  const isStore = rubric === 'ecommerce_store' || rubric === 'online_plus_offline_store'
-  const visualOk = Boolean(
-    ctx?.uxFeatures?.source === 'visual_audit+crawler' || ctx?.uxFeatures?.ux_scoring_inputs?.visual_audit_ok,
+  const isStore = isEcommerceRubric(rubric)
+  const visualOk = visualAuditOkFrom(ctx)
+  const primaryNav = primaryNavLinkCountFrom(ctx)
+  const navLabels = (ctx?.aggregated?.content_signals?.navigation_labels || []).filter(
+    (label) => String(label || '').trim().length > 2,
   )
-  // Mega-menu HTML often looks "cluttered" in crawls for DTC brands — require rendered proof.
-  if (isStore && !visualOk) return null
+  const labelCount = navLabels.length
+  const effectivePrimary = primaryNav > 0 ? primaryNav : labelCount <= 12 ? labelCount : 0
+  const clutterThreshold = 8
+
+  const explicitCrowded = matched.some(
+    (e) =>
+      /primary nav links|top navigation has \d+ primary/i.test(e.text) &&
+      (effectivePrimary >= clutterThreshold || /\b([89]|1[0-9])\b primary/i.test(e.text)),
+  )
+
+  if (effectivePrimary > 0 && effectivePrimary < clutterThreshold) return null
+  if (!visualOk) return null
+  if (effectivePrimary === 0 && !explicitCrowded) return null
+
   return {
     id: 'nav_clutter',
     title: isStore ? 'Simplify shop navigation above the fold.' : 'Simplify navigation above the fold.',
@@ -1264,8 +1470,11 @@ const TIER_SEQUENCE = [
     ids: [
       'weak_cta',
       'missing_contact_trust',
-      'ecommerce_catalog',
+      'ecommerce_product_grid_clarity',
+      'ecommerce_collection_navigation',
       'ecommerce_checkout_trust',
+      'ecommerce_cart_path',
+      'ecommerce_offer_clarity',
       'unclear_offer',
     ],
     first: 'Do this first - without one clear next step, visitors read the page and leave instead of converting.',
@@ -1454,8 +1663,11 @@ const CLUSTER_RUNNERS = [
   runBusinessModelMismatch,
   runNoConversionPath,
   runMobileOverflow,
-  runEcommerceCatalog,
+  runEcommerceProductGridClarity,
+  runEcommerceCollectionNavigation,
   runEcommerceCheckoutTrust,
+  runEcommerceCartPath,
+  runEcommerceOfferClarity,
   runMobileReadability,
   runWeakCta,
   runMissingTrust,
@@ -1478,9 +1690,32 @@ function buildFixPlan(input = {}) {
   const pages = input.pages || []
   const aggregated = input.aggregated || {}
   const benchmarkComparison = input.benchmarkComparison || null
+  const crawlMeta = input.crawlMeta || {}
+
+  const ctx = { rubric, categoryDetails, uxFeatures, pages, aggregated, crawlMeta }
+
+  if (detectCrawlBlocked(input)) {
+    const events = collectEvents({ categoryDetails, uxFeatures, capReasons, rubric })
+    const blocked = runCrawlBlocked(events, ctx)
+    if (blocked) {
+      const item = finalizeItem(blocked, ctx)
+      if (passesEvidenceGate(item, ctx)) {
+        const { _tier, ...rest } = item
+        return [
+          {
+            ...rest,
+            rank: 1,
+            unlock_reason: null,
+            action: item.title,
+            reason: item.why_it_matters,
+            expected_impact: item.expected_score_lift,
+          },
+        ]
+      }
+    }
+  }
 
   const events = collectEvents({ categoryDetails, uxFeatures, capReasons, rubric })
-  const ctx = { rubric, categoryDetails, uxFeatures, pages, aggregated }
 
   const rawItems = []
   for (const runner of CLUSTER_RUNNERS) {
@@ -1492,6 +1727,7 @@ function buildFixPlan(input = {}) {
   if (benchmarkItem) rawItems.push(benchmarkItem)
 
   let finalized = rawItems.map((raw) => finalizeItem(raw, ctx)).filter((item) => passesEvidenceGate(item, ctx))
+  finalized = mergeEcommerceTrustFixes(finalized, rubric)
   finalized.sort(compareFixItems)
 
   // The plan should be dominated by fixes that attract and convert customers, not design
@@ -1646,6 +1882,7 @@ function buildGrowthPlan(input = {}) {
   const fixPlan = input.fixPlan || buildFixPlan(input)
   const aggregated = input.aggregated || {}
   const categoryDetails = input.categoryDetails || {}
+  const crawlBlocked = detectCrawlBlocked(input)
 
   const growthFromFixes = fixPlan.map((fix) => ({
     ...fix,
@@ -1654,13 +1891,15 @@ function buildGrowthPlan(input = {}) {
     ask_ai_prompt: '', // filled below so prompt can include rank.
   }))
 
-  const extraItems = buildRetainAndOperateItems({
-    categoryDetails,
-    rubric,
-    aggregated,
-    existingIds: new Set(growthFromFixes.map((item) => item.id)),
-    nextRankStart: growthFromFixes.length + 1,
-  })
+  const extraItems = crawlBlocked
+    ? []
+    : buildRetainAndOperateItems({
+        categoryDetails,
+        rubric,
+        aggregated,
+        existingIds: new Set(growthFromFixes.map((item) => item.id)),
+        nextRankStart: growthFromFixes.length + 1,
+      })
 
   const merged = [...growthFromFixes, ...extraItems]
     .filter((item) => item.confidence && item.confidence !== 'low')
@@ -1696,4 +1935,5 @@ module.exports = {
   priorityFromGap,
   estimateLift,
   passesEvidenceGate,
+  detectCrawlBlocked,
 }

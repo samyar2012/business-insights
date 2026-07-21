@@ -47,7 +47,7 @@ function crawlerDensityEvidenceIsReliable(ctx = {}) {
   return Boolean(ctx.visualVerified)
 }
 
-const PRIMARY_NAV_OVERCROWD_THRESHOLD = 6
+const PRIMARY_NAV_OVERCROWD_THRESHOLD = 8
 
 function issueToProblem(issue) {
   if (!issue) return null
@@ -98,18 +98,18 @@ function scoreNavbar(ctx) {
   } else if (topLevelCount === 1) {
     score = visualVerified ? 38 : 52
     notes.push('Navigation exists but only 1 useful link was visible.')
-  } else if (topLevelCount >= 2 && topLevelCount <= PRIMARY_NAV_OVERCROWD_THRESHOLD) {
+  } else if (topLevelCount >= 2 && topLevelCount < PRIMARY_NAV_OVERCROWD_THRESHOLD) {
     score += visualVerified ? 22 : 18
     strengths.push(`${topLevelCount} top-level navigation links are visible in the header.`)
-  } else if (topLevelCount > PRIMARY_NAV_OVERCROWD_THRESHOLD) {
+  } else if (topLevelCount >= PRIMARY_NAV_OVERCROWD_THRESHOLD) {
     // DTC mega-menus often expose many links in HTML; only treat as clutter when rendered audit confirms it.
     const storeModel = ECOMMERCE_MODELS.has(model)
-    const clutterThreshold = storeModel ? 10 : PRIMARY_NAV_OVERCROWD_THRESHOLD
-    if (topLevelCount > clutterThreshold && visualVerified) {
+    const clutterThreshold = storeModel ? 8 : PRIMARY_NAV_OVERCROWD_THRESHOLD
+    if (topLevelCount >= clutterThreshold && visualVerified) {
       score += 10
       problems.push(`Top navigation has ${topLevelCount} primary links — it may feel overcrowded.`)
       score -= 8
-    } else if (topLevelCount > clutterThreshold) {
+    } else if (topLevelCount >= clutterThreshold) {
       score += 14
       notes.push(
         'Many navigation links appear in crawl HTML — verify clutter with a rendered audit before treating it as a top fix.',
@@ -142,8 +142,10 @@ function scoreNavbar(ctx) {
   }
 
   if (navLinkCount > PRIMARY_NAV_OVERCROWD_THRESHOLD && primaryNavLinkCount === 0) {
-    score -= 6
-    problems.push('Navigation appears complex with many nested links — clarity may suffer.')
+    score -= 4
+    notes.push(
+      'Many links appear in crawl HTML, but primary header nav was not verified — footer and internal links were excluded.',
+    )
   }
 
   if (topLevelCount >= 2 && topLevelCount <= PRIMARY_NAV_OVERCROWD_THRESHOLD && navAboveFold && hasStructuredHeader && !mobileNavOverflow) {

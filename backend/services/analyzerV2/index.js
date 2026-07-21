@@ -25,7 +25,7 @@ const {
 } = require('./explanationBuilder')
 const { buildBenchmarkComparison, humanEquivalentFromOverall } = require('./benchmarkInterpreter')
 const { buildUxFeatureSnapshot } = require('../uxFeatureExtractor')
-const { buildFixPlan, buildGrowthPlan } = require('./fixPlanEngine')
+const { buildFixPlan, buildGrowthPlan, detectCrawlBlocked } = require('./fixPlanEngine')
 const { assessCrawlExtraction, sanitizeCategoryDetail } = require('./evidenceFilters')
 const { buildEvidenceStrengths, buildEvidenceRisks } = require('./evidenceNarrator')
 const { assessMobileOverflow } = require('./evidenceDetectors')
@@ -228,6 +228,7 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     pages,
     benchmarkComparison,
     aggregated,
+    crawlMeta: options.crawlMeta || {},
   })
   const growth_plan_raw = buildGrowthPlan({
     categoryDetails,
@@ -239,6 +240,7 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     aggregated,
     business,
     fixPlan: fix_plan,
+    crawlMeta: options.crawlMeta || {},
   })
   const strengths = buildEvidenceStrengths(categoryDetails, { rubric })
   const risks = buildEvidenceRisks(categoryDetails, { rubric }, mismatchWarnings)
@@ -346,6 +348,18 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
   const validation = validateWeightedScore(result)
   if (!validation.valid) {
     result.score_validation_errors = validation.errors
+  }
+
+  const crawlMeta = options.crawlMeta || {}
+  if (detectCrawlBlocked({ pages, crawlMeta })) {
+    result.crawl_limitation = {
+      crawl_blocked: true,
+      block_reason: crawlMeta.block_reason || 'bot_protection',
+      user_message:
+        crawlMeta.user_message ||
+        fix_plan.find((item) => item.id === 'crawl_blocked')?.title ||
+        'This site blocked automated crawling. Try browser-based scan mode or rescan later.',
+    }
   }
 
   return result

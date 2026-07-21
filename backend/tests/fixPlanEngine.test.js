@@ -99,9 +99,11 @@ describe('fixPlanEngine unit clusters', () => {
     }
 
     const plan = buildFixPlan({ categoryDetails, uxFeatures: {}, capReasons: [], rubric: 'ecommerce_store', pages: [] })
-    const trustFix = plan.find((item) => item.id === 'missing_contact_trust')
+    const trustFix = plan.find(
+      (item) => item.id === 'missing_contact_trust' || item.id === 'ecommerce_checkout_trust',
+    )
 
-    assert.ok(trustFix, 'expected a missing_contact_trust fix to be generated')
+    assert.ok(trustFix, 'expected a consolidated trust fix to be generated')
     assert.match(
       trustFix.title,
       /Add the checkout trust signals shoppers expect|Add the trust signals shoppers check before they buy|Add stronger trust and proof signals/i,
@@ -729,7 +731,7 @@ describe('evidenceNarrator', () => {
     const blob = [...(scores.strengths || []), ...(scores.risks || [])].join(' ')
     assert.ok(!/Google confirms/i.test(blob), 'must not overclaim Google Safe Browsing')
     assert.ok(
-      scores.strengths.some((s) => /Safe Browsing was not verified|HTTPS and crawl checks passed/i.test(s)),
+      scores.strengths.some((s) => /Safe Browsing was not configured|HTTPS and crawler security checks passed/i.test(s)),
       'should use HTTPS/crawl language when Safe Browsing is not configured',
     )
   })
@@ -785,8 +787,113 @@ describe('roadmap realism guards', () => {
       pages: [],
     })
     const ids = plan.map((f) => f.id)
-    assert.ok(ids.includes('ecommerce_catalog') || ids.includes('ecommerce_checkout_trust') || ids.includes('weak_cta'))
-    assert.ok(ids.includes('ecommerce_catalog') || ids.includes('ecommerce_checkout_trust'))
+    assert.ok(
+      ids.some((id) =>
+        [
+          'ecommerce_product_grid_clarity',
+          'ecommerce_collection_navigation',
+          'ecommerce_checkout_trust',
+          'ecommerce_cart_path',
+        ].includes(id),
+      ),
+    )
+    assert.ok(ids.includes('ecommerce_checkout_trust') || ids.includes('ecommerce_product_grid_clarity'))
+  })
+
+  it('merges duplicate ecommerce checkout trust fixes into one item', () => {
+    const plan = buildFixPlan({
+      categoryDetails: {
+        safety_trust: categoryDetail({
+          score: 10,
+          max: 20,
+          problems: [
+            'No shipping or returns policy signals found.',
+            'No on-page reviews, testimonials, or rating markup was detected.',
+          ],
+        }),
+        technical_functionality: categoryDetail({ score: 13, max: 15 }),
+        ux_ui_visual: categoryDetail({ score: 18, max: 25 }),
+        offer_business_fit: categoryDetail({
+          score: 8,
+          max: 20,
+          problems: [
+            'Expected ecommerce policies (shipping, returns, privacy) are missing.',
+            'No customer reviews or testimonials detected.',
+          ],
+        }),
+        customer_attraction: categoryDetail({ score: 10, max: 20 }),
+      },
+      uxFeatures: { source: 'crawler_static' },
+      rubric: 'ecommerce_store',
+      pages: [],
+    })
+    const trustFixes = plan.filter((item) =>
+      ['ecommerce_checkout_trust', 'missing_contact_trust', 'strengthen_trust_visibility'].includes(item.id),
+    )
+    assert.equal(trustFixes.length, 1, 'Gymshark-like stores should not get duplicate trust fixes')
+    assert.equal(trustFixes[0].id, 'ecommerce_checkout_trust')
+    assert.equal(trustFixes[0].title, 'Add the checkout trust signals shoppers expect.')
+    const titles = plan.map((item) => item.title)
+    assert.equal(new Set(titles).size, titles.length, 'no duplicate fix titles')
+  })
+
+  it('prefers ecommerce catalog advice over generic nav/readability when store evidence exists', () => {
+    const plan = buildFixPlan({
+      categoryDetails: {
+        safety_trust: categoryDetail({ score: 12, max: 20 }),
+        technical_functionality: categoryDetail({ score: 13, max: 15 }),
+        ux_ui_visual: categoryDetail({ score: 18, max: 25 }),
+        offer_business_fit: categoryDetail({
+          score: 8,
+          max: 20,
+          problems: [
+            'No reliable product cards, catalog layout, or shop navigation were found.',
+            'Product catalog layout detected from collections and product imagery.',
+          ],
+        }),
+        customer_attraction: categoryDetail({ score: 10, max: 20 }),
+      },
+      uxFeatures: { source: 'crawler_static' },
+      rubric: 'ecommerce_store',
+      pages: [],
+      aggregated: {
+        content_signals: { ctas: ['Shop now', 'Browse collections'], navigation_labels: ['Shop', 'Collections'] },
+      },
+    })
+    const ids = plan.map((item) => item.id)
+    assert.ok(
+      ids.some((id) =>
+        ['ecommerce_product_grid_clarity', 'ecommerce_collection_navigation', 'ecommerce_cart_path'].includes(id),
+      ),
+      'should surface ecommerce-specific fixes',
+    )
+    assert.ok(!ids.includes('nav_clutter'))
+  })
+
+  it('does not create nav_clutter when primary nav count is modest', () => {
+    const plan = buildFixPlan({
+      categoryDetails: {
+        safety_trust: categoryDetail({ score: 18, max: 20 }),
+        technical_functionality: categoryDetail({ score: 13, max: 15 }),
+        ux_ui_visual: categoryDetail({ score: 20, max: 25 }),
+        offer_business_fit: categoryDetail({ score: 16, max: 20 }),
+        customer_attraction: categoryDetail({ score: 15, max: 20 }),
+      },
+      uxFeatures: {
+        source: 'visual_audit+crawler',
+        ux_scoring_inputs: { visual_audit_ok: true, primary_nav_link_count: 5 },
+        primary_nav_link_count: 5,
+        nav_link_count: 52,
+      },
+      rubric: 'ecommerce_store',
+      pages: [],
+      aggregated: {
+        content_signals: {
+          navigation_labels: ['Home', 'Shop', 'Collections', 'About', 'Contact'],
+        },
+      },
+    })
+    assert.ok(!plan.some((item) => item.id === 'nav_clutter'))
   })
 
   it('recognizes About pages and article-like URLs for content sites', () => {
@@ -877,5 +984,12 @@ describe('roadmap realism guards', () => {
       ),
     )
     assert.ok(scores.fix_plan.some((f) => f.id === 'crawl_blocked'))
+    assert.equal(
+      scores.fix_plan.filter((f) => f.id !== 'crawl_blocked').length,
+      0,
+      'blocked crawls should not emit normal UX/business fixes',
+    )
+    assert.ok(scores.crawl_limitation?.crawl_blocked)
+    assert.match(scores.crawl_limitation.user_message, /browser-based scan mode/i)
   })
 })

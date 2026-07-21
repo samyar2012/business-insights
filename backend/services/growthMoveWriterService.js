@@ -246,14 +246,23 @@ function titleForItem(item, input) {
       ? 'Simplify navigation so categories and search are easy to find'
       : 'Simplify the top navigation so the main action is hard to miss'
   }
-  if (id === 'ecommerce_catalog') {
-    return 'Make product and collection pages obvious to shoppers'
+  if (id === 'ecommerce_catalog' || id === 'ecommerce_product_grid_clarity') {
+    return 'Make product grids and pricing easy to scan'
+  }
+  if (id === 'ecommerce_collection_navigation') {
+    return 'Clarify collection and category navigation'
+  }
+  if (id === 'ecommerce_cart_path') {
+    return 'Make the add-to-cart and checkout path obvious'
+  }
+  if (id === 'ecommerce_offer_clarity') {
+    return 'Clarify bundles, offers, and discounts'
   }
   if (id === 'ecommerce_checkout_trust') {
     return 'Add the checkout trust signals shoppers expect'
   }
   if (id === 'crawl_blocked') {
-    return 'Rescan with a real browser — this site blocked the crawler'
+    return 'This site blocked automated crawling — try browser-based scan mode'
   }
   if (id === 'visual_polish' || id === 'misaligned_images' || id.startsWith('catchall_ux')) {
     if (hasTemplateDebt(input, evidence)) {

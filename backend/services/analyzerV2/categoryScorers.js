@@ -17,7 +17,7 @@ function clamp(value, max) {
 }
 
 const VISUAL_PENALTY_CAP = 8
-const PRIMARY_NAV_OVERCROWD_THRESHOLD = 6
+const PRIMARY_NAV_OVERCROWD_THRESHOLD = 8
 
 function numOrNull(value) {
   return Number.isFinite(value) ? value : null
@@ -181,7 +181,10 @@ function computeVisitorAppealDownsides(uxFeatures) {
   // Do not penalize "overflow" from layout_balance alone, and never when audit says no overflow.
 
   const primaryNav = uxFeatures.primary_nav_link_count ?? uxFeatures.signals?.primary_nav_link_count
-  if (Number.isFinite(primaryNav) && primaryNav > PRIMARY_NAV_OVERCROWD_THRESHOLD) {
+  const visualOk = Boolean(
+    uxFeatures?.source === 'visual_audit+crawler' || uxFeatures?.ux_scoring_inputs?.visual_audit_ok,
+  )
+  if (visualOk && Number.isFinite(primaryNav) && primaryNav >= PRIMARY_NAV_OVERCROWD_THRESHOLD) {
     addPenalty(
       'nav_clutter',
       'Navigation clutter',
@@ -294,7 +297,7 @@ function scoreSafetyTrust({ aggregated, pages, safetyResult, crawlHealth, rubric
     const partial = crawlHealth.homepageOk && aggregated.trust_signals?.https ? 3 : 1
     points += partial
     if (crawlHealth.homepageOk && aggregated.trust_signals?.https) {
-      detail.strengths.push('HTTPS and crawl checks passed; live Google Safe Browsing was not verified.')
+      detail.strengths.push('HTTPS and crawler security checks passed, but Google Safe Browsing was not configured.')
     }
     detail.evidence.push({
       signal: 'safe_browsing',
@@ -493,11 +496,9 @@ function scoreTechnicalFunctionality({ aggregated, pages, crawlHealth, visualAud
 
   if (botBlocked) {
     detail.problems.push(
-      'This site blocked automated crawling (HTTP 403/bot protection), so scores from crawl HTML are incomplete and should not be treated as a full site review.',
+      'This site blocked automated crawling. Try browser-based scan mode or rescan later.',
     )
-    detail.recommended_fixes.push(
-      'Re-run with browser/Playwright crawling enabled (CRAWLER_USE_PLAYWRIGHT=true) and a rendered visual audit so the analyzer can see the live page.',
-    )
+    detail.recommended_fixes.push('Run browser-based scan mode for this site.')
     detail.evidence.push({
       signal: 'bot_blocked',
       strength: 'strong',
@@ -714,8 +715,10 @@ function scoreUxUiVisual({ pages, aggregated, uxFeatures, visualAudit, rubric, s
   }
   // Never emit overflow claims from layout_balance_score alone
 
-  if ((features.primary_nav_link_count || features.nav_link_count || 0) > 6) {
-    detail.problems.push('Top navigation has many primary links and may feel overcrowded.')
+  const primaryNav =
+    features.primary_nav_link_count ?? features.signals?.primary_nav_link_count ?? 0
+  if (visualOk && primaryNav >= PRIMARY_NAV_OVERCROWD_THRESHOLD) {
+    detail.problems.push(`Top navigation has ${primaryNav} primary links and may feel overcrowded.`)
   } else if ((features.nav_visibility_score || 0) >= 70) {
     detail.strengths.push('Top-level navigation is visible and readable.')
   }
