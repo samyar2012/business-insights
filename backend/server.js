@@ -67,6 +67,18 @@ app.use((err, _req, res, _next) => {
 })
 
 const port = Number(process.env.PORT || 3001)
-app.listen(port, () => {
+const server = app.listen(port, () => {
+  if (!server.listening) return
   console.log(`Server is running on port ${port}`)
+})
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(
+      `Port ${port} is already in use. Stop the other process (or change PORT in .env), then try again.`,
+    )
+  } else {
+    console.error('Server failed to start:', err.message)
+  }
+  process.exit(1)
 })

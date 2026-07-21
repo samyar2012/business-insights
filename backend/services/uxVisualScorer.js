@@ -33,7 +33,29 @@ function clamp(value, min = 0, max = 100) {
 }
 
 function missingDefault(confidence) {
-  return confidence >= 70 ? 48 : confidence >= 45 ? 38 : 28
+  // Unknown ≠ broken. When the rendered audit is missing, stay near the middle
+  // instead of collapsing premium JS sites into the 20s.
+  return confidence >= 70 ? 58 : confidence >= 45 ? 55 : 50
+}
+
+/**
+ * Crawler HTML can prove dense copy only when there is real text evidence.
+ * Sparse JS shells (almost no extractable HTML) must not invent readability failures.
+ */
+function crawlerDensityEvidenceIsReliable(ctx = {}) {
+  if (ctx.visualVerified) return true
+  const blocks = Number(ctx.blockCount || ctx.paragraphCount || 0)
+  const avg = Number(ctx.avgParagraphLength || 0)
+  const max = Number(ctx.maxTextBlockLength || 0)
+  const visible = Number(ctx.visibleTextLength || ctx.aboveFoldTextLength || 0)
+  // Empty/nearly-empty crawls are not proof of bad UX on JS-rendered sites.
+  if (visible > 0 && visible < 240) return false
+  if (avg <= 0 && max <= 0) return false
+  // Multiple structured blocks with long average copy.
+  if (blocks >= 2 && avg >= 200) return true
+  // A single long wall of text with enough total copy (common on service pages).
+  if (max >= 500 && (avg >= 400 || max >= 700 || visible >= 500)) return true
+  return false
 }
 
 const PRIMARY_NAV_OVERCROWD_THRESHOLD = 6
@@ -71,23 +93,24 @@ function scoreNavbar(ctx) {
       : navLinkCount <= PRIMARY_NAV_OVERCROWD_THRESHOLD
         ? navLinkCount
         : 0
-  let score = visualVerified ? 42 : 32
+  let score = visualVerified ? 42 : 58
   const notes = []
   const problems = []
   const strengths = []
 
   if (topLevelCount === 0) {
-    score = 22
     if (visualVerified) {
+      score = 22
       problems.push('No navigation links were detected in the header area.')
     } else {
+      // Static HTML often misses JS-rendered nav — do not treat that as a broken header.
       notes.push('Header navigation could not be verified without rendered audit data.')
     }
   } else if (topLevelCount === 1) {
-    score = 38
+    score = visualVerified ? 38 : 52
     notes.push('Navigation exists but only 1 useful link was visible.')
   } else if (topLevelCount >= 2 && topLevelCount <= PRIMARY_NAV_OVERCROWD_THRESHOLD) {
-    score += 22
+    score += visualVerified ? 22 : 18
     strengths.push(`${topLevelCount} top-level navigation links are visible in the header.`)
   } else if (topLevelCount > PRIMARY_NAV_OVERCROWD_THRESHOLD) {
     score += 10
@@ -152,7 +175,7 @@ function scoreHero(ctx) {
     businessModel,
     visualVerified,
   } = ctx
-  let score = 42
+  let score = visualVerified ? 42 : 60
   const notes = []
   const strengths = []
   const problems = []
@@ -215,13 +238,14 @@ function scoreHero(ctx) {
     score -= 1
   }
 
-  if (maxAboveFoldBlock > 720) {
+  const densityReliable = crawlerDensityEvidenceIsReliable(ctx)
+  if (maxAboveFoldBlock > 720 && (visualVerified || densityReliable)) {
     if (visualVerified) score -= 12
-    // Crawler HTML can still prove a dense text block without a rendered audit.
+    else score -= 4
     problems.push(`Hero text is dense: largest above-fold block is ${maxAboveFoldBlock} characters.`)
-  } else if (maxAboveFoldBlock > 560) {
-    if (visualVerified) score -= 5
-  } else if (aboveFoldTextLength > 1400) {
+  } else if (maxAboveFoldBlock > 560 && visualVerified) {
+    score -= 5
+  } else if (aboveFoldTextLength > 1400 && (visualVerified || densityReliable)) {
     if (visualVerified) score -= 8
     problems.push('Above-fold area contains a lot of text before visitors can scan the page.')
   } else if (aboveFoldTextLength > 0 && aboveFoldTextLength < 700) {
@@ -233,13 +257,21 @@ function scoreHero(ctx) {
     ((duplicateCopyCount || 0) >= 1 &&
       !ECOMMERCE_MODELS.has(resolveCanonicalBusinessModel(businessModel) || businessModel))
   ) {
-    score -= 14
-    problems.push('Repeated marketing copy appears multiple times on the page.')
+    if (visualVerified) {
+      score -= 14
+      problems.push('Repeated marketing copy appears multiple times on the page.')
+    } else {
+      notes.push('Possible repeated marketing copy — verify after a rendered audit.')
+    }
   }
 
   if ((templateDebtSignals || []).length >= 1) {
-    score -= 16
-    problems.push('Template/demo residue is still visible (unfinished footer or placeholder content).')
+    if (visualVerified) {
+      score -= 16
+      problems.push('Template/demo residue is still visible (unfinished footer or placeholder content).')
+    } else {
+      notes.push('Possible template/demo residue — verify after a rendered audit.')
+    }
   }
 
   return { score: clamp(score), notes: [...notes, ...strengths, ...problems], strengths, problems }
@@ -281,7 +313,8 @@ function scoreReadability(ctx) {
     visualEvidenceIssues,
   } = ctx
   const tolerance = readabilityTolerance(businessModel)
-  let score = visualVerified ? 58 : 48
+  const densityReliable = crawlerDensityEvidenceIsReliable(ctx)
+  let score = visualVerified ? 58 : 62
   const notes = []
   const strengths = []
   const problems = []
@@ -316,14 +349,14 @@ function scoreReadability(ctx) {
   const wellStructured =
     sectionCount >= 2 || h2Count >= 2 || bulletCount >= 4 || (headingCount >= 2 && sectionCount >= 1)
 
-  if (maxTextBlockLength > tolerance.maxBlock && !wellStructured) {
+  if (maxTextBlockLength > tolerance.maxBlock && !wellStructured && (visualVerified || densityReliable)) {
     if (visualVerified) score -= 14
     else score -= 6
     problems.push(`Largest text block is ${maxTextBlockLength} characters and lacks section breaks.`)
   } else if (visualVerified && maxTextBlockLength > tolerance.maxBlock && wellStructured) {
     score -= 2
     factors.scan_density_note = 'Long copy is readable but dense — extra headings could help scanning.'
-  } else if (maxTextBlockLength > tolerance.maxBlock * 0.8 && !wellStructured) {
+  } else if (maxTextBlockLength > tolerance.maxBlock * 0.8 && !wellStructured && (visualVerified || densityReliable)) {
     if (visualVerified) score -= 5
     problems.push(`Large text block (${maxTextBlockLength} characters) is harder to scan without more headings.`)
   } else if (maxTextBlockLength > 0 && maxTextBlockLength <= tolerance.maxAvg) {
@@ -331,7 +364,7 @@ function scoreReadability(ctx) {
     strengths.push('Text blocks stay reasonably easy to read.')
   }
 
-  if (avgParagraphLength > tolerance.maxAvg) {
+  if (avgParagraphLength > tolerance.maxAvg && (visualVerified || densityReliable)) {
     if (visualVerified) score -= 14
     else score -= 6
     problems.push(`Average paragraph length (${avgParagraphLength} characters) makes reading tiring.`)
@@ -366,7 +399,13 @@ function scoreReadability(ctx) {
     strengths.push('Mobile above-fold text layout looks readable from rendered text blocks.')
   }
 
-  if (headingCount === 0 && sectionCount < 2 && maxTextBlockLength > 500 && avgParagraphLength > tolerance.maxAvg * 0.8) {
+  if (
+    headingCount === 0 &&
+    sectionCount < 2 &&
+    maxTextBlockLength > 500 &&
+    avgParagraphLength > tolerance.maxAvg * 0.8 &&
+    (visualVerified || densityReliable)
+  ) {
     if (visualVerified) score -= 12
     problems.push('Long text lacks headings or section breaks, which hurts both reading and scanning.')
   }
@@ -397,7 +436,7 @@ function scoreReadability(ctx) {
 
 function scoreVisualHierarchy(ctx) {
   const { heroHeading, h2Count, sectionCount, headingLevels, contentH2Count, visualVerified } = ctx
-  let score = 34
+  let score = visualVerified ? 34 : 56
   const notes = []
   const problems = []
 
@@ -454,7 +493,7 @@ function scoreImageQuality(ctx) {
     visualEvidenceIssues,
   } = ctx
   const model = resolveCanonicalBusinessModel(businessModel) || businessModel
-  let score = 40
+  let score = ctx.visualVerified ? 40 : 55
   const notes = []
   const strengths = []
   const problems = []
@@ -464,8 +503,12 @@ function scoreImageQuality(ctx) {
   const isContent = CONTENT_MODELS.has(model)
 
   if (imageCount === 0) {
-    score = isContent ? 28 : isService ? 35 : 22
-    problems.push('Very few images detected — page may feel text-only.')
+    if (ctx.visualVerified) {
+      score = isContent ? 28 : isService ? 35 : 22
+      problems.push('Very few images detected — page may feel text-only.')
+    } else {
+      notes.push('Images could not be verified without rendered audit data.')
+    }
   } else if (imageCount >= 3) {
     score += 6
   }
@@ -1125,6 +1168,13 @@ function buildVisualUxScore(input = {}) {
     headingToBodyRatio,
     fontSizeStats,
     paragraphCount,
+    blockCount: paragraphCount || crawler.blockCount || 0,
+    visibleTextLength:
+      Number(summary.visible_text_length) ||
+      Number(dm.visible_text_length) ||
+      Number(mm.visible_text_length) ||
+      Number(crawler.visibleTextLength) ||
+      0,
     aboveFoldElementCount,
     imageCount,
     aboveFoldImageCount,

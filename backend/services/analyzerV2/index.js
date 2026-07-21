@@ -324,6 +324,7 @@ function calculateAnalyzerV2Scores(aggregated, business, pages, options = {}) {
     ok: visualOk,
     skipped: Boolean(options.visualAudit?.skipped),
     reason: options.visualAudit?.reason || options.visualAudit?.error || null,
+    error: options.visualAudit?.error || null,
   }
   result.ux_features = uxFeatures
   result.ux_feature_snapshot = buildUxFeatureSnapshot(uxFeatures)

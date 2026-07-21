@@ -27,6 +27,13 @@ function isPlaywrightAvailable() {
   }
 }
 
+function isMissingPlaywrightBrowserError(err) {
+  const msg = String(err?.message || err || '')
+  return /Executable doesn't exist|Please run the following command to download new browsers|npx playwright install/i.test(
+    msg,
+  )
+}
+
 function disabledResult(reason) {
   return {
     enabled: false,
@@ -980,9 +987,14 @@ async function runVisualAudit(url, options = {}) {
 
     return auditResult
   } catch (err) {
+    const missingBrowser = isMissingPlaywrightBrowserError(err)
     return {
       enabled: true,
       ok: false,
+      skipped: missingBrowser,
+      reason: missingBrowser
+        ? 'Playwright browser is missing. Run: npx playwright install chromium'
+        : undefined,
       error: err.message,
       url: parsed?.href || url,
       captured_at: new Date().toISOString(),

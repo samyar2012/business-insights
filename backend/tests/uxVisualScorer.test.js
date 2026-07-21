@@ -240,6 +240,27 @@ describe('uxVisualScorer', () => {
     assert.ok(features.ux_confidence < 70)
   })
 
+  it('does not crush JS-rendered / sparse-crawl sites when visual audit is unavailable', () => {
+    const features = extractUxFeatures({
+      visualAudit: { ok: false, enabled: true, error: 'browser launch failed' },
+      pages: [
+        {
+          extracted_text: 'Loading…',
+          extracted_data_json: { headings: { h1: [] }, image_count: 0 },
+        },
+      ],
+      aggregated: {},
+      businessModel: 'ecommerce_store',
+      signals: {},
+    })
+    assert.ok(features.ux_score_components.hero_score >= 50, 'unknown hero must stay neutral, not ~20')
+    assert.ok(features.ux_score_components.navbar_score >= 50, 'missing static nav must stay neutral')
+    assert.ok(features.ux_score_components.visual_hierarchy_score >= 50)
+    assert.ok(features.ux_score_components.readability_score >= 50)
+    assert.ok(features.visual_score >= 45, 'overall fallback should not look like a broken site')
+    assert.ok(!(features.readability_problems || []).length, 'sparse SPA shell must not invent dense-text problems')
+  })
+
   it('gallery missing does not destroy functionality score', () => {
     const pages = [
       {
