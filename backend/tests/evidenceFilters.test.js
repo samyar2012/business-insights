@@ -6,6 +6,7 @@ const {
   isPositiveEvidenceNote,
   isPillarFillerText,
   assessCrawlExtraction,
+  humanizeUiMeasurementEvidence,
 } = require('../services/analyzerV2/evidenceFilters')
 
 describe('evidenceFilters', () => {
@@ -67,5 +68,30 @@ describe('evidenceFilters', () => {
       'blog',
     )
     assert.equal(drop, true)
+  })
+
+  it('keeps dense-text readability signals for the fix-plan pipeline (humanized, not dropped)', () => {
+    const lines = filterEvidenceLines(
+      [
+        'Hero text is dense: largest above-fold block is 910 characters.',
+        'Average paragraph length (480 characters) makes reading tiring.',
+        'Visual audit unavailable — UX score uses static HTML signals with lower confidence.',
+        'ml advisory only',
+      ],
+      'local_service_business',
+    )
+    assert.equal(lines.length, 2)
+    assert.ok(lines.some((line) => /dense/i.test(line) && /910/.test(line)))
+    assert.ok(lines.some((line) => /paragraph/i.test(line) && /480/.test(line)))
+    assert.ok(!lines.some((line) => /visual audit unavailable|ml advisory/i.test(line)))
+    assert.ok(!lines.some((line) => /^hero text is dense:/i.test(line)), 'raw measurement dump should be rewritten')
+  })
+
+  it('humanizeUiMeasurementEvidence preserves numeric proof', () => {
+    const out = humanizeUiMeasurementEvidence(
+      'Hero text is dense: largest above-fold block is 910 characters.',
+    )
+    assert.match(out, /910/)
+    assert.match(out, /dense/i)
   })
 })

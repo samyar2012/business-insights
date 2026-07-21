@@ -59,10 +59,13 @@ function weightedScoreExplanations(scores) {
   return (scores?.score_explanation || []).filter((item) => {
     if (!WEIGHTED_EXPLANATION_CATEGORIES.has(item.category)) return false
     const reason = String(item.reason || '')
-    if (/visual audit unavailable|static html|ml advisory|not blended into category score|category score follows visual audit/i.test(reason)) {
+    // Drop true debug / audit-unavailable noise only. Real readability signals are
+    // humanized server-side into clean advice and should still appear in the report.
+    if (/visual audit unavailable|static html|ml advisory|not blended into category score|category score follows visual audit|enable visual_audit|category \d+\/25 from visual audit/i.test(reason)) {
       return false
     }
-    if (/no clear h1 or hero heading|no clear hero heading|hero text is dense|largest above-fold block|average paragraph length|low contrast makes body text|no navigation links were detected/i.test(reason)) {
+    // Safety net for any raw measurement dumps that slipped past server humanization.
+    if (/^hero text is dense:|^average paragraph length \(|largest above-fold block is \d+/i.test(reason)) {
       return false
     }
     return true

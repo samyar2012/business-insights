@@ -26,8 +26,55 @@ const GENERIC_FILLER_STEP_RE =
 const VAGUE_CATCHALL_RE =
   /polish remaining|strengthen remaining|shore up remaining|resolve remaining technical/i
 
+// True debug / ops / audit-unavailable noise only.
+// Do NOT put real readability or hierarchy signals here — those must reach the fix-plan engine
+// (e.g. dense text → mobile_readability). Visitor-facing copy is rewritten below.
 const DEBUG_UI_MEASUREMENT_RE =
-  /visual audit unavailable|ux score uses static html|enable visual_audit|no clear h1 or hero heading|no clear hero heading|hero text is dense|largest above-fold block|average paragraph length|low contrast makes body text|no navigation links were detected|images detected on the page|image alignment could not be reliably evaluated|category \d+\/25 from visual audit|ml advisory/i
+  /visual audit unavailable|ux score uses static html|enable visual_audit|category \d+\/25 from visual audit|ml advisory|image alignment could not be reliably evaluated|^\d+\s+images detected on the page\.?$/i
+
+/**
+ * Convert raw measurement dumps into clean advice while keeping numeric proof and
+ * keywords the fix-plan matchers need (dense, paragraph, hard to scan, etc.).
+ */
+function humanizeUiMeasurementEvidence(text) {
+  const t = String(text || '').trim()
+  if (!t) return ''
+
+  let m = t.match(/hero text is dense:\s*largest above-fold block is (\d+) characters\.?/i)
+  if (m) {
+    return `Above-fold copy is dense (~${m[1]} characters in the largest block), which makes mobile scanning harder.`
+  }
+
+  m = t.match(/average paragraph length \((\d+) characters\) makes reading tiring\.?/i)
+  if (m) {
+    return `Average paragraphs are long (~${m[1]} characters), which makes reading tiring on mobile.`
+  }
+
+  m = t.match(/largest text block is (\d+) characters and lacks section breaks\.?/i)
+  if (m) {
+    return `A large text block (~${m[1]} characters) lacks section breaks and is hard to scan.`
+  }
+
+  m = t.match(/large text block \((\d+) characters\) is harder to scan/i)
+  if (m) {
+    return `A large text block (~${m[1]} characters) is harder to scan without more headings.`
+  }
+
+  if (/^no clear h1 or hero heading was detected above the fold\.?$/i.test(t)) {
+    return 'No clear hero heading above the fold, so visitors may not quickly grasp the page purpose.'
+  }
+  if (/^no clear hero heading guides visitors on page purpose\.?$/i.test(t)) {
+    return t
+  }
+  if (/^no navigation links were detected in the header area\.?$/i.test(t)) {
+    return 'Header navigation links were not clearly detected, so visitors may struggle to explore the site.'
+  }
+  if (/^low contrast makes body text harder to read\.?$/i.test(t)) {
+    return 'Low contrast makes body text harder to read, especially on mobile screens.'
+  }
+
+  return t
+}
 
 function isContentRubric(rubric) {
   return CONTENT_RUBRICS.has(rubric)
@@ -92,6 +139,8 @@ function filterEvidenceLines(lines, rubric = null) {
     .map((line) => String(line || '').trim())
     .filter(Boolean)
     .filter((line) => !DEBUG_UI_MEASUREMENT_RE.test(line))
+    .map(humanizeUiMeasurementEvidence)
+    .filter(Boolean)
     .filter((line) => !isPositiveEvidenceNote(line))
     .filter((line) => !isPillarFillerText(line))
     .filter((line) => !isGenericFillerStep(line))
@@ -223,6 +272,7 @@ module.exports = {
   isPillarFillerText,
   isGenericFillerStep,
   isGenericCommerceAdvice,
+  humanizeUiMeasurementEvidence,
   filterEvidenceLines,
   filterProblemLines,
   filterSteps,

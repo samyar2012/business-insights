@@ -129,13 +129,9 @@ function filterVisualStrengths(lines = []) {
 }
 
 function filterVisualProblems(lines = [], businessModel = null) {
+  // filterProblemLines drops true debug noise and humanizes measurement dumps into
+  // clean advice — keep real readability/hierarchy signals for the fix-plan engine.
   return filterProblemLines(lines, businessModel)
-    .filter((line) => !/visual audit unavailable|static html/i.test(line))
-    .filter((line) => !/no clear h1 or hero heading|no clear hero heading/i.test(line))
-    .filter((line) => !/hero text is dense|largest above-fold block/i.test(line))
-    .filter((line) => !/average paragraph length/i.test(line))
-    .filter((line) => !/low contrast|text contrast/i.test(line))
-    .filter((line) => !/no navigation links were detected/i.test(line))
     .filter((line) => !/could not be verified without rendered audit data/i.test(line))
     .filter((line) => !/navigation is not clearly visible above the fold/i.test(line))
     .filter((line) => !/layout signals suggest an outdated or unpolished design/i.test(line))

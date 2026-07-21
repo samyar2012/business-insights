@@ -215,13 +215,14 @@ function scoreHero(ctx) {
     score -= 1
   }
 
-  if (visualVerified && maxAboveFoldBlock > 720) {
-    score -= 12
+  if (maxAboveFoldBlock > 720) {
+    if (visualVerified) score -= 12
+    // Crawler HTML can still prove a dense text block without a rendered audit.
     problems.push(`Hero text is dense: largest above-fold block is ${maxAboveFoldBlock} characters.`)
-  } else if (visualVerified && maxAboveFoldBlock > 560) {
-    score -= 5
-  } else if (visualVerified && aboveFoldTextLength > 1400) {
-    score -= 8
+  } else if (maxAboveFoldBlock > 560) {
+    if (visualVerified) score -= 5
+  } else if (aboveFoldTextLength > 1400) {
+    if (visualVerified) score -= 8
     problems.push('Above-fold area contains a lot of text before visitors can scan the page.')
   } else if (aboveFoldTextLength > 0 && aboveFoldTextLength < 700) {
     score += 4
@@ -315,22 +316,24 @@ function scoreReadability(ctx) {
   const wellStructured =
     sectionCount >= 2 || h2Count >= 2 || bulletCount >= 4 || (headingCount >= 2 && sectionCount >= 1)
 
-  if (visualVerified && maxTextBlockLength > tolerance.maxBlock && !wellStructured) {
-    score -= 14
+  if (maxTextBlockLength > tolerance.maxBlock && !wellStructured) {
+    if (visualVerified) score -= 14
+    else score -= 6
     problems.push(`Largest text block is ${maxTextBlockLength} characters and lacks section breaks.`)
   } else if (visualVerified && maxTextBlockLength > tolerance.maxBlock && wellStructured) {
     score -= 2
     factors.scan_density_note = 'Long copy is readable but dense — extra headings could help scanning.'
-  } else if (visualVerified && maxTextBlockLength > tolerance.maxBlock * 0.8 && !wellStructured) {
-    score -= 5
+  } else if (maxTextBlockLength > tolerance.maxBlock * 0.8 && !wellStructured) {
+    if (visualVerified) score -= 5
     problems.push(`Large text block (${maxTextBlockLength} characters) is harder to scan without more headings.`)
   } else if (maxTextBlockLength > 0 && maxTextBlockLength <= tolerance.maxAvg) {
     score += 6
     strengths.push('Text blocks stay reasonably easy to read.')
   }
 
-  if (visualVerified && avgParagraphLength > tolerance.maxAvg) {
-    score -= 14
+  if (avgParagraphLength > tolerance.maxAvg) {
+    if (visualVerified) score -= 14
+    else score -= 6
     problems.push(`Average paragraph length (${avgParagraphLength} characters) makes reading tiring.`)
   } else if (avgParagraphLength > 0 && avgParagraphLength <= tolerance.maxAvg * 0.7) {
     score += 6
@@ -363,8 +366,8 @@ function scoreReadability(ctx) {
     strengths.push('Mobile above-fold text layout looks readable from rendered text blocks.')
   }
 
-  if (visualVerified && headingCount === 0 && sectionCount < 2 && maxTextBlockLength > 500 && avgParagraphLength > tolerance.maxAvg * 0.8) {
-    score -= 12
+  if (headingCount === 0 && sectionCount < 2 && maxTextBlockLength > 500 && avgParagraphLength > tolerance.maxAvg * 0.8) {
+    if (visualVerified) score -= 12
     problems.push('Long text lacks headings or section breaks, which hurts both reading and scanning.')
   }
 
@@ -1197,19 +1200,23 @@ function buildVisualUxScore(input = {}) {
     for (const note of result.strengths || []) {
       if (!isPositiveEvidenceNote(note) || /^no .+ detected/i.test(note)) strengths.push(note)
     }
+    const rawProblemSet = new Set((result.problems || []).map((line) => String(line || '').trim()).filter(Boolean))
     for (const note of result.notes || []) {
-      if (/overcrowd/i.test(note) && (ctx.primaryNavLinkCount || 0) <= PRIMARY_NAV_OVERCROWD_THRESHOLD) {
+      const trimmed = String(note || '').trim()
+      if (!trimmed || rawProblemSet.has(trimmed)) continue
+      if (/overcrowd/i.test(trimmed) && (ctx.primaryNavLinkCount || 0) <= PRIMARY_NAV_OVERCROWD_THRESHOLD) {
         continue
       }
       // Positive "No X issue detected" notes must stay strengths — "/no /" alone is too greedy.
-      if (/^no .+ (?:issue|problem|overflow|misalignment) detected\.?$/i.test(note)) {
-        if (!strengths.includes(note)) strengths.push(note)
+      if (/^no .+ (?:issue|problem|overflow|misalignment) detected\.?$/i.test(trimmed)) {
+        if (!strengths.includes(trimmed)) strengths.push(trimmed)
         continue
       }
-      if (/too|missing|no |not |lack|low|spam|overflow|dense|weak|hard|outdated|may be|misaligned|poorly sized/i.test(note)) {
-        if (!problems.includes(note)) problems.push(note)
-      } else if (/clear|supports|visible|readable|strong|solid|good|organized|balanced|fit the page/i.test(note)) {
-        if (!strengths.includes(note)) strengths.push(note)
+      if (/too|missing|no |not |lack|low|spam|overflow|dense|weak|hard|outdated|may be|misaligned|poorly sized/i.test(trimmed)) {
+        const [humanized] = filterProblemLines([trimmed], businessModel)
+        if (humanized && !problems.includes(humanized)) problems.push(humanized)
+      } else if (/clear|supports|visible|readable|strong|solid|good|organized|balanced|fit the page/i.test(trimmed)) {
+        if (!strengths.includes(trimmed)) strengths.push(trimmed)
       }
     }
   }
