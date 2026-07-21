@@ -35,6 +35,14 @@ function isContent(rubric) {
   return isContentRubric(rubric)
 }
 
+function isBlog(rubric) {
+  return rubric === 'blog'
+}
+
+function isContentBusiness(rubric) {
+  return rubric === 'content_business'
+}
+
 function isService(rubric) {
   return isServiceRubric(rubric)
 }
@@ -206,27 +214,46 @@ function titleForItem(item, input) {
     return 'Stop horizontal scrolling on phones so the page feels usable'
   }
   if (id === 'mobile_readability') {
-    return isContent(rubric)
-      ? 'Improve recipe and post readability on phones'
-      : 'Shorten above-the-fold copy so phones can read the offer fast'
+    if (isBlog(rubric)) return 'Improve recipe and post readability on phones'
+    if (isContentBusiness(rubric) || isContent(rubric)) {
+      return 'Improve article readability on phones'
+    }
+    return 'Shorten above-the-fold copy so phones can read the offer fast'
   }
   if (id === 'thin_content') {
-    if (isContent(rubric)) {
+    if (isBlog(rubric)) {
       return 'Add recipe cards, category navigation, and internal links readers expect'
+    }
+    if (isContentBusiness(rubric) || isContent(rubric)) {
+      return 'Add article cards, topic navigation, and internal links readers expect'
     }
     if (isService(rubric)) return 'Add service details, process, and FAQs that answer booking questions'
     if (isStore(rubric)) return 'Add product detail buyers need before they add to cart'
     return 'Add enough on-page detail for visitors and search engines to trust the offer'
   }
   if (id === 'weak_seo_meta') {
-    return isContent(rubric)
-      ? 'Rewrite titles and meta so recipe and post search clicks know what they get'
-      : 'Rewrite the title and meta description so search clicks know what they get'
+    if (isBlog(rubric)) {
+      return 'Rewrite titles and meta so recipe and post search clicks know what they get'
+    }
+    if (isContentBusiness(rubric) || isContent(rubric)) {
+      return 'Rewrite titles and meta so article search clicks know what they get'
+    }
+    return 'Rewrite the title and meta description so search clicks know what they get'
   }
   if (id === 'nav_clutter') {
+    if (isStore(rubric)) return 'Simplify shop navigation so collections are easy to find'
     return isContent(rubric)
       ? 'Simplify navigation so categories and search are easy to find'
       : 'Simplify the top navigation so the main action is hard to miss'
+  }
+  if (id === 'ecommerce_catalog') {
+    return 'Make product and collection pages obvious to shoppers'
+  }
+  if (id === 'ecommerce_checkout_trust') {
+    return 'Add the checkout trust signals shoppers expect'
+  }
+  if (id === 'crawl_blocked') {
+    return 'Rescan with a real browser — this site blocked the crawler'
   }
   if (id === 'visual_polish' || id === 'misaligned_images' || id.startsWith('catchall_ux')) {
     if (hasTemplateDebt(input, evidence)) {

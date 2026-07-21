@@ -285,7 +285,7 @@ function scoreSafetyTrust({ aggregated, pages, safetyResult, crawlHealth, rubric
     return finalizeCategory(detail, max, [result.configured ? 95 : 70], rubric)
   }
 
-  if (result.status === 'safe') {
+  if (result.status === 'safe' && result.configured) {
     points += 6
     detail.strengths.push('Google Safe Browsing reports no malware or phishing threats.')
     detail.evidence.push({ signal: 'safe_browsing', strength: 'strong', label: 'Safe Browsing', detail: result.message })
@@ -293,6 +293,9 @@ function scoreSafetyTrust({ aggregated, pages, safetyResult, crawlHealth, rubric
   } else {
     const partial = crawlHealth.homepageOk && aggregated.trust_signals?.https ? 3 : 1
     points += partial
+    if (crawlHealth.homepageOk && aggregated.trust_signals?.https) {
+      detail.strengths.push('HTTPS and crawl checks passed; live Google Safe Browsing was not verified.')
+    }
     detail.evidence.push({
       signal: 'safe_browsing',
       strength: 'weak',
@@ -479,6 +482,32 @@ function scoreTechnicalFunctionality({ aggregated, pages, crawlHealth, visualAud
   const detail = emptyCategoryDetail(max)
   const confidenceFactors = []
   let points = 0
+
+  const botBlocked = pages.some(
+    (p) =>
+      p.bot_blocked === true ||
+      p.extracted_data_json?.bot_blocked === true ||
+      ([401, 403, 429, 503].includes(Number(p.status_code)) &&
+        String(p.extracted_text || '').trim().length < 120),
+  ) || Boolean(options?.crawlMeta?.bot_blocked) || Boolean(options?.crawlMeta?.bot_protection)
+
+  if (botBlocked) {
+    detail.problems.push(
+      'This site blocked automated crawling (HTTP 403/bot protection), so scores from crawl HTML are incomplete and should not be treated as a full site review.',
+    )
+    detail.recommended_fixes.push(
+      'Re-run with browser/Playwright crawling enabled (CRAWLER_USE_PLAYWRIGHT=true) and a rendered visual audit so the analyzer can see the live page.',
+    )
+    detail.evidence.push({
+      signal: 'bot_blocked',
+      strength: 'strong',
+      label: 'Crawl blocked',
+      detail: 'Fetcher reported bot protection or an HTTP 401/403/429/503 response with little extractable HTML.',
+    })
+    confidenceFactors.push(20)
+    detail.score = Math.min(Math.max(points, 2), 4)
+    return finalizeCategory(detail, max, confidenceFactors, options?.rubric || null)
+  }
 
   if (crawlHealth.homepageOk) {
     points += 3

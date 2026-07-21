@@ -34,6 +34,8 @@ describe('fixPlanEngine unit clusters', () => {
       customer_attraction: categoryDetail({ score: 15, max: 20 }),
     }
     const uxFeatures = {
+      source: 'visual_audit+crawler',
+      ux_scoring_inputs: { visual_audit_ok: true },
       readability_problems: [
         'Largest text block is 1284 characters and lacks section breaks.',
         'Hero text is dense: largest above-fold block is 910 characters.',
@@ -165,6 +167,8 @@ describe('fixPlanEngine unit clusters', () => {
       }),
     }
     const uxFeatures = {
+      source: 'visual_audit+crawler',
+      ux_scoring_inputs: { visual_audit_ok: true },
       readability_problems: [
         'Largest text block is 1284 characters and lacks section breaks.',
         'Hero text is dense: largest above-fold block is 910 characters.',
@@ -510,8 +514,48 @@ describe('fixPlanEngine + evidenceNarrator integration via calculateAnalyzerV2Sc
     assert.notDeepEqual([...trustGapGrowthTitles], [...denseGrowthTitles])
 
     assert.ok(trustGapScores.fix_plan.some((f) => f.id === 'no_https' || f.id === 'missing_contact_trust'))
-    assert.ok(denseScores.fix_plan.some((f) => f.id === 'mobile_readability'))
+    // Crawler-only dense HTML must NOT invent above-fold mobile_readability without a rendered audit.
+    assert.ok(
+      !denseScores.fix_plan.some((f) => f.id === 'mobile_readability'),
+      'static crawl density is not above-fold proof without visual audit',
+    )
     assert.ok(!denseScores.fix_plan.some((f) => f.id === 'no_https'), 'HTTPS is fine on the dense-text site, so it should not appear')
+
+    const denseWithVisual = calculateAnalyzerV2Scores(
+      denseServiceAggregated,
+      { store_url: 'https://localpro.example.com', business_model: 'local_service_business' },
+      denseServicePages(),
+      {
+        safetyResult: { status: 'safe', configured: true, threats: [], message: 'Safe.' },
+        crawlMeta: { homepage_fetch_ok: true, pages_crawled: 2, pages_discovered: 2 },
+        includeBenchmark: false,
+        visualAudit: {
+          ok: true,
+          enabled: true,
+          summary: {
+            avg_text_block_length: 821,
+            max_text_block_length: 821,
+            max_above_fold_text_block: 821,
+            above_fold_text_length: 900,
+            visible_text_length: 2400,
+          },
+          desktop: {
+            metrics: {
+              max_text_block_length: 821,
+              max_above_fold_text_block: 821,
+              above_fold_text_length: 900,
+              section_count: 1,
+              headings: [{ tag: 'h1', text: 'Local Pro Services', above_fold: true }],
+            },
+          },
+          mobile: { metrics: { max_text_block_length: 821, section_count: 1 } },
+        },
+      },
+    )
+    assert.ok(
+      denseWithVisual.fix_plan.some((f) => f.id === 'mobile_readability'),
+      'rendered dense above-fold copy should create mobile_readability',
+    )
 
     // Strengths/risks are also evidence-based and differ between sites.
     assert.notDeepEqual(trustGapScores.strengths, denseScores.strengths)
@@ -648,5 +692,190 @@ describe('evidenceNarrator', () => {
   it('falls back to "no major risks" only when nothing was found', () => {
     const out = buildEvidenceRisks({ safety_trust: categoryDetail() }, {}, [])
     assert.deepEqual(out, ['No major risks detected from this crawl.'])
+  })
+
+  it('does not claim Google Safe Browsing confirmation when the API was not configured', () => {
+    const scores = calculateAnalyzerV2Scores(
+      {
+        products: [],
+        trust_signals: { https: true, review_indicators: false, policy_count: 0 },
+        content_signals: { total_text_length: 800, page_count: 1, ctas: [], navigation_labels: ['Home'] },
+        contact_signals: { emails: [], phones: [] },
+        policy_signals: {},
+        social_channels: [],
+        extraction_meta: {},
+      },
+      { store_url: 'https://example.com', business_model: 'content_business' },
+      [
+        {
+          page_type: 'homepage',
+          status_code: 200,
+          title: 'Example',
+          extracted_text: 'Research and articles about usability.',
+          extracted_data_json: { headings: { h1: ['Example'] }, has_mobile_viewport: true },
+        },
+      ],
+      {
+        safetyResult: {
+          status: 'unknown',
+          configured: false,
+          threats: [],
+          message: 'Live safety verification is not configured.',
+        },
+        crawlMeta: { homepage_fetch_ok: true, pages_crawled: 1, pages_discovered: 1 },
+        includeBenchmark: false,
+      },
+    )
+    const blob = [...(scores.strengths || []), ...(scores.risks || [])].join(' ')
+    assert.ok(!/Google confirms/i.test(blob), 'must not overclaim Google Safe Browsing')
+    assert.ok(
+      scores.strengths.some((s) => /Safe Browsing was not verified|HTTPS and crawl checks passed/i.test(s)),
+      'should use HTTPS/crawl language when Safe Browsing is not configured',
+    )
+  })
+})
+
+describe('roadmap realism guards', () => {
+  it('does not create mobile_readability from crawler-only density without visual audit', () => {
+    const plan = buildFixPlan({
+      categoryDetails: {
+        safety_trust: categoryDetail({ score: 18, max: 20 }),
+        technical_functionality: categoryDetail({ score: 13, max: 15 }),
+        ux_ui_visual: categoryDetail({
+          score: 12,
+          max: 25,
+          problems: ['Hero text is dense: largest above-fold block is 910 characters.'],
+        }),
+        offer_business_fit: categoryDetail({ score: 16, max: 20 }),
+        customer_attraction: categoryDetail({ score: 15, max: 20 }),
+      },
+      uxFeatures: {
+        source: 'crawler_static',
+        readability_problems: ['Hero text is dense: largest above-fold block is 910 characters.'],
+      },
+      rubric: 'ecommerce_store',
+      pages: [],
+    })
+    assert.ok(!plan.some((f) => f.id === 'mobile_readability'))
+  })
+
+  it('creates ecommerce catalog/checkout trust fixes from store evidence, not only UX polish', () => {
+    const plan = buildFixPlan({
+      categoryDetails: {
+        safety_trust: categoryDetail({
+          score: 12,
+          max: 20,
+          problems: ['No shipping or returns policy signals found.'],
+        }),
+        technical_functionality: categoryDetail({ score: 13, max: 15 }),
+        ux_ui_visual: categoryDetail({ score: 18, max: 25 }),
+        offer_business_fit: categoryDetail({
+          score: 8,
+          max: 20,
+          problems: [
+            'No reliable product cards, catalog layout, or shop navigation were found.',
+            'No add-to-cart, buy now, or checkout path detected.',
+            'No customer reviews or testimonials detected.',
+          ],
+        }),
+        customer_attraction: categoryDetail({ score: 10, max: 20 }),
+      },
+      uxFeatures: { source: 'crawler_static' },
+      rubric: 'ecommerce_store',
+      pages: [],
+    })
+    const ids = plan.map((f) => f.id)
+    assert.ok(ids.includes('ecommerce_catalog') || ids.includes('ecommerce_checkout_trust') || ids.includes('weak_cta'))
+    assert.ok(ids.includes('ecommerce_catalog') || ids.includes('ecommerce_checkout_trust'))
+  })
+
+  it('recognizes About pages and article-like URLs for content sites', () => {
+    const scores = calculateAnalyzerV2Scores(
+      {
+        products: [],
+        trust_signals: { https: true, review_indicators: false, policy_count: 0 },
+        content_signals: {
+          total_text_length: 5000,
+          page_count: 4,
+          ctas: ['Subscribe'],
+          navigation_labels: ['Articles', 'Topics', 'About', 'Newsletter'],
+          newsletter_indicators: true,
+        },
+        contact_signals: { emails: ['hello@example.com'], phones: [] },
+        policy_signals: { privacy: true },
+        social_channels: ['https://twitter.com/example'],
+        extraction_meta: {},
+      },
+      { store_url: 'https://www.nngroup.com', business_model: 'content_business' },
+      [
+        {
+          page_type: 'homepage',
+          status_code: 200,
+          title: 'Nielsen Norman Group',
+          extracted_text: 'UX research articles and reports. '.repeat(40),
+          extracted_data_json: { headings: { h1: ['Nielsen Norman Group'] }, has_mobile_viewport: true },
+        },
+        {
+          page_type: 'about',
+          status_code: 200,
+          final_url: 'https://www.nngroup.com/about/',
+          extracted_text: 'About Nielsen Norman Group and our authors.',
+          extracted_data_json: { headings: { h1: ['About'] } },
+        },
+        {
+          page_type: 'blog',
+          status_code: 200,
+          final_url: 'https://www.nngroup.com/articles/usability-101/',
+          extracted_text: 'Usability 101 article body. '.repeat(50),
+          extracted_data_json: { headings: { h1: ['Usability 101'] } },
+        },
+      ],
+      {
+        safetyResult: { status: 'unknown', configured: false, threats: [], message: 'not configured' },
+        crawlMeta: { homepage_fetch_ok: true, pages_crawled: 3, pages_discovered: 3 },
+        includeBenchmark: false,
+      },
+    )
+    const offerProblems = scores.category_details?.offer_business_fit?.problems || []
+    assert.ok(!offerProblems.some((p) => /few article pages or posts/i.test(p)))
+    assert.ok(!offerProblems.some((p) => /author\/about trust signals are missing/i.test(p)))
+    const growthBlob = scores.growth_plan.map((g) => g.title).join(' ')
+    assert.ok(!/recipe/i.test(growthBlob), 'content_business growth titles must not use recipe wording')
+  })
+
+  it('surfaces crawl_blocked when the site returns HTTP 403 / bot protection', () => {
+    const scores = calculateAnalyzerV2Scores(
+      {
+        products: [],
+        trust_signals: { https: true, review_indicators: false, policy_count: 0 },
+        content_signals: { total_text_length: 20, page_count: 1, ctas: [], navigation_labels: [] },
+        contact_signals: { emails: [], phones: [] },
+        policy_signals: {},
+        social_channels: [],
+        extraction_meta: {},
+      },
+      { store_url: 'https://www.exploretock.com', business_model: 'local_service_business' },
+      [
+        {
+          page_type: 'homepage',
+          status_code: 403,
+          bot_blocked: true,
+          title: 'Forbidden',
+          extracted_text: '',
+          extracted_data_json: {},
+        },
+      ],
+      {
+        safetyResult: { status: 'unknown', configured: false, threats: [], message: 'not configured' },
+        crawlMeta: { homepage_fetch_ok: false, pages_crawled: 0, pages_failed: 1, bot_blocked: true },
+        includeBenchmark: false,
+      },
+    )
+    assert.ok(
+      (scores.category_details?.technical_functionality?.problems || []).some((p) =>
+        /blocked automated crawling/i.test(p),
+      ),
+    )
+    assert.ok(scores.fix_plan.some((f) => f.id === 'crawl_blocked'))
   })
 })

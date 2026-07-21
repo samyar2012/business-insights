@@ -199,6 +199,18 @@ function detectOperationalSignals(pages, aggregated) {
       hasOfferCategories,
     has_niche_language: Boolean(aggregated.content_signals?.total_text_length > 800),
     has_creator_links: (aggregated.social_channels || []).length >= 2,
+    has_about_page:
+      pages.some(
+        (p) =>
+          p.page_type === 'about' ||
+          /\/about\b|\/our-story\b|\/our-team\b|\/team\b|\/who-we-are\b|\/company\b/i.test(
+            String(p.final_url || p.url || ''),
+          ),
+      ) ||
+      Boolean(aggregated.policy_pages?.about_page) ||
+      (aggregated.content_signals?.navigation_labels || []).some((n) =>
+        /about|our story|our team|who we are|meet the/i.test(n),
+      ),
   }
 }
 

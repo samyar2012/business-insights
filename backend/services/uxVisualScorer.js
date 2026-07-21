@@ -39,23 +39,12 @@ function missingDefault(confidence) {
 }
 
 /**
- * Crawler HTML can prove dense copy only when there is real text evidence.
- * Sparse JS shells (almost no extractable HTML) must not invent readability failures.
+ * Above-fold density claims require a rendered visual audit.
+ * Static crawler HTML often includes menus, footers, and policy text that look like
+ * "long paragraphs" but are not proof of a dense hero on phones.
  */
 function crawlerDensityEvidenceIsReliable(ctx = {}) {
-  if (ctx.visualVerified) return true
-  const blocks = Number(ctx.blockCount || ctx.paragraphCount || 0)
-  const avg = Number(ctx.avgParagraphLength || 0)
-  const max = Number(ctx.maxTextBlockLength || 0)
-  const visible = Number(ctx.visibleTextLength || ctx.aboveFoldTextLength || 0)
-  // Empty/nearly-empty crawls are not proof of bad UX on JS-rendered sites.
-  if (visible > 0 && visible < 240) return false
-  if (avg <= 0 && max <= 0) return false
-  // Multiple structured blocks with long average copy.
-  if (blocks >= 2 && avg >= 200) return true
-  // A single long wall of text with enough total copy (common on service pages).
-  if (max >= 500 && (avg >= 400 || max >= 700 || visible >= 500)) return true
-  return false
+  return Boolean(ctx.visualVerified)
 }
 
 const PRIMARY_NAV_OVERCROWD_THRESHOLD = 6
@@ -113,9 +102,22 @@ function scoreNavbar(ctx) {
     score += visualVerified ? 22 : 18
     strengths.push(`${topLevelCount} top-level navigation links are visible in the header.`)
   } else if (topLevelCount > PRIMARY_NAV_OVERCROWD_THRESHOLD) {
-    score += 10
-    problems.push(`Top navigation has ${topLevelCount} primary links — it may feel overcrowded.`)
-    score -= 8
+    // DTC mega-menus often expose many links in HTML; only treat as clutter when rendered audit confirms it.
+    const storeModel = ECOMMERCE_MODELS.has(model)
+    const clutterThreshold = storeModel ? 10 : PRIMARY_NAV_OVERCROWD_THRESHOLD
+    if (topLevelCount > clutterThreshold && visualVerified) {
+      score += 10
+      problems.push(`Top navigation has ${topLevelCount} primary links — it may feel overcrowded.`)
+      score -= 8
+    } else if (topLevelCount > clutterThreshold) {
+      score += 14
+      notes.push(
+        'Many navigation links appear in crawl HTML — verify clutter with a rendered audit before treating it as a top fix.',
+      )
+    } else {
+      score += visualVerified ? 18 : 16
+      strengths.push(`${topLevelCount} navigation links support browsing (common for larger catalogs).`)
+    }
   }
 
   if (navAboveFold) score += 12

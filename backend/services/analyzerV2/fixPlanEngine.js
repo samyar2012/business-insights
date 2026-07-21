@@ -114,15 +114,15 @@ const TRUST_STEPS_BY_RUBRIC = {
     'Add client testimonials or before/after proof near your strongest work.',
     'Add a short About or artist statement so visitors know who they would be hiring.',
   ],
-  content_business: [
-    'Add an About page or section explaining who writes or runs the content.',
-    'Link active social or newsletter profiles to reinforce legitimacy.',
-    'Add a clear subscribe / start-here path so new readers know what to do next.',
-  ],
   blog: [
     'Add an About page naming the author and why readers should trust the recipes or posts.',
     'Strengthen category, search, or "start here" navigation so readers find recipes fast.',
     'Make the newsletter or email signup obvious above the fold and after posts.',
+  ],
+  content_business: [
+    'Add an About page or section explaining who writes or runs the content.',
+    'Link active social or newsletter profiles to reinforce legitimacy.',
+    'Add a clear subscribe / start-here path so new readers know what to do next.',
   ],
   listing: [
     'Add clear contact or response information to the listing.',
@@ -531,6 +531,92 @@ function runHomepageDown(events) {
   }
 }
 
+function runCrawlBlocked(events) {
+  const matched = claim(
+    events,
+    ['technical_functionality', 'overall'],
+    /blocked automated crawling|bot protection|http 403/i,
+  )
+  if (!matched.length) return null
+  return {
+    id: 'crawl_blocked',
+    title: 'This site blocked automated crawling — rescan with a real browser.',
+    category: 'functionality',
+    why_it_matters:
+      'When the site returns HTTP 403 or a bot challenge, the analyzer cannot see products, offers, or layout — any scores from that crawl are incomplete and should not drive roadmap decisions.',
+    steps: [
+      'Enable browser/Playwright crawling (CRAWLER_USE_PLAYWRIGHT=true) and a rendered visual audit.',
+      'Rescan the homepage and key pages after the browser fetch succeeds.',
+      'If the site still blocks bots, whitelist your crawler IP or use an approved monitoring path.',
+      'Treat the previous crawl-only roadmap as incomplete until a successful browser scan finishes.',
+    ],
+    affected: ['technical_functionality'],
+    difficulty: 'medium',
+    forcedPriority: 'critical',
+    matched,
+  }
+}
+
+function runEcommerceCatalog(events, ctx) {
+  const rubric = ctx?.rubric || ''
+  if (rubric !== 'ecommerce_store' && rubric !== 'online_plus_offline_store') return null
+  const matched = claim(
+    events,
+    ['offer_business_fit', 'customer_attraction'],
+    /no reliable product|no extractable products|catalog layout|collection pages|product cards|no clear product pricing/i,
+  )
+  if (!matched.length) return null
+  return {
+    id: 'ecommerce_catalog',
+    title: 'Make product and collection pages obvious to shoppers.',
+    category: 'business_fit',
+    why_it_matters:
+      'DTC shoppers need a clear path into collections and product cards — without that, paid traffic never reaches a buyable item.',
+    steps: [
+      'Publish collection pages with named products, images, and prices.',
+      'Link Shop / Collections from the header above the fold.',
+      'Ensure product cards include name, price, image, and a detail-page link.',
+      'Server-render product names and prices so crawlers and SEO can read the catalog.',
+    ],
+    affected: ['offer_business_fit', 'customer_attraction'],
+    difficulty: 'medium',
+    matched,
+  }
+}
+
+function runEcommerceCheckoutTrust(events, ctx) {
+  const rubric = ctx?.rubric || ''
+  if (rubric !== 'ecommerce_store' && rubric !== 'online_plus_offline_store') return null
+  // Prefer dedicated checkout/policy wording; contact-trust runner still handles soft placement.
+  const matched = claim(
+    events,
+    ['offer_business_fit', 'safety_trust', 'customer_attraction'],
+    /no shipping or returns policy|expected ecommerce policies|no customer reviews or testimonials detected|no add-to-cart, buy now, or checkout path/i,
+  )
+  if (!matched.length) return null
+  // If weak_cta already claimed the checkout line, still allow policy/review bundle.
+  const policyOrReviews = matched.filter((e) => /shipping|returns|policy|review|testimonial/i.test(e.text))
+  const checkoutOnly = matched.filter((e) => /add-to-cart|checkout path/i.test(e.text))
+  const use = policyOrReviews.length ? policyOrReviews : checkoutOnly
+  if (!use.length) return null
+  return {
+    id: 'ecommerce_checkout_trust',
+    title: 'Add the checkout trust signals shoppers expect.',
+    category: 'trust',
+    why_it_matters:
+      'Missing shipping/returns policies and review proof near buy actions drive cart abandonment even when the catalog is strong.',
+    steps: [
+      'Publish shipping, returns, and privacy policies and link them from footer and checkout.',
+      'Show product reviews or star ratings near product grids and PDP buy buttons.',
+      'Add a visible Shop / Add to cart path above the fold if it is missing.',
+      'Add secure-checkout or payment badges near the buy action.',
+    ],
+    affected: ['offer_business_fit', 'safety_trust', 'customer_attraction'],
+    difficulty: 'medium',
+    matched: use,
+  }
+}
+
 function runBusinessModelMismatch(events, ctx) {
   const matched = claim(events, ['overall'], /business model badly mismatches/i)
   if (!matched.length) return null
@@ -679,7 +765,15 @@ function runMobileOverflow(events, ctx) {
   return null
 }
 
-function runMobileReadability(events) {
+function runMobileReadability(events, ctx) {
+  // Static crawl text is not above-fold proof — require a rendered visual audit.
+  const visualOk = Boolean(
+    ctx?.uxFeatures?.source === 'visual_audit+crawler' ||
+      ctx?.uxFeatures?.ux_scoring_inputs?.visual_audit_ok ||
+      ctx?.uxFeatures?.signals?.visual_audit_ok,
+  )
+  if (!visualOk) return null
+
   const matched = claim(
     events,
     ['ux_ui_visual', 'customer_attraction'],
@@ -947,21 +1041,36 @@ function runWeakSeoMeta(events) {
   }
 }
 
-function runNavClutter(events) {
+function runNavClutter(events, ctx) {
   const matched = claim(events, ['ux_ui_visual', 'customer_attraction'], /overcrowded|navigation clutter|primary nav links/i)
   if (!matched.length) return null
+  const rubric = ctx?.rubric || ''
+  const isStore = rubric === 'ecommerce_store' || rubric === 'online_plus_offline_store'
+  const visualOk = Boolean(
+    ctx?.uxFeatures?.source === 'visual_audit+crawler' || ctx?.uxFeatures?.ux_scoring_inputs?.visual_audit_ok,
+  )
+  // Mega-menu HTML often looks "cluttered" in crawls for DTC brands — require rendered proof.
+  if (isStore && !visualOk) return null
   return {
     id: 'nav_clutter',
-    title: 'Simplify navigation above the fold.',
+    title: isStore ? 'Simplify shop navigation above the fold.' : 'Simplify navigation above the fold.',
     category: 'ux_ui',
-    why_it_matters:
-      'Too many top-level choices make visitors hesitate about what to click first, which slows them down on the way to your primary offer.',
-    steps: [
-      'Group secondary links into a small number of dropdown menus.',
-      'Keep 4-6 primary links visible in the main navigation.',
-      'Make sure the primary CTA is not competing with navigation for attention.',
-      'Rescan after simplifying the navigation.',
-    ],
+    why_it_matters: isStore
+      ? 'Too many top-level shop links make buyers hesitate about where to start — clearer collection paths usually convert better than a packed mega-menu.'
+      : 'Too many top-level choices make visitors hesitate about what to click first, which slows them down on the way to your primary offer.',
+    steps: isStore
+      ? [
+          'Keep 5-8 primary shop links visible (collections, bestsellers, sale) and tuck the rest into menus.',
+          'Make Shop / Collections the clearest path above the fold.',
+          'Do not let promo banners replace real collection navigation.',
+          'Rescan after simplifying the navigation.',
+        ]
+      : [
+          'Group secondary links into a small number of dropdown menus.',
+          'Keep 4-6 primary links visible in the main navigation.',
+          'Make sure the primary CTA is not competing with navigation for attention.',
+          'Rescan after simplifying the navigation.',
+        ],
     affected: ['ux_ui_visual', 'customer_attraction'],
     difficulty: 'easy',
     matched,
@@ -1128,7 +1237,7 @@ const PRIORITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 }
 // mobile visitors can't read the page it lives on.
 const TIER_SEQUENCE = [
   {
-    ids: ['unsafe_site', 'homepage_down', 'business_model_mismatch', 'no_conversion_path'],
+    ids: ['unsafe_site', 'homepage_down', 'crawl_blocked', 'business_model_mismatch', 'no_conversion_path'],
     first:
       'Do this first - nothing else on this list matters until visitors can safely reach your site and tell what you sell.',
     next: 'Do this next - it is still blocking every visitor from reaching or trusting the rest of the site.',
@@ -1152,7 +1261,13 @@ const TIER_SEQUENCE = [
     next: 'Unlocked now - verify these softer findings once the critical blockers are handled.',
   },
   {
-    ids: ['weak_cta', 'missing_contact_trust', 'unclear_offer'],
+    ids: [
+      'weak_cta',
+      'missing_contact_trust',
+      'ecommerce_catalog',
+      'ecommerce_checkout_trust',
+      'unclear_offer',
+    ],
     first: 'Do this first - without one clear next step, visitors read the page and leave instead of converting.',
     next: 'Unlocked now - visitors can safely reach and read the site, so give them an obvious way to act next.',
   },
@@ -1335,9 +1450,12 @@ function unlockReasonFor(tier, index, previousTier, previousRank) {
 const CLUSTER_RUNNERS = [
   runUnsafeSite,
   runHomepageDown,
+  runCrawlBlocked,
   runBusinessModelMismatch,
   runNoConversionPath,
   runMobileOverflow,
+  runEcommerceCatalog,
+  runEcommerceCheckoutTrust,
   runMobileReadability,
   runWeakCta,
   runMissingTrust,

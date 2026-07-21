@@ -613,11 +613,63 @@ function scoreGalleryPhysicalServiceOffer(ctx, max) {
   return { score: clamp(result.earned, max), ...result }
 }
 
+function countArticleLikePages(pages = [], aggregated = {}) {
+  const explicit = Number(aggregated.content_signals?.article_count)
+  if (Number.isFinite(explicit) && explicit > 0) return explicit
+
+  let count = 0
+  for (const page of pages || []) {
+    const type = String(page.page_type || '')
+    const url = String(page.final_url || page.url || '')
+    if (/^(article|blog|recipe|post|news)$/i.test(type)) {
+      count += 1
+      continue
+    }
+    if (/\/(blog|articles?|posts?|news|guides?|research|recipes?)\b/i.test(url)) {
+      count += 1
+      continue
+    }
+    const textLen = String(page.extracted_text || '').trim().length
+    if (
+      textLen >= 900 &&
+      !/^(about|contact|privacy|terms|shipping|returns|faq|homepage)$/i.test(type) &&
+      !/\/(about|contact|privacy|terms|shipping|returns|faq|cart|checkout)\b/i.test(url)
+    ) {
+      count += 1
+    }
+  }
+  return count
+}
+
+function detectAboutTrust(pages = [], signals = {}, aggregated = {}) {
+  if (signals?.has_about_page) return true
+  if (
+    (pages || []).some(
+      (p) =>
+        p.page_type === 'about' ||
+        /\/about\b|\/our-story\b|\/our-team\b|\/team\b|\/who-we-are\b|\/company\b/i.test(
+          String(p.final_url || p.url || ''),
+        ),
+    )
+  ) {
+    return true
+  }
+  if (
+    (aggregated.content_signals?.navigation_labels || []).some((n) =>
+      /about|our story|our team|who we are|meet the/i.test(n),
+    )
+  ) {
+    return true
+  }
+  return false
+}
+
 function scoreBlogOffer(ctx, max) {
-  const { aggregated, signals } = ctx
+  const { aggregated, signals, pages = [] } = ctx
   const result = { earned: 0, strengths: [], problems: [], evidence: [], recommended_fixes: [] }
 
-  const articleStrength = strengthFromCount(aggregated.content_signals?.article_count || aggregated.pages?.length || 0, {
+  const articleCount = countArticleLikePages(pages, aggregated)
+  const articleStrength = strengthFromCount(articleCount, {
     weak: 1,
     medium: 3,
     strong: 5,
@@ -628,7 +680,7 @@ function scoreBlogOffer(ctx, max) {
     points: pointsForStrength(articleStrength, 6),
     maxPoints: 6,
     label: 'Article structure and content depth support the blog model.',
-    evidence: `${aggregated.content_signals?.article_count || 0} article-like page(s) detected.`,
+    evidence: `${articleCount} article-like page(s) detected.`,
     problem: articleStrength === 'none' ? 'Few article pages or posts were detected.' : null,
     fix: 'Publish posts with clear titles, dates, and categories.',
   })
@@ -661,7 +713,9 @@ function scoreBlogOffer(ctx, max) {
     fix: 'Add email signup or social follow prompts on posts.',
   })
 
-  const trustStrength = strengthFromBoolean(signals.has_about_page || aggregated.trust_signals?.review_indicators)
+  const trustStrength = strengthFromBoolean(
+    detectAboutTrust(pages, signals, aggregated) || aggregated.trust_signals?.review_indicators,
+  )
   addSignal(result, {
     id: 'author_trust',
     strength: trustStrength,
@@ -677,7 +731,7 @@ function scoreBlogOffer(ctx, max) {
 }
 
 function scoreContentBusinessOffer(ctx, max) {
-  const { aggregated, signals } = ctx
+  const { aggregated, signals, pages = [] } = ctx
   const result = { earned: 0, strengths: [], problems: [], evidence: [], recommended_fixes: [] }
 
   const nicheStrength = strengthFromBoolean(
@@ -723,7 +777,9 @@ function scoreContentBusinessOffer(ctx, max) {
   })
 
   const identityStrength = strengthFromBoolean(
-    Boolean(aggregated.content_signals?.navigation_labels?.length >= 3) || signals.has_creator_links,
+    Boolean(aggregated.content_signals?.navigation_labels?.length >= 3) ||
+      signals.has_creator_links ||
+      detectAboutTrust(pages, signals, aggregated),
   )
   addSignal(result, {
     id: 'identity',

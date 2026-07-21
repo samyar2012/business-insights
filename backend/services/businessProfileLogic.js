@@ -291,6 +291,18 @@ function aggregatePages(pages) {
     content_signals: {
       total_text_length: totalText,
       page_count: pages.length,
+      article_count: pages.filter((p) => {
+        const type = String(p.page_type || '')
+        const url = String(p.final_url || p.url || '')
+        if (/^(article|blog|recipe|post|news)$/i.test(type)) return true
+        if (/\/(blog|articles?|posts?|news|guides?|research|recipes?)\b/i.test(url)) return true
+        const textLen = String(p.extracted_text || '').trim().length
+        return (
+          textLen >= 900 &&
+          !/^(about|contact|privacy|terms|shipping|returns|faq|homepage)$/i.test(type) &&
+          !/\/(about|contact|privacy|terms|shipping|returns|faq|cart|checkout)\b/i.test(url)
+        )
+      }).length,
       navigation_labels: [...navLabels].slice(0, 20),
       ctas: [...ctas].slice(0, 15),
       newsletter_indicators: newsletterIndicators,
