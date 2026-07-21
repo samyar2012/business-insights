@@ -4,6 +4,7 @@ const {
   mapVisualScoreToCategoryPoints,
   mapVisualScoreToLegacy20,
 } = require('./uxVisualScorer')
+const { filterProblemLines, isPositiveEvidenceNote } = require('./analyzerV2/evidenceFilters')
 
 const READABILITY_BLOCK_SOFT = 400
 const DENSE_PARAGRAPH_THRESHOLD = 350
@@ -118,6 +119,28 @@ function computeVisitorAppealIndex(components, visualScore) {
   )
 }
 
+function filterVisualStrengths(lines = []) {
+  return [...new Set(lines || [])]
+    .map((line) => String(line || '').trim())
+    .filter(Boolean)
+    .filter((line) => !/^\d+\s+images detected on the page\.?$/i.test(line))
+    .filter((line) => !isPositiveEvidenceNote(line))
+    .filter((line) => !/could not be reliably evaluated/i.test(line))
+}
+
+function filterVisualProblems(lines = [], businessModel = null) {
+  return filterProblemLines(lines, businessModel)
+    .filter((line) => !/visual audit unavailable|static html/i.test(line))
+    .filter((line) => !/no clear h1 or hero heading|no clear hero heading/i.test(line))
+    .filter((line) => !/hero text is dense|largest above-fold block/i.test(line))
+    .filter((line) => !/average paragraph length/i.test(line))
+    .filter((line) => !/low contrast|text contrast/i.test(line))
+    .filter((line) => !/no navigation links were detected/i.test(line))
+    .filter((line) => !/could not be verified without rendered audit data/i.test(line))
+    .filter((line) => !/navigation is not clearly visible above the fold/i.test(line))
+    .filter((line) => !/layout signals suggest an outdated or unpolished design/i.test(line))
+}
+
 function extractUxFeatures({
   visualAudit = null,
   pages = [],
@@ -160,8 +183,8 @@ function extractUxFeatures({
     ui_score: visualScore,
     ux_score_components: components,
     ux_confidence: visualResult.ux_confidence,
-    visual_strengths: visualResult.visual_strengths,
-    visual_problems: visualResult.visual_problems,
+    visual_strengths: filterVisualStrengths(visualResult.visual_strengths),
+    visual_problems: filterVisualProblems(visualResult.visual_problems, businessModel),
     visual_recommended_fixes: visualResult.visual_recommended_fixes,
     ux_scoring_inputs: visualResult.scoring_inputs,
     component_weights: visualResult.component_weights,
@@ -183,10 +206,10 @@ function extractUxFeatures({
     hero_heading: visualResult.hero_heading,
     readability_factors: visualResult.readability_factors,
     readability_strengths: visualResult.readability_strengths,
-    readability_problems: visualResult.readability_problems,
+    readability_problems: filterVisualProblems(visualResult.readability_problems, businessModel),
     readability_confidence: visualResult.readability_confidence,
     layout_strengths: visualResult.layout_strengths,
-    layout_problems: visualResult.layout_problems,
+    layout_problems: filterVisualProblems(visualResult.layout_problems, businessModel),
     layout_evidence: visualResult.layout_evidence,
     avg_paragraph_length: visualResult.scoring_inputs.avg_paragraph_length,
     average_paragraph_length: visualResult.scoring_inputs.avg_paragraph_length,

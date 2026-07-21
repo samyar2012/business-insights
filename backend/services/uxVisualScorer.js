@@ -78,7 +78,11 @@ function scoreNavbar(ctx) {
 
   if (topLevelCount === 0) {
     score = 22
-    problems.push('No navigation links were detected in the header area.')
+    if (visualVerified) {
+      problems.push('No navigation links were detected in the header area.')
+    } else {
+      notes.push('Header navigation could not be verified without rendered audit data.')
+    }
   } else if (topLevelCount === 1) {
     score = 38
     notes.push('Navigation exists but only 1 useful link was visible.')
@@ -146,6 +150,7 @@ function scoreHero(ctx) {
     duplicateCopyCount,
     templateDebtSignals,
     businessModel,
+    visualVerified,
   } = ctx
   let score = 42
   const notes = []
@@ -167,14 +172,16 @@ function scoreHero(ctx) {
   } else if (hasH1) {
     score += 12
     notes.push('H1 exists but may not read as a strong hero headline above the fold.')
-  } else {
+  } else if (visualVerified) {
     score -= 18
     problems.push('No clear H1 or hero heading was detected above the fold.')
+  } else {
+    notes.push('Hero heading could not be verified without rendered audit data.')
   }
 
   if (semanticH1Missing && hasHero) {
     notes.push('Semantic H1 missing, but visual hero heading is clear (minor markup issue only).')
-  } else if (semanticH1Missing) {
+  } else if (semanticH1Missing && visualVerified) {
     score -= 4
     problems.push('Hero heading is visually clear, but semantic H1 markup may be missing.')
   }
@@ -208,12 +215,12 @@ function scoreHero(ctx) {
     score -= 1
   }
 
-  if (maxAboveFoldBlock > 720) {
+  if (visualVerified && maxAboveFoldBlock > 720) {
     score -= 12
     problems.push(`Hero text is dense: largest above-fold block is ${maxAboveFoldBlock} characters.`)
-  } else if (maxAboveFoldBlock > 560) {
+  } else if (visualVerified && maxAboveFoldBlock > 560) {
     score -= 5
-  } else if (aboveFoldTextLength > 1400) {
+  } else if (visualVerified && aboveFoldTextLength > 1400) {
     score -= 8
     problems.push('Above-fold area contains a lot of text before visitors can scan the page.')
   } else if (aboveFoldTextLength > 0 && aboveFoldTextLength < 700) {
@@ -308,13 +315,13 @@ function scoreReadability(ctx) {
   const wellStructured =
     sectionCount >= 2 || h2Count >= 2 || bulletCount >= 4 || (headingCount >= 2 && sectionCount >= 1)
 
-  if (maxTextBlockLength > tolerance.maxBlock && !wellStructured) {
+  if (visualVerified && maxTextBlockLength > tolerance.maxBlock && !wellStructured) {
     score -= 14
     problems.push(`Largest text block is ${maxTextBlockLength} characters and lacks section breaks.`)
-  } else if (maxTextBlockLength > tolerance.maxBlock && wellStructured) {
+  } else if (visualVerified && maxTextBlockLength > tolerance.maxBlock && wellStructured) {
     score -= 2
     factors.scan_density_note = 'Long copy is readable but dense — extra headings could help scanning.'
-  } else if (maxTextBlockLength > tolerance.maxBlock * 0.8 && !wellStructured) {
+  } else if (visualVerified && maxTextBlockLength > tolerance.maxBlock * 0.8 && !wellStructured) {
     score -= 5
     problems.push(`Large text block (${maxTextBlockLength} characters) is harder to scan without more headings.`)
   } else if (maxTextBlockLength > 0 && maxTextBlockLength <= tolerance.maxAvg) {
@@ -322,7 +329,7 @@ function scoreReadability(ctx) {
     strengths.push('Text blocks stay reasonably easy to read.')
   }
 
-  if (avgParagraphLength > tolerance.maxAvg) {
+  if (visualVerified && avgParagraphLength > tolerance.maxAvg) {
     score -= 14
     problems.push(`Average paragraph length (${avgParagraphLength} characters) makes reading tiring.`)
   } else if (avgParagraphLength > 0 && avgParagraphLength <= tolerance.maxAvg * 0.7) {
@@ -356,12 +363,12 @@ function scoreReadability(ctx) {
     strengths.push('Mobile above-fold text layout looks readable from rendered text blocks.')
   }
 
-  if (headingCount === 0 && sectionCount < 2 && maxTextBlockLength > 500 && avgParagraphLength > tolerance.maxAvg * 0.8) {
+  if (visualVerified && headingCount === 0 && sectionCount < 2 && maxTextBlockLength > 500 && avgParagraphLength > tolerance.maxAvg * 0.8) {
     score -= 12
     problems.push('Long text lacks headings or section breaks, which hurts both reading and scanning.')
   }
 
-  if (contrastScore < 55) {
+  if (visualVerified && contrastScore < 55) {
     score -= 10
     problems.push('Low contrast makes body text harder to read.')
   } else if (contrastScore >= 75) {
@@ -369,7 +376,7 @@ function scoreReadability(ctx) {
     strengths.push('Text contrast supports readable copy.')
   }
 
-  if (fontSizeStats?.median && fontSizeStats.median < 14) {
+  if (visualVerified && fontSizeStats?.median && fontSizeStats.median < 14) {
     score -= 8
     problems.push('Body font sizes appear small for comfortable reading.')
   }
@@ -386,7 +393,7 @@ function scoreReadability(ctx) {
 }
 
 function scoreVisualHierarchy(ctx) {
-  const { heroHeading, h2Count, sectionCount, headingLevels, contentH2Count } = ctx
+  const { heroHeading, h2Count, sectionCount, headingLevels, contentH2Count, visualVerified } = ctx
   let score = 34
   const notes = []
   const problems = []
@@ -398,7 +405,7 @@ function scoreVisualHierarchy(ctx) {
 
   if (hasHero && heroAboveFold) score += 24
   else if (hasHero || hasH1) score += 14
-  else {
+  else if (visualVerified) {
     score -= 12
     problems.push('Missing clear hero heading — page purpose is harder to grasp.')
   }
@@ -409,7 +416,7 @@ function scoreVisualHierarchy(ctx) {
     notes.push('Section headings (H2) create a clear content structure.')
   } else if (meaningfulH2 === 1) {
     score += 4
-  } else if (!hasHero) {
+  } else if (visualVerified && !hasHero) {
     score -= 6
     problems.push('Few section headings — content is hard to scan.')
   }
@@ -417,7 +424,7 @@ function scoreVisualHierarchy(ctx) {
   const effectiveSections = Math.min(sectionCount || 0, 5)
   if (effectiveSections >= 4) score += 10
   else if (effectiveSections >= 2) score += 5
-  else if (effectiveSections === 0 && !hasHero) score -= 8
+  else if (visualVerified && effectiveSections === 0 && !hasHero) score -= 8
 
   if (headingLevels >= 3 && meaningfulH2 >= 1) score += 6
 
@@ -458,7 +465,6 @@ function scoreImageQuality(ctx) {
     problems.push('Very few images detected — page may feel text-only.')
   } else if (imageCount >= 3) {
     score += 6
-    strengths.push(`${imageCount} images detected on the page.`)
   }
 
   const layoutFitRatio =
@@ -502,10 +508,8 @@ function scoreImageQuality(ctx) {
     } else if (alignmentIssues.length > 0) {
       score -= 8
       problems.push(alignmentIssues[0].message)
-    } else if (imageCount >= 2) {
-      strengths.push('No image alignment issue detected.')
     } else if (alignmentConfidence > 0 && alignmentConfidence < HIGH_CONFIDENCE) {
-      strengths.push('Image alignment could not be reliably evaluated.')
+      notes.push('Image alignment could not be reliably evaluated.')
     }
   }
 

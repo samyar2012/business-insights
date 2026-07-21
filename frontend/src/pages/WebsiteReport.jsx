@@ -22,7 +22,7 @@ const LEGACY_CATEGORIES = [
 ]
 
 function isAnalyzerV2(scores) {
-  return scores?.scoring_version === 'business_insights_analyzer_v2'
+  return String(scores?.scoring_version || '').startsWith('business_insights_analyzer_v2')
 }
 
 function weightedCategories(scores) {
@@ -56,9 +56,17 @@ const WEIGHTED_EXPLANATION_CATEGORIES = new Set([
 ])
 
 function weightedScoreExplanations(scores) {
-  return (scores?.score_explanation || []).filter((item) =>
-    WEIGHTED_EXPLANATION_CATEGORIES.has(item.category),
-  )
+  return (scores?.score_explanation || []).filter((item) => {
+    if (!WEIGHTED_EXPLANATION_CATEGORIES.has(item.category)) return false
+    const reason = String(item.reason || '')
+    if (/visual audit unavailable|static html|ml advisory|not blended into category score|category score follows visual audit/i.test(reason)) {
+      return false
+    }
+    if (/no clear h1 or hero heading|no clear hero heading|hero text is dense|largest above-fold block|average paragraph length|low contrast makes body text|no navigation links were detected/i.test(reason)) {
+      return false
+    }
+    return true
+  })
 }
 
 function lensStatus(value, max) {

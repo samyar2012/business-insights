@@ -26,6 +26,9 @@ const GENERIC_FILLER_STEP_RE =
 const VAGUE_CATCHALL_RE =
   /polish remaining|strengthen remaining|shore up remaining|resolve remaining technical/i
 
+const DEBUG_UI_MEASUREMENT_RE =
+  /visual audit unavailable|ux score uses static html|enable visual_audit|no clear h1 or hero heading|no clear hero heading|hero text is dense|largest above-fold block|average paragraph length|low contrast makes body text|no navigation links were detected|images detected on the page|image alignment could not be reliably evaluated|category \d+\/25 from visual audit|ml advisory/i
+
 function isContentRubric(rubric) {
   return CONTENT_RUBRICS.has(rubric)
 }
@@ -88,6 +91,7 @@ function filterEvidenceLines(lines, rubric = null) {
   return (lines || [])
     .map((line) => String(line || '').trim())
     .filter(Boolean)
+    .filter((line) => !DEBUG_UI_MEASUREMENT_RE.test(line))
     .filter((line) => !isPositiveEvidenceNote(line))
     .filter((line) => !isPillarFillerText(line))
     .filter((line) => !isGenericFillerStep(line))
